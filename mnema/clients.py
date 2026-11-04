@@ -52,6 +52,7 @@ DEFAULT_CLIENTS = [
     # Nothing is cut out by default: money, health and private are hidden from an AI only when the owner ticks it
     # (decided 23.10.2026). Every AI may drop new facts into the inbox, the owner sorts them.
     Client("chatgpt", "ChatGPT", scopes=["profile", "rules", "projects", "cards", "decisions"], via="api"),
+    Client("opencode", "OpenCode Go", scopes=["profile", "rules", "projects", "cards", "decisions"], via="api"),
     Client("gemini", "Gemini", scopes=["profile", "rules", "cards"], via="api"),
     Client("openrouter", "OpenRouter", scopes=["profile", "rules", "projects", "cards", "decisions"], via="api"),
     Client("deepseek", "DeepSeek", scopes=["profile", "rules", "projects", "cards", "decisions"], via="api"),

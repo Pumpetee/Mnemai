@@ -150,6 +150,8 @@ def account_problem(e: BaseException) -> bool:
 def provider_name(pid: str) -> str:
     return {
         "claude_code": "Claude",
+        "codex": "ChatGPT по подписке",
+        "opencode_go": "OpenCode Go",
         "anthropic": "Claude",
         "openai": "ChatGPT",
         "gemini": "Gemini",

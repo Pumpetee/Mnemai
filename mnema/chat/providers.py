@@ -42,6 +42,14 @@ PROVIDERS = {
         "note": "Через установленный Claude Code. Ключ не нужен.",
         "client": "claude",
         "key": False,
+        "subscription": True,
+    },
+    "codex": {
+        "name": "ChatGPT по подписке",
+        "note": "Официальный вход ChatGPT; запросы считаются по лимиту подписки.",
+        "client": "chatgpt",
+        "key": False,
+        "subscription": True,
     },
     "anthropic": {
         "name": "Claude · ключ API",
@@ -56,6 +64,14 @@ PROVIDERS = {
         "client": "chatgpt",
         "key": True,
         "base": "https://api.openai.com/v1",
+    },
+    "opencode_go": {
+        "name": "OpenCode Go",
+        "note": "Ключ подписки OpenCode Go. Хранится в защищённом хранилище системы.",
+        "client": "opencode",
+        "key": True,
+        "subscription": True,
+        "base": "https://opencode.ai/inference/go/openai/v1",
     },
     "gemini": {
         "name": "Gemini",
@@ -218,6 +234,8 @@ def status(vault: Vault) -> list[dict]:
             ready = (
                 claude_signed_in()
                 if pid == "claude_code"
+                else _codex_signed_in(vault) and _codex_found()
+                if pid == "codex"
                 else bool(key and data[pid].get("folder"))
                 if pid == "yandex"
                 else bool(key)
@@ -231,7 +249,11 @@ def status(vault: Vault) -> list[dict]:
                     {
                         "id": m,
                         "name": m,
-                        **({"old": True} if model_rank.old(m) and pid not in ("ollama", "strata", "yandex") else {}),
+                        **(
+                            {"old": True}
+                            if model_rank.old(m) and pid not in ("ollama", "strata", "yandex", "codex", "opencode_go")
+                            else {}
+                        ),
                     }
                     for m in model_rank.rank(pid, data[pid]["models"], data[pid].get("created"))
                 ]
@@ -243,9 +265,10 @@ def status(vault: Vault) -> list[dict]:
                 "name": p["name"],
                 "note": p["note"],
                 "needs_key": p["key"],
+                "subscription": bool(p.get("subscription")),
                 "ready": ready and not off and not problem,
                 "connected": ready,
-                "found": bool(claude_exe()) if pid == "claude_code" else ready,
+                "found": bool(claude_exe()) if pid == "claude_code" else _codex_found() if pid == "codex" else ready,
                 "disabled": off,
                 "problem": problem,
                 "key": ("••••" + key[-4:]) if key else "",
@@ -266,6 +289,22 @@ def fetch_models(vault: Vault, pid: str) -> list[str]:
     """Ask the provider which models exist — nothing hard-coded."""
     if pid == "claude_code":
         return [m for m, _ in CLAUDE_CODE_MODELS]
+    if pid == "codex":
+        from . import codex_server as CS
+
+        acc = CS.account(vault)
+        if acc.get("type") != "chatgpt":
+            raise CS.CodexError(
+                "Подписка ChatGPT не подключена. Нажми «Продолжить с ChatGPT» и разреши её использование.",
+                "login",
+            )
+        rows = CS.models(vault)
+        ids = [str(m["id"]) for m in rows if m.get("id")]
+        if not ids:
+            raise CS.CodexError("Codex не вернул доступных моделей для этого аккаунта.", "models")
+        save(vault, pid, models=ids, created={})
+        clear_problem(vault, pid)
+        return ids
     if pid == "local":
         from .. import localllm
 
@@ -295,6 +334,12 @@ def fetch_models(vault: Vault, pid: str) -> list[str]:
             m.get("id", "")
             for m in _get(base + "/models", {"Authorization": f"Bearer {key or 'strata'}"}).get("data", [])
         ]
+    elif pid == "opencode_go":
+        d = _get(
+            "https://opencode.ai/inference/go/v1/models",
+            _opencode_headers(key, "mnemai-model-catalog"),
+        )
+        ids = [m.get("id", "") for m in d.get("data", [])]
     else:
         if pid == "openrouter":  # its list of models is public: the key is checked on its own
             _get(base + "/key", {"Authorization": f"Bearer {key}"})
@@ -427,6 +472,17 @@ def _yandex_headers(key: str, folder: str) -> dict:
     return {"Authorization": f"Bearer {key}", "OpenAI-Project": folder, "Content-Type": "application/json"}
 
 
+def _opencode_headers(key: str, session_id: str) -> dict:
+    from .. import __version__
+
+    return {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": f"Mnemai/{__version__}",
+        "x-opencode-session": session_id,
+    }
+
+
 def claude_login() -> dict:
     """«Войти»: Claude Code in its own terminal window — it asks for the sign-in on its first start (or type /login)."""
     exe = claude_exe()
@@ -459,6 +515,27 @@ def claude_login() -> dict:
     return {"ok": True}
 
 
+def codex_login(vault: Vault) -> dict:
+    from . import codex_server as CS
+
+    return CS.login(vault)
+
+
+def _codex_found() -> bool:
+    from . import codex_server as CS
+
+    return bool(CS.executable())
+
+
+def _codex_signed_in(vault: Vault) -> bool:
+    from . import codex_server as CS
+
+    try:
+        return CS.account(vault).get("type") == "chatgpt"
+    except Exception:  # noqa: BLE001 — status should still show other providers if Codex is broken
+        return False
+
+
 def check(vault: Vault, pid: str) -> dict:
     """«Проверить снова»: a real, tiny request. Clears a stale problem or records the current one."""
     from .. import errors as E
@@ -481,6 +558,16 @@ def check(vault: Vault, pid: str) -> dict:
                 vault,
                 pid,
                 "haiku",
+                "",
+                [{"role": "user", "text": "Ответь одним словом: да"}],
+                meta={"purpose": "проверка подключения"},
+            )
+        elif pid == "codex":
+            models = fetch_models(vault, pid)
+            complete(
+                vault,
+                pid,
+                models[0],
                 "",
                 [{"role": "user", "text": "Ответь одним словом: да"}],
                 meta={"purpose": "проверка подключения"},
@@ -617,7 +704,7 @@ def stream(
     from .. import tuning
 
     if pid in tuning.FREE:
-        yield from _stream_raw(vault, pid, model, system, messages, stop, usage)
+        yield from _stream_raw(vault, pid, model, system, messages, stop, usage, meta)
         return
     from ..agent import profile as P
 
@@ -643,7 +730,7 @@ def stream(
 
     if usage is not None and red and red.values:
         usage["redacted"] = red.summary()
-    inner = _stream_raw(vault, pid, model, system, messages, stop, usage)
+    inner = _stream_raw(vault, pid, model, system, messages, stop, usage, meta)
     got = False
     try:
         for piece in red.restore_stream(inner) if red and red.values else inner:
@@ -689,11 +776,33 @@ def _remember_problem(vault: Vault, pid: str, e: BaseException) -> None:
 
 
 def _stream_raw(
-    vault: Vault, pid: str, model: str, system: str, messages: list[dict], stop=None, usage: dict | None = None
+    vault: Vault,
+    pid: str,
+    model: str,
+    system: str,
+    messages: list[dict],
+    stop=None,
+    usage: dict | None = None,
+    meta: dict | None = None,
 ) -> Iterator[str]:
     """Yield text pieces of the answer. messages: [{role: user|assistant, text}].
     usage (optional) gets filled with tokens spent: {"in", "out", "cache"} as the provider reports them."""
     usage = usage if usage is not None else {}
+    if pid == "codex":
+        from . import codex_server as CS
+        from . import codex_auth as CA
+
+        if not model:
+            raise NotSent("Выбери модель Codex")
+        try:
+            yield from CS.stream(vault, model, system, messages, stop=stop)
+        except (CS.CodexError, CA.AuthError) as exc:
+            if getattr(exc, "code", "") == "login" or isinstance(exc, CA.AuthError):
+                raise AccountProblem(str(exc), "login") from exc
+            if getattr(exc, "code", "") == "limit":
+                raise AccountProblem(str(exc), "limit") from exc
+            raise RuntimeError(str(exc)) from exc
+        return
     if pid == "claude_code":
         exe = claude_exe()
         if not exe:
@@ -950,7 +1059,9 @@ def _stream_raw(
                 "messages": [{"role": "system", "content": system}] + msgs,
             }
         ).encode(),
-        headers=_yandex_headers(key, folder)
+        headers=_opencode_headers(key, str((meta or {}).get("chat") or "mnemai-default"))
+        if pid == "opencode_go"
+        else _yandex_headers(key, folder)
         if pid == "yandex"
         else {"Authorization": f"Bearer {key or 'local'}", "Content-Type": "application/json"},
     )

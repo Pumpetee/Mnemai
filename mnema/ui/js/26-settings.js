@@ -5,6 +5,9 @@ const AUTO_HINT = {
   mixed: "Уверенное записывает сама, личное и спорное спрашивает.",
   quiet: "Пишет всё сама, ты откатываешь лишнее.",
 };
+// A subscription may still require a provider-issued access key.  Billing type
+// is deliberately separate from the way credentials are supplied.
+const isSubscription = (p) => !!p.subscription || ["claude_code", "codex", "opencode_go"].includes(p.id);
 // «Настройки по умолчанию»: Движок, Записи встреч and Программа; memory, keys, proxy and folders stay
 async function settingsReset() {
   if (
@@ -553,12 +556,12 @@ async function viewSettings(arg) {
     $("#st").innerHTML = `
     ${modelHero(ms, allModels, prof.default_model || ms.default_model)}
     <div class="card" data-sec="ai" id="c-prov"><h2>${tr("Модели")}<span class="hint">${tr("с какими ИИ говорить в Mnemai")}</span></h2><div class="aigrp aipaid">${tr("Платные")}<span class="hint">${tr("работают через интернет: платишь компании, чей это ИИ")}</span></div><div class="aisub">${tr("По подписке")}<span class="hint">${tr("та, что уже оплачена у компании")}</span></div><div class="aigrid">${ms.providers
-      .filter((x) => x.id === "claude_code")
+      .filter((x) => isSubscription(x))
       .map((x, n) => provTile(x, n))
       .join(
         "",
       )}</div><div class="aisub">${tr("По ключу API")}<span class="hint">${tr("оплата по расходу, отдельно от подписки")}</span></div><div class="aigrid">${ms.providers
-      .filter((x) => !["local", "ollama", "strata", "claude_code"].includes(x.id))
+      .filter((x) => !["local", "ollama", "strata"].includes(x.id) && !isSubscription(x))
       .sort((a, b) => tr(a.name).localeCompare(tr(b.name)))
       .map((x, n) => provTile(x, n + 1))
       .join(
@@ -1089,6 +1092,8 @@ function srcOpts(k, o) {
 const AI_LOOK = {
   local: ["💻", "#0ea5e9", "#22c55e"],
   claude_code: ["C", "#d97757", "#f4a582"],
+  codex: ["C", "#111827", "#64748b"],
+  opencode_go: ["G", "#16a34a", "#86efac"],
   anthropic: ["A", "#b45309", "#e0915f"],
   openai: ["◎", "#10a37f", "#4fd1a5"],
   gemini: ["✦", "#4285f4", "#9b8cf5"],
@@ -1140,6 +1145,12 @@ function provTile(p, n = 0) {
             : p.found
               ? `<button class="btn sm" data-cclogin>${tr("Войти")}</button><button class="btn g sm" data-chk>${tr("Проверить снова")}</button>`
               : `<button class="btn g sm" data-ccinstall>${tr("Как установить")}</button><button class="btn g sm" data-chk>${tr("Проверить снова")}</button>`
+        : p.id === "codex"
+          ? p.ready
+            ? `<span class="aiok">${tr("подписка ChatGPT")}</span>`
+            : p.found
+              ? `<button class="btn sm" data-codexlogin>${tr(p.problem ? "Переподключить ChatGPT" : "Продолжить с ChatGPT")}</button><button class="btn g sm" data-chk>${tr("Проверить снова")}</button>`
+              : `<button class="btn g sm" data-codexinstall>${tr("Как установить Codex")}</button><button class="btn g sm" data-chk>${tr("Проверить снова")}</button>`
         : `<button class="btn g sm" data-more>${tr(p.needs_key ? (p.connected ? "Сменить ключ" : "Указать ключ") : "Указать адрес")}</button>`;
   const check = p.problem && !p.disabled ? `<button class="btn sm" data-chk>${tr("Проверить снова")}</button>` : "";
   const off = p.connected
@@ -1150,13 +1161,15 @@ function provTile(p, n = 0) {
       ? p.models.map((m) => m.name).join(", ")
       : p.id === "claude_code" && !p.ready && !p.problem && !p.disabled
         ? tr(p.found ? "Claude Code найден — войди в свой аккаунт Claude" : "Claude Code не найден на этом компьютере")
+        : p.id === "codex" && !p.ready && !p.problem && !p.disabled
+          ? tr(p.found ? "Подключи подписку ChatGPT" : "Codex App Server не найден на этом компьютере")
         : "";
   const [, c1, c2] = aiLook(p.id, p.name);
   const cls = p.disabled ? "off" : p.problem ? "bad" : "";
   return `<div class="aitile ${p.ready ? "on" : ""} ${cls}" data-p="${p.id}" ${p.id === "local" ? 'id="c-local"' : ""} style="--c1:${c1};--c2:${c2};--d:${n * 0.05}s">${aiStatus(p.ready, tr(provState(p)), cls)}
     ${aiMedal(p.id, p.name)}<b>${esc(p.name)}</b><small class="${p.problem && on ? "aiprob" : ""}" ${p.problem && on ? `title="${esc(p.problem)}"` : ""}>${esc(p.problem && on ? p.problem.split(/(?<=[.!])\s/)[0] : local || p.note)}</small>
     <div class="aift">${check}${act}${off}</div>
-    ${p.id === "local" || p.id === "claude_code" ? "" : `<div class="more" hidden>${p.needs_key ? `<input class="inp" type="password" placeholder="${tr("ключ")}" value="${esc(p.key)}" data-k>` : `<input class="inp" placeholder="http://127.0.0.1:11434" value="${esc(p.endpoint)}" data-e>`}<button class="btn sm" data-pk>${tr("Сохранить и найти модели")}</button><button class="btn g sm" data-less>${tr("Отмена")}</button></div>`}</div>`;
+    ${p.id === "local" || p.id === "claude_code" || p.id === "codex" ? "" : `<div class="more" hidden>${p.needs_key ? `<input class="inp" type="password" placeholder="${tr("ключ")}" value="${esc(p.key)}" data-k>` : `<input class="inp" placeholder="http://127.0.0.1:11434" value="${esc(p.endpoint)}" data-e>`}<button class="btn sm" data-pk>${tr("Сохранить и найти модели")}</button><button class="btn g sm" data-less>${tr("Отмена")}</button></div>`}</div>`;
 }
 function outTile(k, name, note, on, n = 0) {
   const act = `<button class="btn g sm" data-con="${k}">${tr(on ? "Обновить" : "Подключить")}</button>`;
@@ -1204,6 +1217,24 @@ function bindTiles(fetch = true) {
   );
   $$(".aitile [data-ccinstall]").forEach(
     (b) => (b.onclick = () => post("/api/open_url", { url: "https://code.claude.com/docs/en/setup" }).catch(() => {})),
+  );
+  $$(".aitile [data-codexlogin]").forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const r = await post("/api/providers/codex_login", {});
+        if (r.ok && r.url) await post("/api/open_url", { url: r.url });
+        toast(
+          r.ok
+            ? tr("Открылся браузер: подтверди вход и разрешение использовать подписку ChatGPT")
+            : r.error,
+          10000,
+        );
+      }),
+  );
+  $$(".aitile [data-codexinstall]").forEach(
+    (b) =>
+      (b.onclick = () =>
+        post("/api/open_url", { url: "https://developers.openai.com/codex/cli" }).catch(() => {})),
   );
   $$(".aitile [data-chk]").forEach(
     (b) =>
@@ -1468,7 +1499,7 @@ async function connectPick(back) {
     <div class="cpgrid">${
       P.map((p, n) => {
         const [g, c1, c2] = aiLook(p.id, p.name);
-        return `<button class="cpt" data-pid="${esc(p.id)}" style="--c1:${c1};--c2:${c2};--d:${n * 0.05}s"><span class="medal2"><span>${esc(g)}</span></span><b data-noi18n>${esc(p.name)}</b><small>${tr(p.needs_key ? "по ключу API" : "на компьютере")}</small></button>`;
+        return `<button class="cpt" data-pid="${esc(p.id)}" style="--c1:${c1};--c2:${c2};--d:${n * 0.05}s"><span class="medal2"><span>${esc(g)}</span></span><b data-noi18n>${esc(p.name)}</b><small>${tr(isSubscription(p) ? "по подписке" : p.needs_key ? "по ключу API" : "на компьютере")}</small></button>`;
       }).join("") || `<p class="hint">${tr("Все ИИ уже подключены.")}</p>`
     }</div>
     <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn g" data-x>${tr("Назад")}</button></div></div>`;
@@ -1879,8 +1910,8 @@ function modelMenu(anchor) {
       .join("");
   const sorted = ready.sort(byName);
   // paid first — by subscription, then by an API key; then the free ones on this computer
-  const subs = sorted.filter((p) => p.id === "claude_code"),
-    keys = sorted.filter((p) => !LOCAL.includes(p.id) && p.id !== "claude_code"),
+  const subs = sorted.filter((p) => isSubscription(p)),
+    keys = sorted.filter((p) => !LOCAL.includes(p.id) && !isSubscription(p)),
     here = sorted.filter((p) => LOCAL.includes(p.id));
   const sec = (title, list) => (list.length ? `<div class="m3sec">${title}</div>` + list.map(group).join("") : "");
   const cards =
@@ -1919,6 +1950,14 @@ const PROV_HOW = {
   claude_code: {
     t: "Нужны подписка Claude и Claude Code от Anthropic — отдельная программа или та, что идёт внутри приложения Claude Desktop. Mnemai находит её сама. Если Claude Code найден, но не подключён, — нажми «Войти» на плитке и войди своей подпиской.",
     u: "https://code.claude.com/docs/en/setup",
+  },
+  opencode_go: {
+    t: "Открой консоль OpenCode Go, создай API-ключ подписки и вставь его ниже. Mnemai сохранит ключ в защищённом хранилище системы. OpenCode Go предназначен прежде всего для запросов в стиле кодинг-агента; условия и поддерживаемые модели смотри в документации OpenCode.",
+    u: "https://opencode.ai/console/go",
+  },
+  codex: {
+    t: "Войди через официальный Sign in with ChatGPT и отдельно разреши Mnemai использовать лимит подписки. OAuth-токены Mnemai хранит в защищённом хранилище системы. Для ответов нужен установленный Codex CLI App Server; вход Codex CLI Mnemai не читает.",
+    u: "https://developers.openai.com/siwc/token-sharing-open-source/sign-in",
   },
   anthropic: {
     t: "Ключ берётся на console.anthropic.com, раздел API Keys. Подписка Claude Pro ключа не даёт: для неё есть «Claude по подписке».",
@@ -1972,9 +2011,10 @@ async function connectModal(pid) {
       ? `<div class="fld" style="margin-top:12px"><span>${tr("Выбери модель")} (${list.length})</span><input id="pq" placeholder="${tr("поиск")}"></div><div class="mlist" id="pml">${good.map(btn).join("")}${aged.length ? `<div class="mlold">${tr("Старые и служебные")}</div>${aged.map(btn).join("")}` : ""}</div>`
       : "";
     const setup = `<div class="how">${esc(how.t)}${how.u ? ` <a href="#" id="openu" style="color:var(--acc)">Открыть сайт</a>` : ""}</div>
-    ${pid === "claude_code" ? "" : p.needs_key ? `<div class="fld"><span>Ключ API хранится в защищённом хранилище системы, не в папке памяти</span><input id="pkey" type="password" placeholder="${p.key ? "сохранён " + esc(p.key) : "вставь ключ"}"></div>` : `<div class="fld"><span>Адрес</span><input id="pend" value="${esc(p.endpoint)}" placeholder="${pid === "strata" ? "http://127.0.0.1:8080/v1" : "http://127.0.0.1:11434"}"></div>`}
+    ${pid === "claude_code" || pid === "codex" ? "" : p.needs_key ? `<div class="fld"><span>Ключ API хранится в защищённом хранилище системы, не в папке памяти</span><input id="pkey" type="password" placeholder="${p.key ? "сохранён " + esc(p.key) : "вставь ключ"}"></div>` : `<div class="fld"><span>Адрес</span><input id="pend" value="${esc(p.endpoint)}" placeholder="${pid === "strata" ? "http://127.0.0.1:8080/v1" : "http://127.0.0.1:11434"}"></div>`}
     ${pid === "yandex" ? `<div class="fld"><span>${tr("ID каталога Yandex Cloud")}</span><input id="pfolder" value="${esc(p.folder || "")}" placeholder="b1g…"></div>` : ""}
-    <div class="row" style="margin-top:10px"><button class="btn" id="pgo">${pid === "claude_code" ? "Проверить снова" : "Проверить и найти модели"}</button><span class="hint" id="pmsg">${esc(msg || "")}</span></div>`;
+    ${pid === "codex" ? `<div class="row"><button class="btn" id="pcodexlogin">${tr("Продолжить с ChatGPT")}</button></div>` : ""}
+    <div class="row" style="margin-top:10px"><button class="btn" id="pgo">${pid === "claude_code" || pid === "codex" ? "Проверить снова" : "Проверить и найти модели"}</button><span class="hint" id="pmsg">${esc(msg || "")}</span></div>`;
     const on = p.connected && !p.disabled && list.length;
     pop.innerHTML = `<div class="card"><h2>${esc(p.name)} <span class="hint">${provState(p)}</span></h2>
     ${p.problem && !p.disabled ? `<div class="aiprob">${esc(p.problem)}</div>` : ""}
@@ -1996,6 +2036,14 @@ async function connectModal(pid) {
       $("#openu", pop).onclick = (e) => {
         e.preventDefault();
         post("/api/open_url", { url: how.u }).catch(() => toast(how.u));
+      };
+    if ($("#pcodexlogin", pop))
+      $("#pcodexlogin", pop).onclick = async () => {
+        const r = await post("/api/providers/codex_login", {});
+        if (r.ok && r.url) await post("/api/open_url", { url: r.url });
+        $("#pmsg", pop).textContent = r.ok
+          ? "В браузере подтверди вход и разрешение использовать подписку ChatGPT, затем нажми «Проверить снова»."
+          : r.error;
       };
     if ($("#pq", pop))
       $("#pq", pop).oninput = (e) => {
@@ -2023,12 +2071,12 @@ async function connectModal(pid) {
             endpoint: e ? e.value : undefined,
             folder: fo ? fo.value : undefined,
           });
-        if (pid === "claude_code") {
+        if (pid === "claude_code" || pid === "codex") {
           const r = await post("/api/providers/check", { id: pid });
           await refreshProviders();
           const q = CHAT.providers.find((x) => x.id === pid);
           Object.assign(p, q);
-          draw(null, r.ok ? "Claude отвечает — выбери модель" : "Не вышло: " + r.error);
+          draw(null, r.ok ? (pid === "codex" ? "ChatGPT отвечает — выбери модель" : "Claude отвечает — выбери модель") : "Не вышло: " + r.error);
         } else {
           const r = await post("/api/providers/models", { id: pid });
           await refreshProviders();

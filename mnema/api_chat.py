@@ -540,6 +540,8 @@ def post(vault: Vault, path: str, b: dict):
         return 200, {"providers": PR.status(vault)}
     if path == "/api/providers/claude_login":  # «Войти»: Claude Code in a terminal, it asks for the sign-in itself
         return 200, PR.claude_login()
+    if path == "/api/providers/codex_login":
+        return 200, PR.codex_login(vault)
     if path == "/api/providers/check":  # «Проверить снова»: a tiny real request to this AI
         r = PR.check(vault, str(b.get("id", "")))
         return 200, {**r, "providers": PR.status(vault)}
@@ -867,6 +869,10 @@ def post(vault: Vault, path: str, b: dict):
             "https://aistudio.google.com",
             "https://openrouter.ai/",
             "https://ollama.com",
+            "https://auth.openai.com/api/accounts/authorize?",
+            "https://developers.openai.com/siwc/",
+            "https://developers.openai.com/codex/cli",
+            "https://opencode.ai/console/go",
         )
         if not url.startswith(allowed):
             return 400, {"error": "этот адрес не открываю"}

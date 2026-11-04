@@ -43,7 +43,7 @@ def _version(mid: str) -> float:
 def rank(pid: str, ids: list[str], created: dict | None = None) -> list[str]:
     """ids ordered: good ones by tier (full, light, lighter) and newness, then the old ones."""
     created = created or {}
-    if pid in ("local", "ollama", "strata", "claude_code", "yandex"):
+    if pid in ("local", "ollama", "strata", "claude_code", "codex", "opencode_go", "yandex"):
         return list(ids)  # what the owner installed, or a fixed short list: kept as it is
 
     def key(mid: str):

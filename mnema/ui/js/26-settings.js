@@ -1151,7 +1151,7 @@ function provTile(p, n = 0) {
             : p.found
               ? `<button class="btn sm" data-codexlogin>${tr(p.problem ? "Переподключить ChatGPT" : "Продолжить с ChatGPT")}</button><button class="btn g sm" data-chk>${tr("Проверить снова")}</button>`
               : `<button class="btn g sm" data-codexinstall>${tr("Как установить Codex")}</button><button class="btn g sm" data-chk>${tr("Проверить снова")}</button>`
-        : `<button class="btn g sm" data-more>${tr(p.needs_key ? (p.connected ? "Сменить ключ" : "Указать ключ") : "Указать адрес")}</button>`;
+          : `<button class="btn g sm" data-more>${tr(p.needs_key ? (p.connected ? "Сменить ключ" : "Указать ключ") : "Указать адрес")}</button>`;
   const check = p.problem && !p.disabled ? `<button class="btn sm" data-chk>${tr("Проверить снова")}</button>` : "";
   const off = p.connected
     ? `<button class="btn g sm aioff" data-off="${p.disabled ? 0 : 1}" title="${tr(p.disabled ? "Вернуть этот ИИ в списки моделей" : "Убрать этот ИИ из списков моделей — ключ и настройки останутся")}">${tr(p.disabled ? "Включить" : "Выключить")}</button>`
@@ -1163,7 +1163,7 @@ function provTile(p, n = 0) {
         ? tr(p.found ? "Claude Code найден — войди в свой аккаунт Claude" : "Claude Code не найден на этом компьютере")
         : p.id === "codex" && !p.ready && !p.problem && !p.disabled
           ? tr(p.found ? "Подключи подписку ChatGPT" : "Codex App Server не найден на этом компьютере")
-        : "";
+          : "";
   const [, c1, c2] = aiLook(p.id, p.name);
   const cls = p.disabled ? "off" : p.problem ? "bad" : "";
   return `<div class="aitile ${p.ready ? "on" : ""} ${cls}" data-p="${p.id}" ${p.id === "local" ? 'id="c-local"' : ""} style="--c1:${c1};--c2:${c2};--d:${n * 0.05}s">${aiStatus(p.ready, tr(provState(p)), cls)}
@@ -1224,17 +1224,14 @@ function bindTiles(fetch = true) {
         const r = await post("/api/providers/codex_login", {});
         if (r.ok && r.url) await post("/api/open_url", { url: r.url });
         toast(
-          r.ok
-            ? tr("Открылся браузер: подтверди вход и разрешение использовать подписку ChatGPT")
-            : r.error,
+          r.ok ? tr("Открылся браузер: подтверди вход и разрешение использовать подписку ChatGPT") : r.error,
           10000,
         );
       }),
   );
   $$(".aitile [data-codexinstall]").forEach(
     (b) =>
-      (b.onclick = () =>
-        post("/api/open_url", { url: "https://developers.openai.com/codex/cli" }).catch(() => {})),
+      (b.onclick = () => post("/api/open_url", { url: "https://developers.openai.com/codex/cli" }).catch(() => {})),
   );
   $$(".aitile [data-chk]").forEach(
     (b) =>
@@ -2076,7 +2073,14 @@ async function connectModal(pid) {
           await refreshProviders();
           const q = CHAT.providers.find((x) => x.id === pid);
           Object.assign(p, q);
-          draw(null, r.ok ? (pid === "codex" ? "ChatGPT отвечает — выбери модель" : "Claude отвечает — выбери модель") : "Не вышло: " + r.error);
+          draw(
+            null,
+            r.ok
+              ? pid === "codex"
+                ? "ChatGPT отвечает — выбери модель"
+                : "Claude отвечает — выбери модель"
+              : "Не вышло: " + r.error,
+          );
         } else {
           const r = await post("/api/providers/models", { id: pid });
           await refreshProviders();

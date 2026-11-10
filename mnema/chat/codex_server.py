@@ -209,7 +209,9 @@ def login(vault) -> dict:
 
 
 def _plain_history(system: str, messages: list[dict]) -> str:
-    rows = ["Ты отвечаешь в приложении Mnemai. Действуй только как собеседник: не запускай команды и не используй инструменты."]
+    rows = [
+        "Ты отвечаешь в приложении Mnemai. Действуй только как собеседник: не запускай команды и не используй инструменты."
+    ]
     if system:
         rows.extend(("Инструкции Mnemai:", system))
     for msg in messages:
@@ -228,10 +230,13 @@ def stream(vault, model: str, system: str, messages: list[dict], stop=None, time
     token = auth.access_token(vault)
     with AppServer(token, timeout=timeout) as server:
         with tempfile.TemporaryDirectory(prefix="mnema-codex-") as cwd:
-            thread = server.request(
-                "thread/start",
-                {"model": model, "cwd": cwd, "approvalPolicy": "never", "sandbox": "read-only"},
-            ).get("thread") or {}
+            thread = (
+                server.request(
+                    "thread/start",
+                    {"model": model, "cwd": cwd, "approvalPolicy": "never", "sandbox": "read-only"},
+                ).get("thread")
+                or {}
+            )
             thread_id = thread.get("id")
             if not thread_id:
                 raise CodexError("Codex не создал разговор.", "server")
@@ -295,13 +300,17 @@ def stream(vault, model: str, system: str, messages: list[dict], stop=None, time
                             info = str(err.get("message") or err.get("codexErrorInfo") or turn.get("status") or "")
                             code = str(err.get("codexErrorInfo") or "")
                             if code == "usageLimitExceeded" or "limit" in info.lower():
-                                raise CodexError("Достигнут лимит использования Codex по подписке. Попробуй позже.", "limit")
+                                raise CodexError(
+                                    "Достигнут лимит использования Codex по подписке. Попробуй позже.", "limit"
+                                )
                             raise CodexError(f"Codex не завершил ответ: {info[:240]}", code or "turn")
                         if not got:
                             raise CodexError("Codex завершил запрос без текстового ответа.", "empty")
                         return
                     elif "id" in msg and "method" in msg:
-                        server.send({"id": msg["id"], "error": {"code": -32000, "message": "Mnemai does not approve tools"}})
+                        server.send(
+                            {"id": msg["id"], "error": {"code": -32000, "message": "Mnemai does not approve tools"}}
+                        )
             finally:
                 try:
                     server.request("thread/delete", {"threadId": thread_id}, timeout=5)

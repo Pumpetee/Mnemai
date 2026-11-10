@@ -107,7 +107,9 @@ def _verify_id_token(token: str, client_id: str, nonce: str) -> dict:
         claims = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
         if header.get("alg") != "RS256" or not header.get("kid"):
             raise AuthError("OpenAI вернул неподдерживаемую подпись входа.")
-        req = urllib.request.Request("https://auth.openai.com/.well-known/jwks.json", headers={"Accept": "application/json"})
+        req = urllib.request.Request(
+            "https://auth.openai.com/.well-known/jwks.json", headers={"Accept": "application/json"}
+        )
         with net.urlopen(req, timeout=15) as response:
             keys = json.loads(response.read().decode("utf-8")).get("keys", [])
         jwk = next((key for key in keys if key.get("kid") == header["kid"] and key.get("kty") == "RSA"), None)
@@ -126,7 +128,9 @@ def _verify_id_token(token: str, client_id: str, nonce: str) -> dict:
             padding.PKCS1v15(),
             hashes.SHA256(),
         )
-        if claims.get("iss") != ISSUER or client_id not in ([claims.get("aud")] if isinstance(claims.get("aud"), str) else claims.get("aud", [])):
+        if claims.get("iss") != ISSUER or client_id not in (
+            [claims.get("aud")] if isinstance(claims.get("aud"), str) else claims.get("aud", [])
+        ):
             raise AuthError("Ответ входа не принадлежит выбранному аккаунту OpenAI.")
         if int(claims.get("exp", 0)) <= int(time.time()) or claims.get("nonce") != nonce or not claims.get("sub"):
             raise AuthError("Сессия входа OpenAI устарела или не прошла проверку.")
@@ -240,7 +244,9 @@ def begin_login(vault: Vault) -> dict:
             except Exception as exc:
                 text = str(exc)
                 code = 400
-            raw = ("<!doctype html><meta charset=utf-8><title>Mnemai</title><p>" + html.escape(text) + "</p>").encode("utf-8")
+            raw = ("<!doctype html><meta charset=utf-8><title>Mnemai</title><p>" + html.escape(text) + "</p>").encode(
+                "utf-8"
+            )
             self.send_response(code)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))

@@ -63,7 +63,7 @@ class TestCloudRequests(unittest.TestCase):
         self.sent = []
         self.orig = PR._stream_raw
 
-        def fake(vault, pid, model, system, messages, stop=None, usage=None):
+        def fake(vault, pid, model, system, messages, stop=None, usage=None, meta=None):
             self.sent.append((system, messages))
             yield from ["Карта [КА", "РТА-1] принята"]
 

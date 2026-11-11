@@ -51,13 +51,27 @@ else:
             binaries.append((os.path.realpath(f), "."))
             break
 
+# The C++ runtime stays the one on the computer. A copy from the build machine is older than what the Mesa and VAAPI
+# drivers of a newer distribution need, and with it the window dies at GL start: on Fedora 44 the bundled libstdc++ has
+# GLIBCXX_3.4.30, radeonsi_drv_video.so wants 3.4.32, libva fails to load and QtWebEngine aborts (SIGABRT).
+SYSTEM_RUNTIME = {"libstdc++.so.6"}
+
+
+def without_system_runtime(entries):
+    return [e for e in entries if os.path.basename(e[0]) not in SYSTEM_RUNTIME]
+
+
+binaries = without_system_runtime(binaries)
+
 app = Analysis([os.path.join(SPECPATH, "mnema_app.py")], pathex=[ROOT], datas=datas, binaries=binaries,
                hiddenimports=hidden)
+app.binaries = without_system_runtime(app.binaries)
 cli = Analysis([os.path.join(SPECPATH, "mnema_cli.py")], pathex=[ROOT],
                datas=[(os.path.join(ROOT, "mnema", "ui"), "mnema/ui"), (os.path.join(ROOT, "mnema", "knowledge"), "mnema/knowledge")],
                excludes=["webview", "pystray", "PIL", "clr", "pythonnet", "faster_whisper", "ctranslate2", "onnxruntime",
                          "av", "soundcard", "soundfile", "tokenizers", "numpy", "PyQt6", "qtpy", "rapidocr", "cv2",
                          "pypdfium2", "pypdfium2_raw", "shapely", "pyclipper"])
+cli.binaries = without_system_runtime(cli.binaries)
 
 app_pyz = PYZ(app.pure)
 cli_pyz = PYZ(cli.pure)

@@ -1038,10 +1038,18 @@ class App:
         )
         self.window.events.closing += self.on_closing
         self.build_tray()
+        from .updater import Updater
+
+        updater = Updater(HOME, load_config)
+        updater.start()
         if os.environ.get("MNEMA_DEBUG_PORT"):  # developer check of the real window (localhost only)
             webview.settings["REMOTE_DEBUGGING_PORT"] = int(os.environ["MNEMA_DEBUG_PORT"])
         kw = {"gui": "qt", "func": self.qt_tray} if OS.IS_LINUX else {}
         webview.start(private_mode=False, storage_path=str(HOME / "webview"), **kw)
+        try:
+            updater.on_exit()
+        except Exception:  # updating is optional; a failed helper must not break normal exit
+            pass
 
 
 def _crash_log() -> None:

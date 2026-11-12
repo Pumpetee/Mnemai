@@ -439,6 +439,28 @@ def consider(
     return it
 
 
+def _ask_paused(vault: Vault, chat_id: str, settings: dict) -> bool:
+    """One question about memory per conversation per cooldown, not one per little fact: the owner is not to be
+    asked every minute. While paused, what would have been asked is decided silently — personal goes into the
+    hidden part, a newer fact replaces the older one — and the feed and History still show it."""
+    minutes = float(settings.get("ask_cooldown_minutes") or 0)
+    if minutes <= 0 or not chat_id:
+        return False
+    from ..chat import engine as CH
+
+    try:
+        at = CH.load_chat(vault, chat_id).get("learn_ask_at")
+    except (KeyError, OSError):
+        return False
+    if not at:
+        return False
+    try:
+        last = dt.datetime.fromisoformat(str(at))
+    except ValueError:
+        return False
+    return (dt.datetime.now() - last).total_seconds() < minutes * 60
+
+
 def learn_episodes(vault: Vault, eps: list, source: str, brain=None) -> dict:
     """Learn right now from fresh episodes. From a conversation in Mnemai (source "mnema_chat", ref "<chat>#<n>") what
     needs the owner is asked in that conversation: one question at a time, shown under the messages."""
@@ -467,10 +489,11 @@ def learn_episodes(vault: Vault, eps: list, source: str, brain=None) -> dict:
         led = Ledger(vault)
         lines = memory_lines(vault)
         chat_id = eps[-1].ref.split("#")[0] if source == "mnema_chat" and "#" in eps[-1].ref else ""
+        ask_ready = bool(chat_id) and not _ask_paused(vault, chat_id, settings)
         asked = None
         for c in cands:
             c["source"] = source
-            it = consider(vault, led, c, settings, report, lines, can_ask=bool(chat_id) and asked is None)
+            it = consider(vault, led, c, settings, report, lines, can_ask=ask_ready and asked is None)
             if it and it.get("state") == "asking" and asked is None:
                 asked = it
         led.save()
@@ -499,6 +522,7 @@ def _ask_in_chat(vault: Vault, chat_id: str, it: dict) -> None:
     def put(c):
         if not c.get("learn_ask"):
             c["learn_ask"] = q
+            c["learn_ask_at"] = dt.datetime.now().isoformat(timespec="seconds")
 
     try:
         CH.modify_chat(vault, chat_id, put)
@@ -621,6 +645,8 @@ def review(vault: Vault, item_id: str, action: str, text: str = "", where: str =
     if not it:
         raise KeyError("нет такого пункта")
     st = it["state"]
+    if action == "keep" and st in IN_MEMORY:
+        return it  # the same question answered again from an old card: the fact is already in memory
     if action in ("keep", "edit"):
         if action == "edit":
             it["prev_text"] = it["text"]
@@ -665,8 +691,11 @@ def review(vault: Vault, item_id: str, action: str, text: str = "", where: str =
 
 
 def review_all(vault: Vault, action: str, state: str = "pending") -> int:
+    """Accept everything that waits. `keep` also takes the questions still standing in conversations: one answer
+    for all instead of one per little fact."""
     led = Ledger(vault)
-    ids = [i["id"] for i in led.items if i["state"] == state]
+    states = {state} | ({"asking"} if action == "keep" else set())
+    ids = [i["id"] for i in led.items if i["state"] in states]
     for i in ids:
         review(vault, i, action)
     return len(ids)

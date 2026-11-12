@@ -107,6 +107,7 @@ DEFAULT = {
     # himself; then it is never changed for him.
     "brain": {"kind": "auto", "model": "", "endpoint": "", "api_key": "", "provider": "anthropic", "chosen": False},
     "auto_confidence": 0.8,  # mixed mode: write silently at or above this
+    "ask_cooldown_minutes": 60,  # one question about memory per conversation in this many minutes, not one per fact
     "sensitive_tags": ["money", "health", "private"],
     "never": [],  # "don't learn things like this": phrases and topics
     "forget_after_days": 60,  # learned once, never repeated, never confirmed → offer to forget

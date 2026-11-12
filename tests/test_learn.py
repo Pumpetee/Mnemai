@@ -416,6 +416,61 @@ class TestPolicy(Base):
         engine.review(self.v, q["item"], "keep")
         self.assertIn("Доход 300 тысяч", self.v.read_raw("70 Memory/Cards/Деньги.md"))
 
+    def test_no_second_memory_question_within_cooldown(self):
+        """Three facts in a row are not three questions: after one, the next ones are decided silently."""
+        from mnema.chat import engine as CH
+
+        cid, q = self.ask_in_chat("моя зарплата")
+        self.assertEqual(q["kind"], "personal")
+        table = {
+            **self.TABLE,
+            "врач": [
+                {
+                    "text": "По совету врача спит восемь часов",
+                    "kind": "preference",
+                    "where": "profile:Сон",
+                    "confidence": 0.9,
+                }
+            ],
+        }
+        engine.learn_episodes(
+            self.v,
+            [Episode("mnema_chat", f"{cid}#2", "", "врач сказал спать восемь часов")],
+            "mnema_chat",
+            brain=FakeBrain(table),
+        )
+        self.assertEqual(CH.load_chat(self.v, cid)["learn_ask"]["item"], q["item"])  # the same question stands
+        health = [i for i in Ledger(self.v).items if "восемь часов" in i["text"]]
+        self.assertEqual(health[0]["state"], "written")  # not asked again: written, undoable in History
+
+    def test_one_answer_takes_all_standing_questions(self):
+        from mnema.chat import engine as CH
+
+        cid, q = self.ask_in_chat("моя зарплата")
+        self.assertEqual(q["kind"], "personal")
+        cid2 = "def456def456"
+        CH.save_chat(self.v, {"id": cid2, "title": "t2", "messages": [{"role": "user", "text": "врач"}], "updated": ""})
+        table = {
+            **self.TABLE,
+            "врач": [
+                {
+                    "text": "По совету врача спит восемь часов",
+                    "kind": "preference",
+                    "where": "profile:Сон",
+                    "confidence": 0.9,
+                }
+            ],
+        }
+        engine.learn_episodes(
+            self.v, [Episode("mnema_chat", f"{cid2}#1", "", "врач сказал")], "mnema_chat", brain=FakeBrain(table)
+        )
+        self.assertTrue(CH.load_chat(self.v, cid2).get("learn_ask"))
+        self.assertEqual(engine.review_all(self.v, "keep"), 2)  # both standing questions, one answer
+        self.assertIn("Доход 300 тысяч", self.v.read_raw("70 Memory/Cards/Деньги.md"))
+        self.assertIn("восемь часов", self.v.read_raw("70 Memory/Profile.md"))
+        engine.review(self.v, q["item"], "keep")  # an old card answered again must not double the fact
+        self.assertEqual(self.v.read_raw("70 Memory/Cards/Деньги.md").count("Доход 300 тысяч"), 1)
+
     def test_in_chat_contradiction_keep_old(self):
         cid, q = self.ask_in_chat("переехал в Москва")
         self.assertEqual(q["kind"], "conflict")

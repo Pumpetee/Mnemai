@@ -121,6 +121,21 @@ def post(vault: Vault, path: str, b: dict):
 
         ev = resolve_stale(vault, str(b["id"]), str(b.get("action", "")), str(b.get("text", "")))
         return 200, {"item": {"id": b["id"], "state": "resolved", "event": ev.get("id", "")}}
+    if path == "/api/learn/review" and str(b.get("action", "")) == "keep_all":
+        # «Запомнить всё»: this fact and every other question about memory that still waits — one answer for all
+        if b.get("chat"):
+            from .chat import engine as CH
+
+            try:
+                CH.modify_chat(vault, str(b["chat"]), lambda c: c.pop("learn_ask", None))
+            except KeyError:
+                pass
+        if b.get("id"):
+            try:
+                engine.review(vault, str(b["id"]), "keep")
+            except KeyError:
+                pass
+        return 200, {"done": engine.review_all(vault, "keep")}
     if path == "/api/learn/review":
         if b.get("chat"):  # answered under a conversation: the question goes away there
             from .chat import engine as CH

@@ -1456,7 +1456,7 @@ function learnAskHtml(q) {
         ]
       : [
           ["keep", tr("Запомнить")],
-          ["edit", tr("Поправить")],
+          ["keep_all", tr("Запомнить всё")],
           ["reject", tr("Не надо")],
         ];
   return `<div class="ask live lask" data-lask="${esc(q.item)}">
@@ -1475,8 +1475,12 @@ async function answerLearnAsk(card, action) {
     body.text = t;
   }
   try {
-    await post("/api/learn/review", body);
+    const r = await post("/api/learn/review", body);
     card.remove();
+    if (action === "keep_all") {
+      toast(`${tr("Запомнила")}: ${r.done || 1}`, 4500);
+      return;
+    }
     toast(
       {
         keep: tr("Запомнила"),

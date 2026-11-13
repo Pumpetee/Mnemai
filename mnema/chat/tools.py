@@ -473,11 +473,56 @@ APP_ALIASES = {
     "файрфокс": ["firefox", "firefox-esr"],
     "telegram": ["telegram-desktop", "telegram"],
     "телеграм": ["telegram-desktop", "telegram"],
+    "телега": ["telegram-desktop", "telegram"],
+    "телегу": ["telegram-desktop", "telegram"],
+    "телеге": ["telegram-desktop", "telegram"],
+    "тг": ["telegram-desktop", "telegram"],
+    "tg": ["telegram-desktop", "telegram"],
     "code": ["code", "codium"],
     "vscode": ["code", "codium"],
     "terminal": ["konsole", "gnome-terminal", "xterm"],
     "терминал": ["konsole", "gnome-terminal", "xterm"],
 }
+
+
+def _desktop_dirs() -> list[Path]:
+    home = Path.home()
+    return [
+        home / ".local" / "share" / "applications",
+        home / ".local" / "share" / "flatpak" / "exports" / "share" / "applications",
+        Path("/var/lib/flatpak/exports/share/applications"),
+        Path("/usr/local/share/applications"),
+        Path("/usr/share/applications"),
+    ]
+
+
+def _desktop_match(target: str) -> tuple[str, list[str]] | None:
+    """A .desktop entry for an app that is not on PATH (Telegram from Downloads, flatpaks, …)."""
+    want = target.strip().lower()
+    if not want:
+        return None
+    for d in _desktop_dirs():
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.desktop")):
+            try:
+                raw = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if want not in f.name.lower() and want not in raw.lower():
+                continue
+            exec_line = next((ln.split("=", 1)[1].strip() for ln in raw.splitlines() if ln.startswith("Exec=")), "")
+            if not exec_line:
+                continue
+            import shlex
+
+            args = [a for a in shlex.split(exec_line) if not a.startswith("%")]
+            if args:
+                name = next(
+                    (ln.split("=", 1)[1].strip() for ln in raw.splitlines() if ln.startswith("Name=")), f.stem
+                )
+                return name, args
+    return None
 
 
 def _open_app(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
@@ -527,6 +572,23 @@ def _open_app(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str
     candidates = APP_ALIASES.get(name.lower(), [name])
     exe = next((shutil.which(c) for c in candidates if shutil.which(c)), None)
     if not exe:
+        entry = _desktop_match(name) or next((_desktop_match(c) for c in candidates if _desktop_match(c)), None)
+        if entry:
+            shown, args = entry
+            try:
+                if os.name == "nt":
+                    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    subprocess.Popen(
+                        args,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        stdin=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+            except OSError as e:
+                raise Refused(f"не получилось открыть «{name}»: {e}") from e
+            return f"Открыла программу: {shown}", f"Открыла: {shown}", ""
         installed = [c for c in ("google-chrome", "chromium", "firefox", "code", "telegram-desktop") if shutil.which(c)]
         raise Refused(
             f"программа «{name}» не найдена. Установлены: {', '.join(installed) or 'не вижу известных программ'}"

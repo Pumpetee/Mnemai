@@ -27,6 +27,8 @@ class Intents(unittest.TestCase):
     def test_commands_are_recognised(self):
         self.assertEqual(IN.fast_action(self.v, "Открой терминал")["name"], "terminal")
         self.assertEqual(IN.fast_action(self.v, "запусти firefox")["name"], "firefox")
+        self.assertEqual(IN.fast_action(self.v, "открой телегу")["name"], "telegram")
+        self.assertEqual(IN.fast_action(self.v, "открой фаерфокс")["name"], "firefox")
         self.assertEqual(IN.fast_action(self.v, "Открой мне хром, пожалуйста")["name"], "chrome")
         self.assertEqual(IN.fast_action(self.v, "open https://example.com")["name"], "https://example.com")
         self.assertEqual(IN.fast_action(self.v, "прочитай файл ~/x.md")["tool"], "read_file")

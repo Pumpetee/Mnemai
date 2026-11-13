@@ -66,6 +66,12 @@ NAMES = {
     "мозила": "firefox",
     "телеграм": "telegram",
     "телеграмм": "telegram",
+    "телега": "telegram",
+    "телегу": "telegram",
+    "телеге": "telegram",
+    "телеги": "telegram",
+    "тг": "telegram",
+    "tg": "telegram",
     "telegram": "telegram",
     "код": "code",
     "vscode": "code",
@@ -126,9 +132,30 @@ def fast_action(vault: Vault, text: str) -> dict | None:
             return {"tool": "open_app", "name": NAMES[low], "label": NAMES[low]}
         if low in TL.APP_ALIASES:
             return {"tool": "open_app", "name": low, "label": low}
+        stems = (
+            ("телег", "telegram"),
+            ("telegram", "telegram"),
+            ("телеграм", "telegram"),
+            ("хром", "chrome"),
+            ("chrome", "chrome"),
+            ("фаерфокс", "firefox"),
+            ("файрфокс", "firefox"),
+            ("firefox", "firefox"),
+            ("мозил", "firefox"),
+            ("консол", "terminal"),
+            ("терминал", "terminal"),
+            ("konsole", "terminal"),
+            ("стим", "steam"),
+            ("steam", "steam"),
+        )
+        for begin, canonical in stems:
+            if low.startswith(begin):
+                return {"tool": "open_app", "name": canonical, "label": canonical}
         path = _path(vault, target)
         if Path(path).exists():
             return {"tool": "open_app", "name": path, "label": "файл"}
+        if " " not in target and len(target) > 2:  # «открой телегу» — a quick answer, not a 40 s model call
+            return {"tool": "open_app", "name": target, "label": target}
 
     m = READ.match(raw)
     if m:

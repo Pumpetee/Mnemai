@@ -1,7 +1,6 @@
 """DeepSeek Harness as the chat brain: offered in the model list, streams its answer, tools shown."""
 
 import os
-import shutil
 import sys
 import tempfile
 import unittest
@@ -68,7 +67,11 @@ class HarnessProvider(unittest.TestCase):
         target = self.v.root / "00 Inbox" / "harness-note.md"
         target.write_text("слово: ласточка", encoding="utf-8")
         r = CH.send(
-            self.v, f"Прочитай файл {target} и назови слово. Ответь одним словом.", model="harness:deepseek-flash", sync=True, learn=False
+            self.v,
+            f"Прочитай файл {target} и назови слово. Ответь одним словом.",
+            model="harness:deepseek-flash",
+            sync=True,
+            learn=False,
         )
         c = CH.load_chat(self.v, r["chat"])
         actions = [m for m in c["messages"] if m.get("kind") == "action"]

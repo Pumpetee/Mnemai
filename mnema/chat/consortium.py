@@ -554,13 +554,12 @@ def run(
                         "speaker": me,
                         "round": r + 1,
                     }
-                    CH.modify_chat(
-                        vault, cid, lambda c: (c["messages"].append(act), c.update(updated=CH._now()))
-                    )
+                    CH.modify_chat(vault, cid, lambda c: (c["messages"].append(act), c.update(updated=CH._now())))
                 msgs = msgs + [
                     {
                         "role": "assistant",
-                        "text": head_text + f"\n[action: {call['tool']} {call.get('path') or call.get('command') or ''}]",
+                        "text": head_text
+                        + f"\n[action: {call['tool']} {call.get('path') or call.get('command') or ''}]",
                     },
                     {"role": "user", "text": "[Результат действия от Mnemai]\n" + result},
                 ]

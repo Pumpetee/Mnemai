@@ -55,7 +55,9 @@ def http(code: int, body: str, who: str, model: str = "") -> str:
     msg = _provider_message(body).lower()
     quota = any(w in msg for w in ("quota", "billing", "credit", "insufficient", "balance", "payment"))
     blocked = bool(
-        re.search(r"error code:?\s*10\d\d|access denied|security policy|cloudflare|just a moment|cf-error", body.lower())
+        re.search(
+            r"error code:?\s*10\d\d|access denied|security policy|cloudflare|just a moment|cf-error", body.lower()
+        )
     )
     if blocked and code in (403, 429, 503):
         # a wrong key looks different: this is the network edge refusing the request itself, so re-issuing the key

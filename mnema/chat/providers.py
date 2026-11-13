@@ -208,7 +208,9 @@ INSTALL_RE = re.compile(
     r")",
     re.I,
 )
-DANGER_RE = re.compile(r"\brm\s+-rf?\s+/(?:\s|$)|\bmkfs|\bdd\b[^\n]*of=/dev/|\b(?:shutdown|reboot|poweroff|init\s+0)\b", re.I)
+DANGER_RE = re.compile(
+    r"\brm\s+-rf?\s+/(?:\s|$)|\bmkfs|\bdd\b[^\n]*of=/dev/|\b(?:shutdown|reboot|poweroff|init\s+0)\b", re.I
+)
 
 
 def harness_forbidden(command: str, allowed: bool = False) -> bool:
@@ -216,7 +218,6 @@ def harness_forbidden(command: str, allowed: bool = False) -> bool:
     if allowed or not command:
         return False
     return bool(INSTALL_RE.search(command) or DANGER_RE.search(command))
-
 
 
 def _vid(vault: Vault) -> str:
@@ -784,6 +785,7 @@ def _flatten(system: str, messages: list[dict]) -> str:
 
 # ---------------------------------------------------------------- DeepSeek Harness as the chat brain
 
+
 def dsh_exe() -> str | None:
     """The DeepSeek Harness launcher (installed by npx or on PATH)."""
     exe = shutil.which("dsh")
@@ -931,7 +933,9 @@ def _stream_harness(
         if proc.poll() is None:
             _kill_tree(proc)
     if killed["timeout"]:
-        raise RuntimeError("DeepSeek Harness не ответил за 15 минут — задача остановлена. Попробуй разбить её на части.")
+        raise RuntimeError(
+            "DeepSeek Harness не ответил за 15 минут — задача остановлена. Попробуй разбить её на части."
+        )
     if proc.returncode not in (0, None) and not got_answer:
         raise RuntimeError("DeepSeek Harness: " + (" ".join(err[-4:])[:400] or "ошибка запуска"))
 

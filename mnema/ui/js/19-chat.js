@@ -1381,9 +1381,10 @@ function askAnswer(card, text) {
   const draft = $("#inp").value.trim();
   $("#inp").value = text;
   const p = sendMsg();
-  if (draft && p && p.finally) p.finally(() => {
-    if (!$("#inp").value.trim()) $("#inp").value = draft;
-  });
+  if (draft && p && p.finally)
+    p.finally(() => {
+      if (!$("#inp").value.trim()) $("#inp").value = draft;
+    });
 }
 function markAsk(card, text) {
   const hit = $$(".askopt", card).find((b) => b.dataset.ans === text);
@@ -1494,7 +1495,10 @@ function learnAskHtml(q) {
 }
 function learnAsksHtml(c) {
   const qs = c && c.learn_asks && c.learn_asks.length ? c.learn_asks : c && c.learn_ask ? [c.learn_ask] : [];
-  return qs.slice(0, 3).map((q) => learnAskHtml(q)).join("");
+  return qs
+    .slice(0, 3)
+    .map((q) => learnAskHtml(q))
+    .join("");
 }
 async function answerLearnAsk(card, action) {
   const body = { id: card.dataset.lask, action, chat: CHAT.id };

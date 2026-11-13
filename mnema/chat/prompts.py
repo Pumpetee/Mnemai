@@ -216,7 +216,9 @@ def similar_before(vault: Vault, text: str, chat_id: str, msg_index: int) -> str
             if m.get("role") != "user" or (c["id"] == chat_id and i >= msg_index):
                 continue
             answered = any(
-                later.get("role") == "assistant" and later.get("kind") not in ("prompt_offer", "self_ask") and later.get("text")
+                later.get("role") == "assistant"
+                and later.get("kind") not in ("prompt_offer", "self_ask")
+                and later.get("text")
                 for later in msgs[i + 1 :]
             )
             if not answered:

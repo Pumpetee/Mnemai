@@ -157,9 +157,7 @@ def _fix_meta(vault: Vault, c: dict) -> dict | None:
         return None  # «Статус: active» alone says nothing about where the status belongs
     if GOAL_MARK.match(text) and where == "decisions":
         projects = [
-            n
-            for n in vault.by_scope("projects")
-            if str(n.meta.get("status", "active")) in ("active", "paused")
+            n for n in vault.by_scope("projects") if str(n.meta.get("status", "active")) in ("active", "paused")
         ]
         named = [n for n in projects if n.title.lower() in text.lower()]
         target = named[0] if len(named) == 1 else (projects[0] if not named and len(projects) == 1 else None)

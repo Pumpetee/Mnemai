@@ -802,9 +802,7 @@ def _offer_after(
         except KeyError:
             return
         msgs = chat.get("messages") or []
-        if any(
-            m.get("kind") == "prompt_offer" and not (m.get("offer") or {}).get("choice") for m in msgs[-4:]
-        ):
+        if any(m.get("kind") == "prompt_offer" and not (m.get("offer") or {}).get("choice") for m in msgs[-4:]):
             return  # one unanswered offer is enough
         msg = _offer_msg(text, before, model, web, terms)
         modify_chat(vault, cid, lambda c: (c["messages"].append(msg), c.update(updated=_now())))

@@ -93,7 +93,9 @@ class TestConsortium(unittest.TestCase):
         self.assertIn("Ты подключён через", self.talk.systems[0])
         self.assertIn("Действия на компьютере", self.talk.systems[0])  # the speaker is told about its tools
         # the second pass saw the file content and answered
-        self.assertTrue(any("Файл прочитан" in (m.get("text") or "") for m in c["messages"] if m["role"] == "assistant"))
+        self.assertTrue(
+            any("Файл прочитан" in (m.get("text") or "") for m in c["messages"] if m["role"] == "assistant")
+        )
 
     def test_memory_rules_per_participant(self):
         lock_cloud(self.v)

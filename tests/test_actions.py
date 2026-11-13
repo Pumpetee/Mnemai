@@ -204,7 +204,6 @@ class ActionsTest(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertNotIn("Действия на компьютере", s.seen[0][0])
 
-
     def test_prompt_tells_the_model_about_the_terminal_only_when_it_is_on(self):
         v = _vault(self.work)
         on = Script("Готово.")

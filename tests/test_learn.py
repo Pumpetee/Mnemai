@@ -650,11 +650,7 @@ class TestPolicy(Base):
             self.v, {"id": cid, "title": "t", "messages": [{"role": "user", "text": "статус проекта"}], "updated": ""}
         )
         brain = FakeBrain(
-            {
-                "статус": [
-                    {"text": "Статус: active", "kind": "project", "where": "project:Сайт", "confidence": 0.9}
-                ]
-            }
+            {"статус": [{"text": "Статус: active", "kind": "project", "where": "project:Сайт", "confidence": 0.9}]}
         )
         engine.learn_episodes(
             self.v, [Episode("mnema_chat", f"{cid}#1", "", "статус проекта")], "mnema_chat", brain=brain

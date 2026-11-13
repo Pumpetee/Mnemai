@@ -260,7 +260,9 @@ def resolve(vault: Vault, path: str) -> Path:
             if root == vault.root.resolve() and rel and rel[0].startswith("."):
                 raise Refused("служебная папка памяти закрыта")
             return p
-    raise Refused("эта папка не открыта для действий. Добавить её можно в Настройки → Программа → «Действия на компьютере»")
+    raise Refused(
+        "эта папка не открыта для действий. Добавить её можно в Настройки → Программа → «Действия на компьютере»"
+    )
 
 
 def in_vault(vault: Vault, p: Path) -> str | None:
@@ -495,7 +497,7 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
         text += "\n(команда ничего не вывела)"
     # the owner sees a short result right in the conversation, the model gets the whole (bounded) output
     shown = (out.strip() or err.strip()).splitlines()[:3]
-    snippet = (" · ".join(x.strip() for x in shown)[:300] if shown else ("код " + str(code)))
+    snippet = " · ".join(x.strip() for x in shown)[:300] if shown else ("код " + str(code))
     line = f"Выполнила команду: {command[:120]} → {snippet}"
     return text, line, str(work)
 
@@ -548,9 +550,7 @@ def _win_app_path(name: str) -> str | None:
     for exe in WIN_APPS.get(name, [name, f"{name}.exe"]):
         for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
             try:
-                with winreg.OpenKey(
-                    root, "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\" + exe
-                ) as key:
+                with winreg.OpenKey(root, "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\" + exe) as key:
                     path, _ = winreg.QueryValueEx(key, "")
                     if path and Path(path).exists():
                         return path
@@ -608,9 +608,7 @@ def _desktop_match(target: str) -> tuple[str, list[str]] | None:
 
             args = [a for a in shlex.split(exec_line) if not a.startswith("%")]
             if args:
-                name = next(
-                    (ln.split("=", 1)[1].strip() for ln in raw.splitlines() if ln.startswith("Name=")), f.stem
-                )
+                name = next((ln.split("=", 1)[1].strip() for ln in raw.splitlines() if ln.startswith("Name=")), f.stem)
                 return name, args
     return None
 
@@ -705,7 +703,11 @@ def _open_app(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str
             subprocess.Popen(["open", "-a", exe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             subprocess.Popen(
-                [exe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True
+                [exe],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
             )
     except OSError as e:
         raise Refused(f"не получилось открыть «{name}»: {e}") from e
@@ -734,7 +736,9 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
         return _run_command(vault, call, client)
     if t == "open_app":
         if not pc_enabled(vault):
-            raise Refused("доступ к компьютеру выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»")
+            raise Refused(
+                "доступ к компьютеру выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»"
+            )
         return _open_app(vault, call, client)
     p = resolve(vault, call.get("path", ""))
     if t == "list_files":

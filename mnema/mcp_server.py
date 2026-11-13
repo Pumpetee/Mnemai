@@ -273,7 +273,9 @@ class Server:
         from .agent import profile as P
 
         if not P.load(self.vault).get("pc_access", True):
-            raise PermissionDenied("доступ к компьютеру выключен владельцем: Настройки → Программа → «Действия на компьютере»")
+            raise PermissionDenied(
+                "доступ к компьютеру выключен владельцем: Настройки → Программа → «Действия на компьютере»"
+            )
         from .chat import tools as TL
         from .journal import log_event
 
@@ -302,11 +304,14 @@ class Server:
             if not p.is_dir():
                 raise ValueError("такой папки нет")
             items = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))[:300]
-            return "\n".join(
-                f"{'[папка] ' if x.is_dir() else ''}{x.name}{'' if x.is_dir() else f' · {x.stat().st_size} байт'}"
-                for x in items
-                if not x.name.startswith(".")
-            ) or "(пусто)"
+            return (
+                "\n".join(
+                    f"{'[папка] ' if x.is_dir() else ''}{x.name}{'' if x.is_dir() else f' · {x.stat().st_size} байт'}"
+                    for x in items
+                    if not x.name.startswith(".")
+                )
+                or "(пусто)"
+            )
         if name == "pc_write_file":
             p = Path(str(args.get("path") or "")).expanduser()
             if not p.parent.is_dir():

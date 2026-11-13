@@ -146,8 +146,10 @@ def post(vault: Vault, path: str, b: dict):
 
             def drop_ask(c):
                 qs = [q for q in (c.get("learn_asks") or []) if q.get("item") != b.get("id")]
-                if c.get("learn_ask") and c["learn_ask"].get("item") != b.get("id") and all(
-                    q.get("item") != c["learn_ask"].get("item") for q in qs
+                if (
+                    c.get("learn_ask")
+                    and c["learn_ask"].get("item") != b.get("id")
+                    and all(q.get("item") != c["learn_ask"].get("item") for q in qs)
                 ):
                     qs.insert(0, c["learn_ask"])
                 c["learn_asks"] = qs

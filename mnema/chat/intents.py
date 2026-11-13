@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-import shutil
 from pathlib import Path
 
 from ..vault import Vault
@@ -20,8 +19,12 @@ OPEN = re.compile(
     r"^\s*(?:пожалуйста[,\s]+)?(?:открой(?:те)?|запусти(?:те)?|открывай(?:те)?|open|launch)\s+(?:мне\s+)?(.+?)\s*[.!?]*$",
     re.I,
 )
-READ = re.compile(r"^\s*(?:прочитай|прочти|покажи содержимое|покажи файл|что в файле)\s+(?:файл\s+)?(.+?)\s*[.!?]*$", re.I)
-LIST = re.compile(r"^\s*(?:что\s+(?:в|лежит в)\s+(?:папке\s+)?|покажи папку|список файлов(?: в)?)\s*(.+?)\s*[.!?]*$", re.I)
+READ = re.compile(
+    r"^\s*(?:прочитай|прочти|покажи содержимое|покажи файл|что в файле)\s+(?:файл\s+)?(.+?)\s*[.!?]*$", re.I
+)
+LIST = re.compile(
+    r"^\s*(?:что\s+(?:в|лежит в)\s+(?:папке\s+)?|покажи папку|список файлов(?: в)?)\s*(.+?)\s*[.!?]*$", re.I
+)
 FIND = re.compile(r"^\s*(?:найди|поищи)\s+(.+?)\s+(?:в файлах|по файлам|в документах)\s*[.!?]*$", re.I)
 COMMAND = re.compile(
     r"^\s*(?:(?:выполни|выполнить|команда|запусти(?:те)?\s+(?:в\s+терминале\s+)?(?:команду\s+)?)\s*[:：]?\s*|"
@@ -122,7 +125,7 @@ def fast_action(vault: Vault, text: str) -> dict | None:
         low = target.lower()
         for prefix in ("файл ", "файла ", "папку ", "папка ", "программу ", "программа ", "ссылку ", "ссылку на "):
             if low.startswith(prefix):
-                target, low = _target(target[len(prefix):]), low[len(prefix):]
+                target, low = _target(target[len(prefix) :]), low[len(prefix) :]
                 break
         if low.startswith(("http://", "https://")):
             return {"tool": "open_app", "name": target, "label": "ссылка"}
@@ -182,7 +185,14 @@ def fast_action(vault: Vault, text: str) -> dict | None:
     if m:
         kind = m.group(1).lower()
         path = _path(vault, _target(m.group(2)))
-        ext = {"pdf": ".pdf", "pdf-файл": ".pdf", "word": ".docx", "docx": ".docx", "excel": ".xlsx", "xlsx": ".xlsx"}.get(kind)
+        ext = {
+            "pdf": ".pdf",
+            "pdf-файл": ".pdf",
+            "word": ".docx",
+            "docx": ".docx",
+            "excel": ".xlsx",
+            "xlsx": ".xlsx",
+        }.get(kind)
         if ext and not path.lower().endswith(ext):
             path += ext
         return {"tool": "make_document", "path": path, "body": m.group(3).strip(), "label": "документ"}
@@ -196,9 +206,15 @@ def fast_action(vault: Vault, text: str) -> dict | None:
         command = m.group(1).strip()
         if command:
             return {"tool": "run_command", "command": command, "label": "команда"}
-    if re.match(r"^\s*(?:который час|сколько времени|какое сегодня число|какая сегодня дата|дата и время)\s*[?.!]*$", raw, re.I):
+    if re.match(
+        r"^\s*(?:который час|сколько времени|какое сегодня число|какая сегодня дата|дата и время)\s*[?.!]*$", raw, re.I
+    ):
         return {"tool": "time", "label": "время"}
-    if re.match(r"^\s*(?:сколько (?:у меня )?(?:памяти|озу|ram|cpu|ядер|процессоров|места на диске)|какой у меня (?:процессор|компьютер)|система|о компьютере)\s*[?.!]*$", raw, re.I):
+    if re.match(
+        r"^\s*(?:сколько (?:у меня )?(?:памяти|озу|ram|cpu|ядер|процессоров|места на диске)|какой у меня (?:процессор|компьютер)|система|о компьютере)\s*[?.!]*$",
+        raw,
+        re.I,
+    ):
         return {"tool": "system", "label": "система"}
     return None
 
@@ -253,7 +269,9 @@ def _run(vault: Vault, tool: str, args: dict) -> tuple[str, str]:
             return "В памяти ничего не нашла.", ""
         return "\n".join(f"{rel}: {line.strip()}" for rel, line in hits[:12])[:1200], ""
     if tool == "write_file":
-        _, line, _ = MC.run_action(vault, {"tool": "write_file", "path": args["path"], "body": args.get("body", "")}, "owner")
+        _, line, _ = MC.run_action(
+            vault, {"tool": "write_file", "path": args["path"], "body": args.get("body", "")}, "owner"
+        )
         return line + ".", ""
     if tool == "make_document":
         _, line, _ = MC.run_action(
@@ -289,7 +307,16 @@ def _memory_on(vault: Vault) -> bool:
 def answer(vault: Vault, call: dict) -> str:
     """Do the action and say one short line — the way the owner asked."""
     tool = call["tool"]
-    if tool in ("read_file", "list_files", "find_files", "remember", "write_file", "make_document", "memory_find", "memory_show"):
+    if tool in (
+        "read_file",
+        "list_files",
+        "find_files",
+        "remember",
+        "write_file",
+        "make_document",
+        "memory_find",
+        "memory_show",
+    ):
         if not _is_tools_ok(vault, tool):
             return "Эти действия сейчас выключены в настройках."
     if tool in ("run_command", "open_app") and not _is_tools_ok(vault, tool):

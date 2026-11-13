@@ -3,14 +3,12 @@
 import os
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
 
-from mnema.agent import profile as P  # noqa: E402
 from mnema.chat import engine as CH, intents as IN, providers as PR  # noqa: E402
 from mnema.memory import init_vault  # noqa: E402
 from mnema.vault import Vault  # noqa: E402

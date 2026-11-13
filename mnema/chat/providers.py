@@ -157,6 +157,32 @@ DSH_PATCH = """# Written by Mnemai: the DeepSeek Harness profile for the chat br
     reasoningEffort: high
 """
 
+# The harness agent is autonomous: it once went to install a browser when asked to open one. Two hard rules exist
+# at two levels: the task text starts with the owner's limits, and the event stream is checked before the result.
+HARNESS_HARD = (
+    "[ПРАВИЛА ВЛАДЕЛЬЦА — ВЫСШИЙ ПРИОРИТЕТ] Ничего не устанавливать, не скачивать, не обновлять и не менять пакеты "
+    "без прямой просьбы владельца. Не использовать sudo. Если запрошенной программы нет — проверить одной командой, "
+    "честно сказать и предложить варианты, но не подменять её другой и не устанавливать."
+)
+INSTALL_RE = re.compile(
+    r"\b(?:"
+    r"flatpak\s+(?:install|remote-add|update)|dnf\s+(?:install|upgrade|update)|apt(?:-get)?\s+(?:install|upgrade)|"
+    r"pacman\s+-S|zypper\s+(?:in|install|update)|pip3?\s+install|npm\s+(?:install|i)\b|yarn\s+add|"
+    r"snap\s+install|brew\s+(?:install|upgrade)|rpm\s+-i|dpkg\s+-i|"
+    r"curl\b[^\n|]*\|\s*(?:ba)?sh|wget\b[^\n|]*\|\s*(?:ba)?sh|sudo\b"
+    r")",
+    re.I,
+)
+DANGER_RE = re.compile(r"\brm\s+-rf?\s+/(?:\s|$)|\bmkfs|\bdd\b[^\n]*of=/dev/|\b(?:shutdown|reboot|poweroff|init\s+0)\b", re.I)
+
+
+def harness_forbidden(command: str, allowed: bool = False) -> bool:
+    """An install/update or a system-destructive command the owner did not ask for."""
+    if allowed or not command:
+        return False
+    return bool(INSTALL_RE.search(command) or DANGER_RE.search(command))
+
+
 
 def _vid(vault: Vault) -> str:
     return secrets_store.vault_id(vault)
@@ -763,7 +789,11 @@ def _stream_harness(
             "DeepSeek Harness не найден: нужен dsh (npx @deepseek-ai/dsh). Выбери другую модель слева вверху."
         )
     patch = harness_patch()
-    task = _flatten(system, messages)
+    last_user = str(messages[-1].get("text") if messages else "")
+    allowed = bool(re.search(r"\b(?:установ|постав|скачай|обнови|install|upgrade)\w*", last_user, re.I)) and not bool(
+        re.search(r"\bне\s+(?:установ|постав|скачивай|обновляй)", last_user, re.I)
+    )
+    task = HARNESS_HARD + "\n\n" + _flatten(system, messages)
     cmd = [
         exe,
         "headless",
@@ -838,6 +868,14 @@ def _stream_harness(
             elif typ == "tool_call":
                 inp = ev.get("input") or {}
                 desc = inp.get("description") or inp.get("command") or inp.get("path") or inp.get("query") or ""
+                command = " ".join(str(inp.get("command") or inp.get("cmd") or "") for _ in [0]).strip()
+                if harness_forbidden(command, allowed):
+                    _kill_tree(proc)
+                    yield (
+                        "\n\n⚠ Остановилась: для установки или системной команды нужно отдельное разрешение владельца. "
+                        "Ничего не установлено и не изменено.\n\n"
+                    )
+                    return
                 yield f"\n\n⚙ `{ev.get('tool') or 'tool'}`: {_short_line(desc)}\n\n"
             elif typ == "tool_result":
                 result = str(ev.get("result") or "").strip()

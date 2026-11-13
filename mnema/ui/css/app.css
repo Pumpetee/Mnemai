@@ -16992,18 +16992,29 @@ body.wlc-on .tour {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin: 4px 0 8px 44px;
+  max-width: 780px;
+  box-sizing: border-box;
+  margin: 4px auto 8px;
+  padding: 0 calc(28px * var(--den));
   font-size: 13px;
   color: var(--ink2);
 }
-.actline span {
-  word-break: break-all;
+.actline > span {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.actline .btn {
+  flex: none;
+  white-space: nowrap;
 }
 .actline.bad {
   color: var(--bad);
-}
-.actline .btn {
-  margin-left: 4px;
 }
 .actfolders {
   display: flex;

@@ -96,6 +96,16 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
 begin
+  { The background updater waits for the owning process to exit. Do not kill
+    other copies, scan for old portable builds, or migrate user settings. }
+  if ExpandConstant('{param:AUTOUPDATE|0}') = '1' then
+  begin
+    if CheckForMutexes('Local\MnemaDesktopApp,Local\MnemaiCliInUse') then
+      Result := 'Mnemai or its MCP helper is still running. The update will be retried later.'
+    else
+      Result := '';
+    Exit;
+  end;
   { where Mnemai runs from, before it is closed — the first builds are found this way too }
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
        '-NoProfile -ExecutionPolicy Bypass -Command "Get-Process Mnemai,Mnema -ErrorAction SilentlyContinue | ForEach-Object { $_.Path } | Out-File -Encoding utf8 ''' + ExpandConstant('{tmp}\running.txt') + '''"',
@@ -114,6 +124,8 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    if ExpandConstant('{param:AUTOUPDATE|0}') = '1' then
+      Exit;
     WizardForm.StatusLabel.Caption := CustomMessage('Looking');
     Exec(ExpandConstant('{app}\mnemai-cli.exe'),
          'upgrade --app-dir "' + ExpandConstant('{app}') + '" --running "' + ExpandConstant('{tmp}\running.txt') +

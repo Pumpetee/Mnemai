@@ -22,16 +22,23 @@ DATA = b"a complete installer"
 DIGEST = hashlib.sha256(DATA).hexdigest()
 
 
+def newer() -> str:
+    """A release one patch above the running version, so a version bump doesn't make every test stale."""
+    major, minor, patch = U.version(U.__version__)
+    return f"{major}.{minor}.{patch + 1}"
+
+
 def official():
-    name = "Mnemai-Setup-2.4.0.exe"
+    tag = newer()
+    name = f"Mnemai-Setup-{tag}.exe"
     asset = {
         "name": name,
         "state": "uploaded",
         "size": len(DATA),
         "digest": "sha256:" + DIGEST,
-        "browser_download_url": f"https://github.com/{U.REPO}/releases/download/v2.4.0/{name}",
+        "browser_download_url": f"https://github.com/{U.REPO}/releases/download/v{tag}/{name}",
     }
-    return {"tag_name": "v2.4.0", "assets": [asset], "draft": False, "prerelease": False}
+    return {"tag_name": "v" + tag, "assets": [asset], "draft": False, "prerelease": False}
 
 
 class UpdaterTest(unittest.TestCase):
@@ -42,8 +49,8 @@ class UpdaterTest(unittest.TestCase):
                 U.version(bad)
 
     def test_selects_official_versioned_asset(self):
-        asset, digest = U.release(official(), "2.3.1")
-        self.assertEqual(asset["name"], "Mnemai-Setup-2.4.0.exe")
+        asset, digest = U.release(official(), U.__version__)
+        self.assertEqual(asset["name"], f"Mnemai-Setup-{newer()}.exe")
         self.assertEqual(digest, DIGEST)
 
     def test_ignores_old_draft_prerelease_missing_and_oversize(self):
@@ -51,8 +58,8 @@ class UpdaterTest(unittest.TestCase):
             data = official()
             data[field] = value
             self.assertIsNone(U.release(data))
-        self.assertIsNone(U.release(official(), "2.4.0"))
-        self.assertIsNone(U.release(official(), "3.0.0"))
+        self.assertIsNone(U.release(official(), newer()))
+        self.assertIsNone(U.release(official(), "99.0.0"))
         for size in (0, -1, U.MAX_INSTALLER + 1):
             data = official()
             data["assets"][0]["size"] = size

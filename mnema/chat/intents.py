@@ -160,11 +160,13 @@ def fast_action(vault: Vault, text: str) -> dict | None:
     m = READ.match(raw)
     if m:
         path = _path(vault, _target(m.group(1)))
-        return {"tool": "read_file", "path": path, "label": "файл"}
+        if Path(path).is_file():  # a real file, not a sentence that starts with «прочитай файл»
+            return {"tool": "read_file", "path": path, "label": "файл"}
     m = LIST.match(raw)
     if m:
         path = _path(vault, _target(m.group(1)))
-        return {"tool": "list_files", "path": path, "label": "папка"}
+        if Path(path).is_dir():
+            return {"tool": "list_files", "path": path, "label": "папка"}
     m = FIND.match(raw)
     if m:
         return {"tool": "find_files", "query": _target(m.group(1)), "label": "поиск"}
@@ -204,6 +206,7 @@ def fast_action(vault: Vault, text: str) -> dict | None:
 def _run(vault: Vault, tool: str, args: dict) -> tuple[str, str]:
     """(what the owner sees, the model-facing line)."""
     from ..memory import PermissionDenied, remember
+    from .. import mcp_server as MC
 
     if tool == "remember":
         if not _memory_on(vault):
@@ -222,7 +225,7 @@ def _run(vault: Vault, tool: str, args: dict) -> tuple[str, str]:
         parts = []
         for name, cmd in commands:
             try:
-                result = TL.run(vault, {"tool": "run_command", "command": cmd, "timeout": 10}, "owner")[0]
+                result = MC.run_action(vault, {"tool": "run_command", "command": cmd, "timeout": 10}, "owner")[0]
             except Exception:
                 continue
             lines = [ln.strip() for ln in result.splitlines() if ln.strip() and not ln.startswith("[")]
@@ -250,14 +253,14 @@ def _run(vault: Vault, tool: str, args: dict) -> tuple[str, str]:
             return "В памяти ничего не нашла.", ""
         return "\n".join(f"{rel}: {line.strip()}" for rel, line in hits[:12])[:1200], ""
     if tool == "write_file":
-        _, line, _ = TL.run(vault, {"tool": "write_file", "path": args["path"], "body": args.get("body", "")}, "owner")
+        _, line, _ = MC.run_action(vault, {"tool": "write_file", "path": args["path"], "body": args.get("body", "")}, "owner")
         return line + ".", ""
     if tool == "make_document":
-        _, line, _ = TL.run(
+        _, line, _ = MC.run_action(
             vault, {"tool": "make_document", "path": args["path"], "body": args.get("body", "")}, "owner"
         )
         return line + ".", ""
-    result, line, _ = TL.run(vault, {"tool": tool, **args}, "owner")
+    result, line, _ = MC.run_action(vault, {"tool": tool, **args}, "owner")
     if tool == "open_app":
         if args.get("label") == "ссылка":
             return "Готово — открыла ссылку.", result

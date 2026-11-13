@@ -145,6 +145,39 @@ class TestMcp(unittest.TestCase):
         self.assertEqual(r[3]["result"]["content"][0]["text"], "привет")
         self.assertIn("pc-note.txt", r[4]["result"]["content"][0]["text"])
 
+    def test_action_tools_over_mcp(self):
+        target = self.dir / "mcp-action-note.md"
+        r = self.session(
+            "claude",
+            [
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "read_file", "arguments": {"path": str(self.dir / "70 Memory" / "Profile.md")}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "write_file", "arguments": {"path": str(target), "body": "из MCP"}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {"name": "list_files", "arguments": {"path": str(self.dir / "70 Memory")}},
+                },
+            ],
+        )
+        names = {t["name"] for t in r[0]["result"]["tools"]}
+        self.assertTrue({"read_file", "write_file", "list_files", "find_files", "run_command", "open_app"} <= names)
+        self.assertIn("Иван", r[1]["result"]["content"][0]["text"])
+        self.assertFalse(r[2]["result"]["isError"])
+        self.assertEqual(target.read_text(encoding="utf-8").strip(), "из MCP")
+        self.assertIn("Profile.md", r[3]["result"]["content"][0]["text"])
+
     def test_pc_tools_respect_the_switch(self):
         P.save(Vault(self.dir), {"pc_access": False})
         r = self.session(

@@ -155,6 +155,38 @@ DSH_PATCH = """# Written by Mnemai: the DeepSeek Harness profile for the chat br
     provider: deepseek-account
     model: deepseek-flash
     reasoningEffort: high
+# Mnemai is the only tool layer: the harness model keeps no tools of its own (no bash, no file tools, no
+# subagents, no web). It answers in text and asks for actions with Mnemai's ```mnema blocks.
+- id: tool-working-directory
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: user-questions
+  disabled: true
 """
 
 # The harness agent is autonomous: it once went to install a browser when asked to open one. Two hard rules exist
@@ -162,9 +194,10 @@ DSH_PATCH = """# Written by Mnemai: the DeepSeek Harness profile for the chat br
 HARNESS_HARD = (
     "[ПРАВИЛА ВЛАДЕЛЬЦА — ВЫСШИЙ ПРИОРИТЕТ] Отвечай очень коротко: одна-две фразы, сразу результат. Никаких разделов "
     "вроде «Что сделал», «Детали», «Варианты», никаких списков и пересказа команд — если владелец не попросил "
-    "подробно. Не отчитывайся о проверках. Ничего не устанавливать, не скачивать, не обновлять и не менять пакеты "
-    "без прямой просьбы владельца. Не использовать sudo. Если запрошенной программы нет — проверить одной командой "
-    "и коротко сказать."
+    "подробно. Не отчитывайся о проверках. Своих инструментов у тебя нет: любое действие — блок ```mnema …``` из "
+    "правил Mnemai (прочитать/записать файл, команда, программа) и остановись. Не говори «у меня нет инструментов». "
+    "Ничего не устанавливать, не скачивать, не обновлять и не менять пакеты без прямой просьбы владельца. "
+    "Не использовать sudo. Если запрошенной программы нет — проверить одной командой и коротко сказать."
 )
 INSTALL_RE = re.compile(
     r"\b(?:"

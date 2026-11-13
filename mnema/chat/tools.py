@@ -58,7 +58,7 @@ MAX_STEPS = 12
 MAX_OUTPUT = 24_000
 MAX_COMMAND_SECONDS = 300
 DEFAULT_COMMAND_SECONDS = 120
-BLOCK_RE = re.compile(r"```mnema[ \t]+(\w+)([^\n]*)\n?(.*?)(?:```|\Z)", re.S)
+BLOCK_RE = re.compile(r"```mnema\s+(\w+)([^\n]*)\n?(.*?)(?:```|\Z)", re.S)
 ARG_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
 
 RULE = """=== Действия на компьютере ===
@@ -172,13 +172,47 @@ def rule(vault: Vault, small: bool = False) -> str:
 # ---------------------------------------------------------------- the block in the answer
 
 
+ALIASES = {
+    "read": "read_file",
+    "list": "list_files",
+    "find": "find_files",
+    "write": "write_file",
+    "edit": "edit_file",
+    "document": "make_document",
+    "pdf": "edit_pdf",
+    "run": "run_command",
+    "cmd": "run_command",
+    "bash": "run_command",
+    "open": "open_app",
+    "launch": "open_app",
+    "remember": "remember",
+}
+POSITIONAL = {
+    "read_file": "path",
+    "list_files": "path",
+    "find_files": "query",
+    "open_app": "name",
+    "run_command": "command",
+}
+
+
 def parse(text: str) -> dict | None:
     """The first action block in a model's answer: {"tool", args…, "body", "start"} or None."""
     m = BLOCK_RE.search(text or "")
-    if not m or m.group(1) not in TOOLS:
+    if not m:
         return None
-    call = {k: v for k, v in ARG_RE.findall(m.group(2))}
-    call.update(tool=m.group(1), body=(m.group(3) or "").rstrip("\n"), start=m.start())
+    raw_tool = m.group(1)
+    tool = ALIASES.get(raw_tool, raw_tool)
+    if tool not in TOOLS:
+        return None
+    rest = m.group(2) or ""
+    call = {k: v for k, v in ARG_RE.findall(rest)}
+    if not call:  # «read "путь"» — the model may pass the only argument without key=value
+        value = rest.strip().strip().strip('"').strip("«»").strip()
+        key = POSITIONAL.get(tool)
+        if value and key:
+            call[key] = value
+    call.update(tool=tool, body=(m.group(3) or "").rstrip("\n"), start=m.start())
     return call
 
 

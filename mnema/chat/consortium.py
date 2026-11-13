@@ -490,12 +490,16 @@ def run(
             head += f", модель {mname or PR.PROVIDERS[pid]['name']}." if mname else "."
             from . import tools as TL
             from ..agent import profile as P
+            from .. import mcp_server as MC
 
-            can_act = TL.enabled(vault) and not P.load(vault).get("tools_ask", False) and pid != "harness"
-            if pid == "harness":
-                head += "\n\n" + CH.HARNESS_NOTE
-            elif can_act:
+            can_act = TL.enabled(vault) and not P.load(vault).get("tools_ask", False)
+            if can_act:
                 head += "\n\n" + TL.rule(vault)
+                if pid == "harness":
+                    head += (
+                        "\n\nСвоих инструментов у тебя нет — только действия Mnemai блоками ```mnema. "
+                        "Не отвечай «у меня нет инструментов»."
+                    )
 
             def build(rule: str, found: str = "") -> str:
                 return (
@@ -537,7 +541,7 @@ def run(
                 g["phase"] = "делаю: " + call["tool"]
                 g["text"] = head_text
                 try:
-                    result, line, _ = TL.run(vault, call, PR.PROVIDERS[pid]["client"])
+                    result, line, _ = MC.run_action(vault, call, PR.PROVIDERS[pid]["client"])
                 except Exception as e:  # a failed action must not kill the speaker
                     result, line = f"Не получилось: {str(e)[:300]}", ""
                 if line:

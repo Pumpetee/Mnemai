@@ -107,6 +107,96 @@ TOOLS = [
 ]
 
 
+ACTION_TOOLS = [
+    {
+        "name": "read_file",
+        "description": "Прочитать файл в памяти или в рабочих папках (PDF, Word, Excel, PowerPoint, сканы — тоже).",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    },
+    {
+        "name": "list_files",
+        "description": "Показать, что лежит в папке памяти или в рабочей папке.",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    },
+    {
+        "name": "find_files",
+        "description": "Найти файлы по словам в памяти и рабочих папках.",
+        "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+    },
+    {
+        "name": "write_file",
+        "description": "Создать или переписать текстовый файл (.md, .txt, .csv, .json, .html).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "body": {"type": "string"}},
+            "required": ["path", "body"],
+        },
+    },
+    {
+        "name": "edit_file",
+        "description": "Заменить кусок в текстовом файле, .docx или .xlsx (блок <<< … === … >>>).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "body": {"type": "string"}},
+            "required": ["path", "body"],
+        },
+    },
+    {
+        "name": "make_document",
+        "description": "Создать PDF, Word или Excel из Markdown-текста.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "body": {"type": "string"}},
+            "required": ["path", "body"],
+        },
+    },
+    {
+        "name": "edit_pdf",
+        "description": "Склеить, вырезать страницы, повернуть или разрезать PDF (do=merge|pages|rotate|split).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "do": {"type": "string"},
+                "path": {"type": "string"},
+                "from": {"type": "string"},
+                "pages": {"type": "string"},
+                "files": {"type": "string"},
+                "angle": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "run_command",
+        "description": "Выполнить команду в терминале компьютера (то же, что pc_run).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string"},
+                "cwd": {"type": "string"},
+                "timeout": {"type": "integer", "minimum": 1, "maximum": 300, "default": 120},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "open_app",
+        "description": "Открыть программу, файл, папку или ссылку (то же, что pc_open_app).",
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    },
+]
+ACTION_NAMES = {t["name"] for t in ACTION_TOOLS}
+WRITE_ACTIONS = {"write_file", "edit_file", "make_document", "edit_pdf"}
+
+TOOLS += ACTION_TOOLS
+
+
+def run_action(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
+    """The one place where a model's action is executed: the MCP server and the chat both go through it."""
+    from .chat import tools as TL
+
+    return TL.run(vault, call, client)
+
+
 class Server:
     def __init__(self, vault: Vault, client_id: str):
         self.vault = vault
@@ -124,8 +214,14 @@ class Server:
             return "Доступ к памяти для этого ассистента выключен владельцем."
         from .agent import profile as P
 
-        if not P.memory_on(self.vault):
+        if name.startswith("memory_") and not P.memory_on(self.vault):
             return P.MEMORY_OFF
+        if name in ACTION_NAMES:
+            if not P.load(self.vault).get("tools", True):
+                return "Действия выключены владельцем: Настройки → Программа → «Действия на компьютере»."
+            if name in WRITE_ACTIONS and not c.can_write:
+                raise PermissionDenied(f"{c.name} не может менять файлы")
+            return run_action(self.vault, {"tool": name, **args}, self.client_id)[0]
         if name == "memory_context":
             part = int(args.get("part", 0) or 0)
             text, total = context_for(self.vault, self.client_id, part=part)

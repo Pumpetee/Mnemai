@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
 
-from mnema.chat import providers as PR  # noqa: E402
+from mnema.chat import engine as CH, providers as PR  # noqa: E402
 from mnema.memory import init_vault  # noqa: E402
 from mnema.vault import Vault  # noqa: E402
 
@@ -47,7 +47,7 @@ class HarnessProvider(unittest.TestCase):
         self.assertEqual([m["id"] for m in st["models"]], ["deepseek-flash"])
         self.assertEqual(PR.fetch_models(self.v, "harness"), ["deepseek-flash"])
 
-    def test_stream_answers_and_runs_a_tool(self):
+    def test_stream_answers(self):
         usage = {}
         pieces = list(
             PR.stream(
@@ -55,14 +55,27 @@ class HarnessProvider(unittest.TestCase):
                 "harness",
                 "deepseek-flash",
                 "Ты — тестовая модель.",
-                [{"role": "user", "text": "Выполни в терминале: echo harness-provider-ok. Ответь только выводом."}],
+                [{"role": "user", "text": "Ответь одним словом: ок"}],
                 usage=usage,
             )
         )
         text = "".join(pieces)
-        self.assertIn("harness-provider-ok", text)
+        self.assertTrue(text.strip())
         self.assertNotIn("⚙", text)  # the owner sees the answer, not the tool narration
         self.assertGreater(usage.get("in", 0), 0)
+
+    def test_harness_uses_mnema_tools_not_its_own(self):
+        target = self.v.root / "00 Inbox" / "harness-note.md"
+        target.write_text("слово: ласточка", encoding="utf-8")
+        r = CH.send(
+            self.v, f"Прочитай файл {target} и назови слово. Ответь одним словом.", model="harness:deepseek-flash", sync=True, learn=False
+        )
+        c = CH.load_chat(self.v, r["chat"])
+        actions = [m for m in c["messages"] if m.get("kind") == "action"]
+        self.assertTrue(actions, "the harness should ask Mnema to read the file")
+        self.assertIn("harness-note.md", actions[0].get("text", ""))
+        answer = [m for m in c["messages"] if m["role"] == "assistant" and m.get("kind") != "action"][-1]
+        self.assertIn("ласточка", answer["text"].lower())
 
 
 if __name__ == "__main__":

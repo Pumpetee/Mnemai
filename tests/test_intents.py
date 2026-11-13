@@ -31,7 +31,9 @@ class Intents(unittest.TestCase):
         self.assertEqual(IN.fast_action(self.v, "открой фаерфокс")["name"], "firefox")
         self.assertEqual(IN.fast_action(self.v, "Открой мне хром, пожалуйста")["name"], "chrome")
         self.assertEqual(IN.fast_action(self.v, "open https://example.com")["name"], "https://example.com")
-        self.assertEqual(IN.fast_action(self.v, "прочитай файл ~/x.md")["tool"], "read_file")
+        note = self.v.root / "00 Inbox" / "x.md"
+        note.write_text("x", encoding="utf-8")
+        self.assertEqual(IN.fast_action(self.v, f"прочитай файл {note}")["tool"], "read_file")
         self.assertEqual(IN.fast_action(self.v, "что в загрузках")["tool"], "list_files")
         self.assertEqual(IN.fast_action(self.v, "найди договор в файлах")["tool"], "find_files")
         self.assertEqual(IN.fast_action(self.v, "выполни echo ok")["tool"], "run_command")

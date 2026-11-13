@@ -580,7 +580,9 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
             )
     g["phase"] = "делаю: " + desc
     try:
-        result, line, path = TL.run(vault, call, client)
+        from .. import mcp_server as MC
+
+        result, line, path = MC.run_action(vault, call, client)
     except Exception as e:
         _add_msg(
             vault,
@@ -974,13 +976,16 @@ def _generate(
                 system += "\n\n" + TM.RULE
             from . import tools as TL
 
-            acts = TL.enabled(vault) and text != OPENER and pid != "harness"
-            if acts:  # the model may ask for an action on files; the owner says yes to each one
+            acts = TL.enabled(vault) and text != OPENER
+            if acts:  # the model may ask for an action; the owner says yes to each one
                 from . import small as SM
 
                 system += "\n\n" + TL.rule(vault, small=SM.is_small(pid, mname))
-            if pid == "harness":  # the harness agent has real tools: tell it so, instead of the ```mnema blocks
-                system += "\n\n" + HARNESS_NOTE
+            if pid == "harness":  # its own DSH tools are off: every action goes through Mnemai's tools
+                system += (
+                    "\n\nСвоих инструментов у тебя нет — только действия Mnemai блоками ```mnema, как в правилах "
+                    "выше. Не отвечай «у меня нет инструментов»: у тебя есть действия Mnemai."
+                )
             if not web and text != OPENER:  # no search this time: it says so itself when it needs one
                 system += "\n\n" + WEB_OFF
             if prompt:  # the owner's prompt for this recurring task

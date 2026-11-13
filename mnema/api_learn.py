@@ -126,8 +126,12 @@ def post(vault: Vault, path: str, b: dict):
         if b.get("chat"):
             from .chat import engine as CH
 
+            def clear_asks(c):
+                c["learn_asks"] = []
+                c.pop("learn_ask", None)
+
             try:
-                CH.modify_chat(vault, str(b["chat"]), lambda c: c.pop("learn_ask", None))
+                CH.modify_chat(vault, str(b["chat"]), clear_asks)
             except KeyError:
                 pass
         if b.get("id"):

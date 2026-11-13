@@ -1488,6 +1488,8 @@ async function answerLearnAsk(card, action) {
     const r = await post("/api/learn/review", body);
     card.remove();
     if (action === "keep_all") {
+      // «Запомнить всё» answers every question standing under this conversation: the rest of the queue goes too
+      $$("[data-lask]").forEach((c) => c.remove());
       toast(`${tr("Запомнила")}: ${r.done || 1}`, 4500);
       return;
     }

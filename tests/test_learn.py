@@ -542,7 +542,9 @@ class TestPolicy(Base):
         from mnema.chat import engine as CH
         from mnema.learn.sources import Episode
 
-        self.settings(claude_code="mixed", corrections="mixed")
+        s = self.settings(claude_code="mixed", corrections="mixed")
+        s["ask_cooldown_minutes"] = 0  # the queue itself is under test, not the once-an-hour throttle
+        S.save(self.v, s)
         cid = "abc123abc123"
         CH.save_chat(
             self.v, {"id": cid, "title": "t", "messages": [{"role": "user", "text": "моя зарплата"}], "updated": ""}
@@ -563,6 +565,11 @@ class TestPolicy(Base):
         api_learn.post(self.v, "/api/learn/review", {"chat": cid, "id": first, "action": "keep"})
         c = CH.load_chat(self.v, cid)
         self.assertEqual(len(c.get("learn_asks") or []), 1)  # the next one shows instead
+        rest = c["learn_asks"][0]["item"]
+        api_learn.post(self.v, "/api/learn/review", {"chat": cid, "id": rest, "action": "keep_all"})
+        c = CH.load_chat(self.v, cid)
+        self.assertEqual(c.get("learn_asks") or [], [])  # «Запомнить всё» answers the whole queue
+        self.assertIn("Кредит 500", self.v.read_raw("70 Memory/Cards/Деньги.md"))
 
     def test_goal_of_a_project_goes_to_its_hub(self):
         from mnema.chat import engine as CH

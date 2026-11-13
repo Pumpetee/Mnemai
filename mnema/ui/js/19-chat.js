@@ -108,6 +108,11 @@ async function viewChat(id) {
     inp.style.height = Math.min(240, inp.scrollHeight) + "px";
   };
   inp.onkeydown = (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (e.key !== "Enter" || e.isComposing) return;
     const ctrl = compCfg().send === "ctrl";
     if (ctrl ? e.ctrlKey || e.metaKey : !e.shiftKey) {
@@ -457,6 +462,20 @@ document.addEventListener("mousedown", (e) => {
   if (!d || d.hidden || e.target.closest("#panel,#gearbtn,.menu,.pop,.modal,.hqpop,#toast")) return;
   toggleDrawer(false);
 });
+// Escape closes overlays, never the answer: pressing it while the answer is being written must do nothing.
+document.addEventListener(
+  "keydown",
+  (e) => {
+    if (e.key !== "Escape" || !CHAT.polling) return;
+    const vis = (x) =>
+      x.isConnected && getComputedStyle(x).display !== "none" && getComputedStyle(x).visibility !== "hidden";
+    const overlay = $$(".modal, .menu, .mmenu, .hqpop, .pop").some(vis);
+    if (overlay) return; // let the overlay's own Escape handler close it
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  },
+  true,
+);
 window.addEventListener(
   "keydown",
   (e) => {

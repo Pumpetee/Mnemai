@@ -861,8 +861,9 @@ async function viewSettings(arg) {
       <div class="vkstat" id="vkstat"></div>
       <details class="vkold"><summary>${tr("Или через уже запущенный VPN (Hiddify, Happ…) или свой прокси")}</summary>${proxyForm(prof.vpn_key_on ? "" : prof.proxy || "", ag.proxy_password_set, ag.proxy_system)}</details>
       <div class="hint" style="margin-top:10px">${tr("Сейчас запросы идут")}: <b>${esc(ag.proxy_used || tr("напрямую"))}</b></div></div>
-    <div class="card" data-sec="app" id="c-acts"><h2>${tr("Действия с файлами")}</h2>
-      <div class="tg" style="padding:0 0 10px;border:0"><button class="sw ${prof.tools !== false ? "on" : ""}" id="actsw"></button><div><b>${tr("Модель может читать и создавать файлы")}</b><p>${tr("Читать, искать, создавать и править файлы, делать PDF, Word и Excel, записывать в память. Программы не запускаются, в интернет ничего не уходит. Любую запись можно откатить: «Память» → «История».")}</p></div></div>
+    <div class="card" data-sec="app" id="c-acts"><h2>${tr("Действия на компьютере")}</h2>
+      <div class="tg" style="padding:0 0 10px;border:0"><button class="sw ${prof.tools !== false ? "on" : ""}" id="actsw"></button><div><b>${tr("Модель может читать и создавать файлы")}</b><p>${tr("Читать, искать, создавать и править файлы, делать PDF, Word и Excel, записывать в память. В интернет ничего не уходит. Любую запись можно откатить: «Память» → «История».")}</p></div></div>
+      <div class="tg" style="padding:0 0 10px;border:0"><button class="sw ${prof.pc_access !== false ? "on" : ""}" id="pcsw"></button><div><b>${tr("Терминал и управление компьютером")}</b><p>${tr("Модель может выполнять команды в терминале этого компьютера: смотреть процессы, железо и сеть, запускать программы, работать с git и файлами вне рабочих папок. Каждая команда — с таймаутом, в журнале «Память» → «История». Выключи, если доступ к системе не нужен.")}</p></div></div>
       <div class="tg" style="padding:0 0 10px;border:0"><button class="sw ${prof.tools_ask ? "on" : ""}" id="actask-sw"></button><div><b>${tr("Спрашивать разрешение на каждое действие")}</b><p>${tr("Выключено: Mnemai делает сразу. Каждая запись всё равно в журнале и откатывается в «Память» → «История».")}</p></div></div>
       <div class="set"><b>${tr("Где можно")}</b><div><div class="actfolders"><div class="actf"><span>${tr("Папка памяти")}</span><code data-noi18n>${esc(ACH.folder || "")}</code></div>${(prof.tool_folders || []).map((f, k) => `<div class="actf"><span>${tr("Рабочая папка")}</span><code data-noi18n>${esc(f)}</code><button class="btn g sm" data-actdel="${k}">${tr("Убрать")}</button></div>`).join("")}</div>
       <div class="row" style="margin-top:8px"><input id="actnew" class="inp" style="min-width:320px" placeholder="${tr("папка, где можно работать")}">${window.pywebview ? `<button class="btn l" id="actpick">${tr("Выбрать…")}</button>` : ""}<button class="btn g" id="actadd">${tr("Добавить")}</button></div></div></div></div>
@@ -1017,6 +1018,12 @@ async function viewSettings(arg) {
         const on = !e.currentTarget.classList.contains("on");
         e.currentTarget.classList.toggle("on", on);
         await save({ tools_ask: on }, on ? "Буду спрашивать перед действием" : "Действия — сразу, без вопросов");
+      };
+    if ($("#pcsw"))
+      $("#pcsw").onclick = async (e) => {
+        const on = !e.currentTarget.classList.contains("on");
+        e.currentTarget.classList.toggle("on", on);
+        await save({ pc_access: on }, on ? "Терминал включён" : "Терминал выключен: только файлы");
       };
     if ($("#actpick"))
       $("#actpick").onclick = async () => {

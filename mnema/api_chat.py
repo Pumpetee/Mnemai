@@ -633,6 +633,7 @@ def post(vault: Vault, path: str, b: dict):
                 "scribe_summary_model",
                 "last_model",
                 "tools",
+                "pc_access",
                 "tool_folders",
                 "tools_ask",
                 "memory_on",

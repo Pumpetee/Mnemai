@@ -8,8 +8,9 @@ Any model (Claude by subscription, a key, the built-in one) asks for an action w
     ```
 
 Mnemai stops the answer there, shows the owner what is asked («Создать файл …» — Да / Нет / Да для этого разговора),
-does it, gives the model the result and lets it go on. No programs are run, nothing is sent anywhere: only files in
-the memory folder and in the work folders the owner added (Настройки → Программа → «Действия с файлами»).
+does it, gives the model the result and lets it go on. Files are read and written only in the memory folder and in the
+work folders the owner added (Настройки → Программа → «Действия на компьютере»). The owner may also allow the terminal
+(«pc_access», on by default): then the model can run one shell command at a time with a timeout and get its output.
 
 Every write is in the journal and is undone from «История»: inside the memory folder like any memory write, outside
 it with a snapshot of the file as it was. A document that would overwrite an existing one gets a new name instead.
@@ -25,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -35,18 +37,33 @@ from pathlib import Path
 from ..vault import Vault
 from .. import osapi as OS
 
-TOOLS = ("read_file", "list_files", "find_files", "write_file", "edit_file", "make_document", "edit_pdf", "remember")
-WRITES = {"write_file", "edit_file", "make_document", "edit_pdf", "remember"}
+TOOLS = (
+    "read_file",
+    "list_files",
+    "find_files",
+    "write_file",
+    "edit_file",
+    "make_document",
+    "edit_pdf",
+    "remember",
+    "run_command",
+)
+WRITES = {"write_file", "edit_file", "make_document", "edit_pdf", "remember", "run_command"}
 TEXT_EXT = {".md", ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".log", ".ini", ".tsv"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
 MAX_READ = 60_000
 MAX_STEPS = 12
+MAX_OUTPUT = 24_000
+MAX_COMMAND_SECONDS = 300
+DEFAULT_COMMAND_SECONDS = 120
 BLOCK_RE = re.compile(r"```mnema[ \t]+(\w+)([^\n]*)\n?(.*?)(?:```|\Z)", re.S)
 ARG_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
 
-RULE = """=== Действия с файлами ===
-Ты можешь работать с файлами владельца. Чтобы сделать действие, напиши в ответе ОДИН блок и остановись — Mnemai спросит
-владельца, сделает и пришлёт результат, после чего ты продолжишь:
+RULE = """=== Действия на компьютере ===
+У тебя ЕСТЬ доступ к компьютеру владельца: файлы и документы, а также терминал, если владелец не выключил его.
+Чтобы сделать действие, напиши в ответе ОДИН блок и остановись — Mnemai спросит владельца (если он включил вопросы),
+сделает и пришлёт результат, после чего ты продолжишь. Это настоящий доступ, а не описание: не говори «я не могу
+запускать программы» — запусти и покажи результат. Если владелец просит сделать что-то на компьютере — сделай.
 
 ```mnema read_file path="полный путь"
 ```
@@ -80,25 +97,42 @@ do="rotate" — повернуть pages на angle="90", "180" или "270"; do
 ```mnema remember where="card:Тема"
 одна строка, которую записать в память
 ```
-
-Где можно работать (только тут):
+{terminal}
+Где можно работать с файлами через read_file/write_file (только тут):
 {folders}
-Правила: одно действие за раз; путь — полностью, как в списке выше; программы не запускаются и в интернет ничего не
-уходит; не делай действий, о которых владелец не просил; если владелец отказал — не повторяй то же самое. Когда всё
-сделано, ответь обычным текстом без блоков."""
+Правила: одно действие за раз; путь — полностью, как в списке выше; не выводи в ответ пароли, ключи и токены; не делай
+разрушительных действий без прямой просьбы (rm -rf, форматирование диска); не делай действий, о которых владелец не
+просил; если владелец отказал — не повторяй то же самое. Когда всё сделано, ответь обычным текстом без блоков."""
+
+TERMINAL_RULE = """```mnema run_command command="одна команда терминала" cwd="полный путь к папке" timeout="120"
+```
+(выполняет команду в терминале этого компьютера и возвращает вывод и код возврата; cwd — где выполнять, по умолчанию
+домашняя папка; timeout — секунды, по умолчанию 120, максимум 300. Так можно смотреть процессы, железо, сеть, git,
+запускать программы, ставить пакеты, работать с файлами вне рабочих папок — всё, что делает терминал.
+Если команда сложная, пиши её в теле блока: ```mnema run_command cwd="…"``` и следующей строкой саму команду.
+Терминал работает по всему компьютеру, а не только в папках памяти и рабочих папках.)"""
 
 SMALL_RULE = """Файлы: чтобы прочитать файл, напиши блок ```mnema read_file path="путь"``` и остановись.
-Чтобы создать файл: ```mnema write_file path="путь"``` с текстом внутри блока. Папки: {folders}"""
+Чтобы создать файл: ```mnema write_file path="путь"``` с текстом внутри блока. Папки: {folders}
+{terminal}"""
 
 
 # ---------------------------------------------------------------- settings
 
 
-def enabled(vault: Vault) -> bool:
-    """Actions are on and there is a place to act in (with memory off, only the work folders the owner added)."""
+def pc_enabled(vault: Vault) -> bool:
+    """The owner allows commands on this computer (on by default)."""
     from ..agent import profile as P
 
-    return bool(P.load(vault).get("tools", True)) and bool(roots(vault))
+    return bool(P.load(vault).get("tools", True)) and bool(P.load(vault).get("pc_access", True))
+
+
+def enabled(vault: Vault) -> bool:
+    """Actions are on and there is a place to act in (with memory off, only the work folders the owner added —
+    and the terminal, if it is allowed, works everywhere)."""
+    from ..agent import profile as P
+
+    return bool(P.load(vault).get("tools", True)) and (bool(roots(vault)) or bool(P.load(vault).get("pc_access", True)))
 
 
 def roots(vault: Vault) -> list[tuple[str, Path]]:
@@ -116,7 +150,16 @@ def roots(vault: Vault) -> list[tuple[str, Path]]:
 
 def rule(vault: Vault, small: bool = False) -> str:
     folders = "\n".join(f"- {name}: {path}" for name, path in roots(vault))
-    return (SMALL_RULE if small else RULE).format(folders=folders)
+    if pc_enabled(vault):
+        terminal = (
+            "Терминал: ```mnema run_command command=\"команда\"``` — выполнит её на этом компьютере и вернёт вывод. "
+            "Это настоящий доступ."
+            if small
+            else TERMINAL_RULE
+        )
+    else:
+        terminal = ""
+    return (SMALL_RULE if small else RULE).format(folders=folders, terminal=terminal)
 
 
 # ---------------------------------------------------------------- the block in the answer
@@ -176,7 +219,7 @@ def resolve(vault: Vault, path: str) -> Path:
             if root == vault.root.resolve() and rel and rel[0].startswith("."):
                 raise Refused("служебная папка памяти закрыта")
             return p
-    raise Refused("эта папка не открыта для действий. Добавить её можно в Настройки → Программа → «Действия с файлами»")
+    raise Refused("эта папка не открыта для действий. Добавить её можно в Настройки → Программа → «Действия на компьютере»")
 
 
 def in_vault(vault: Vault, p: Path) -> str | None:
@@ -205,6 +248,7 @@ def what(vault: Vault, call: dict) -> str:
             "split": f"разрезать {call.get('from', '')} на части в папку {path}",
         }.get(call.get("do", ""), f"изменить PDF {call.get('from', '')} → {path}"),
         "remember": f"записать в память ({call.get('where', 'inbox')}): «{call.get('body', '')[:200]}»",
+        "run_command": f"выполнить в терминале: {_command(call)[:200]}",
     }[t]
 
 
@@ -322,6 +366,98 @@ def _free_name(p: Path) -> Path:
         k += 1
 
 
+def _command(call: dict) -> str:
+    """The command as written: an argument, or the body of the block for multi-line scripts."""
+    return " ".join(str(call.get("command") or call.get("body") or "").split())
+
+
+def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
+    """Run one command in the owner's shell and turn its stdout/stderr/exit code into a short answer for the model.
+
+    The terminal is a real PC access, so: a hard timeout (1–300 s), a process group killed on timeout, a bounded
+    output, and every run in the journal («История»)."""
+    from ..journal import log_event
+
+    command = str(call.get("command") or call.get("body") or "").strip()
+    if not command:
+        raise Refused("пустая команда: нужен command=\"…\"")
+    where = str(call.get("cwd") or "").strip()
+    work = Path(where).expanduser().resolve() if where else Path.home()
+    if not work.is_dir():
+        raise Refused(f"нет такой папки для cwd: {work}")
+    try:
+        timeout = int(float(str(call.get("timeout") or DEFAULT_COMMAND_SECONDS).strip()))
+    except ValueError:
+        timeout = DEFAULT_COMMAND_SECONDS
+    timeout = max(1, min(MAX_COMMAND_SECONDS, timeout))
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1", "TERM": "dumb"}
+    started = time.time()
+    if os.name == "nt":
+        proc = subprocess.Popen(
+            command,
+            shell=True,
+            cwd=work,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    else:
+        shell = "/bin/bash" if Path("/bin/bash").exists() else "/bin/sh"
+        proc = subprocess.Popen(
+            [shell, "-lc", command],
+            cwd=work,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            start_new_session=True,
+        )
+    timed_out = False
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        try:
+            if os.name == "nt":
+                proc.kill()
+            else:
+                os.killpg(proc.pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pass
+        try:
+            out, err = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            out, err = "", ""
+    seconds = time.time() - started
+    log_event(vault, client, "exec", f"терминал ({timeout} с): {command[:160]}")
+    code = proc.returncode
+    head = f"[код {code} · {seconds:.1f} с · {work}]"
+    if timed_out:
+        head = f"[остановлена по таймауту {timeout} с · {work}]"
+    parts = [head]
+    if out.strip():
+        parts.append("[вывод]\n" + out.strip())
+    if err.strip():
+        parts.append("[ошибки]\n" + err.strip())
+    text = "\n".join(parts)
+    if len(text) > MAX_OUTPUT:
+        keep = MAX_OUTPUT - 200
+        text = text[:keep].rstrip() + f"\n…[вывод обрезан: всего {len(text)} знаков]"
+    if not out.strip() and not err.strip():
+        text += "\n(команда ничего не вывела)"
+    # the owner sees a short result right in the conversation, the model gets the whole (bounded) output
+    shown = (out.strip() or err.strip()).splitlines()[:3]
+    snippet = (" · ".join(x.strip() for x in shown)[:300] if shown else ("код " + str(code)))
+    line = f"Выполнила команду: {command[:120]} → {snippet}"
+    return text, line, str(work)
+
+
 def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
     """Do an approved action: (result for the model, line for the owner, path or "")."""
     t = call["tool"]
@@ -337,6 +473,10 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
         return f"Записано в память: {ev['paths'][0]}", f"Записала в память: «{fact[:120]}»", ""
     if t == "find_files":
         return _find(vault, call.get("query", "")), f"Поискала «{call.get('query', '')}» в файлах", ""
+    if t == "run_command":
+        if not pc_enabled(vault):
+            raise Refused("терминал выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»")
+        return _run_command(vault, call, client)
     p = resolve(vault, call.get("path", ""))
     if t == "list_files":
         if not p.is_dir():

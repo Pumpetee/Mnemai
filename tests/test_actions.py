@@ -1,6 +1,7 @@
 """Actions in the chat: the model reads and writes files and memory with the owner's word on every action."""
 
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -201,7 +202,47 @@ class ActionsTest(unittest.TestCase):
         s = Script(f'```mnema write_file path="{target}"\nтекст\n```')
         self._send(v, "Сделай файл", s, [])
         self.assertFalse(target.exists())
-        self.assertNotIn("Действия с файлами", s.seen[0][0])
+        self.assertNotIn("Действия на компьютере", s.seen[0][0])
+
+
+    def test_prompt_tells_the_model_about_the_terminal_only_when_it_is_on(self):
+        v = _vault(self.work)
+        on = Script("Готово.")
+        PR.stream = on
+        CH.send(v, "привет", model="openai:m1", learn=False, sync=True)
+        self.assertIn("run_command", on.seen[0][0])
+        self.assertIn("ЕСТЬ доступ к компьютеру", on.seen[0][0])
+        P.save(v, {"pc_access": False})
+        off = Script("Готово.")
+        PR.stream = off
+        CH.send(v, "привет ещё", model="openai:m1", learn=False, sync=True)
+        self.assertNotIn("run_command", off.seen[0][0])
+
+    def test_terminal_runs_and_the_model_gets_the_output(self):
+        v = _vault(self.work)
+        s = Script('Проверю систему.\n```mnema run_command command="echo mnema-pc-ok"\n```', 'Команда сработала.')
+        r, owner = self._send(v, "Проверь терминал", s, ["yes"])
+        self.assertTrue(any("терминал" in w or "команд" in w for w in owner.asked))
+        self.assertIn("mnema-pc-ok", str(s.seen[-1][1]))  # the result came back to the model
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        self.assertTrue(any(m.get("kind") == "action" and "mnema-pc-ok" in (m.get("text") or "") for m in msgs))
+        self.assertTrue(any(e["action"] == "exec" for e in events(v, 30)))  # and it is in the journal
+
+    def test_terminal_can_be_switched_off(self):
+        v = _vault(self.work)
+        P.save(v, {"pc_access": False})
+        s = Script('```mnema run_command command="echo nope"\n```')
+        r, owner = self._send(v, "Запусти", s, ["yes"])  # tools_ask is on: answer the card, then it is refused
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        self.assertTrue(any("терминал выключен" in (m.get("text") or "") for m in msgs))
+
+    def test_terminal_timeout_stops_the_command(self):
+        v = _vault(self.work)
+        command = f'"{sys.executable}" -c "import time; time.sleep(3)"'
+        s = Script('Проверю таймаут.\n```mnema run_command timeout="1"\n' + command + '\n```', 'Остановила.')
+        r, owner = self._send(v, "Запусти долгую команду", s, ["yes"])
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        self.assertTrue(any("таймаут" in (m.get("text") or "").lower() for m in msgs))
 
 
 if __name__ == "__main__":

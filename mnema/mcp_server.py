@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from . import __version__
 from .clients import get_client
@@ -21,7 +22,10 @@ INSTRUCTIONS = (
     "Это память владельца: кто он, его правила, проекты, люди и решения. "
     "В начале разговора вызови memory_context и опирайся на неё, не переспрашивай известное. "
     "Когда в разговоре появилось что-то долговечное (решение, договорённость, новый факт о человеке или проекте), "
-    "предложи сохранить и вызови memory_remember. Перед ответом на устаревший факт вызови memory_stale."
+    "предложи сохранить и вызови memory_remember. Перед ответом на устаревший факт вызови memory_stale. "
+    "У тебя также ЕСТЬ доступ к компьютеру владельца (если он не выключил его в настройках): терминал — pc_run, "
+    "файлы — pc_read_file и pc_write_file, папки — pc_list_dir. Это настоящий доступ, а не описание: когда просят "
+    "что-то сделать на компьютере, выполни команду и покажи результат. Не выводи пароли и ключи."
 )
 
 TOOLS = [
@@ -60,6 +64,40 @@ TOOLS = [
         "name": "memory_undo",
         "description": "Откатить запись по id из журнала. Только если владелец попросил.",
         "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "name": "pc_run",
+        "description": "Выполнить команду в терминале этого компьютера и вернуть вывод, код возврата и время. "
+        "Это настоящий доступ к системе (процессы, железо, сеть, git, файлы вне папок памяти). "
+        "Одна команда за раз, таймаут по умолчанию 120 с, максимум 300 с.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string"},
+                "cwd": {"type": "string"},
+                "timeout": {"type": "integer", "minimum": 1, "maximum": 300, "default": 120},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "pc_read_file",
+        "description": "Прочитать текстовый файл с компьютера (до 60 000 знаков).",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    },
+    {
+        "name": "pc_write_file",
+        "description": "Записать текст в файл на компьютере (перезаписывает существующий).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["path", "text"],
+        },
+    },
+    {
+        "name": "pc_list_dir",
+        "description": "Показать, что лежит в папке на компьютере.",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
     },
 ]
 
@@ -116,6 +154,8 @@ class Server:
                 "\n".join(f"{e['ts']} · {e['client']} · {e['action']} · {e['summary']} · id {e['id']}" for e in evs)
                 or "Журнал пуст."
             )
+        if name.startswith("pc_"):
+            return self._pc(name, args, c)
         if name == "memory_undo":
             if not c.can_write:
                 raise PermissionDenied(f"{c.name} не может откатывать записи")
@@ -124,6 +164,53 @@ class Server:
                 raise PermissionDenied(f"{c.name} может откатывать только свои записи")
             ev = undo(self.vault, str(args.get("id", "")), self.client_id)
             return f"Откачено: {ev['summary']}"
+        raise KeyError(name)
+
+    def _pc(self, name: str, args: dict, c) -> str:
+        """The owner's computer through MCP: the same terminal as in the chat, with the same journal. Reading needs
+        the assistant to be enabled; running and writing also need its write permission."""
+        from .agent import profile as P
+
+        if not P.load(self.vault).get("pc_access", True):
+            raise PermissionDenied("доступ к компьютеру выключен владельцем: Настройки → Программа → «Действия на компьютере»")
+        from .chat import tools as TL
+        from .journal import log_event
+
+        if name in ("pc_run", "pc_write_file") and not c.can_write:
+            raise PermissionDenied(f"{c.name} не может менять файлы и запускать команды")
+        if name == "pc_run":
+            cmd = str(args.get("command") or "").strip()
+            if not cmd:
+                raise ValueError("нужна команда")
+            call = {"tool": "run_command", "command": cmd, "timeout": args.get("timeout")}
+            if args.get("cwd"):
+                call["cwd"] = str(args["cwd"])
+            return TL._run_command(self.vault, call, self.client_id)[0]
+        if name == "pc_read_file":
+            p = Path(str(args.get("path") or "")).expanduser()
+            if not p.is_file():
+                raise ValueError("такого файла нет")
+            data = p.read_bytes()[: TL.MAX_READ]
+            log_event(self.vault, self.client_id, "read", f"файл {p}", [])
+            return data.decode("utf-8", "replace")
+        if name == "pc_list_dir":
+            p = Path(str(args.get("path") or "~")).expanduser()
+            if not p.is_dir():
+                raise ValueError("такой папки нет")
+            items = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))[:300]
+            return "\n".join(
+                f"{'[папка] ' if x.is_dir() else ''}{x.name}{'' if x.is_dir() else f' · {x.stat().st_size} байт'}"
+                for x in items
+                if not x.name.startswith(".")
+            ) or "(пусто)"
+        if name == "pc_write_file":
+            p = Path(str(args.get("path") or "")).expanduser()
+            if not p.parent.is_dir():
+                raise ValueError("такой папки нет")
+            text = str(args.get("text") or "")
+            # the same write path as the chat: a snapshot and a journal line, so «История» can undo it
+            TL._write_bytes(self.vault, self.client_id, p, text.encode("utf-8"), f"записан файл {p.name}")
+            return f"Записано: {p} (откат — «Память» → «История»)"
         raise KeyError(name)
 
     def _may_see(self, ev: dict, c) -> bool:

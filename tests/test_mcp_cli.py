@@ -11,6 +11,7 @@ REPO = Path(__file__).resolve().parents[1]
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())  # never touch the real home
 sys.path.insert(0, str(REPO))
 
+from mnema.agent import profile as P  # noqa: E402
 from mnema.memory import init_vault, remember  # noqa: E402
 from mnema.vault import Vault  # noqa: E402
 from test_core import fill  # noqa: E402
@@ -97,6 +98,61 @@ class TestMcp(unittest.TestCase):
         self.assertIn("Встреча в пн", r[4]["result"]["content"][0]["text"])
         self.assertEqual(r[5]["error"]["code"], -32601)
         self.assertIn("Доход", r[6]["result"]["content"][0]["text"])  # claude may see money
+
+    def test_pc_tools_over_mcp(self):
+        target = self.dir / "pc-note.txt"
+        r = self.session(
+            "claude",
+            [
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "pc_run", "arguments": {"command": "echo mcp-pc-ok"}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "pc_write_file", "arguments": {"path": str(target), "text": "привет"}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {"name": "pc_read_file", "arguments": {"path": str(target)}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {"name": "pc_list_dir", "arguments": {"path": str(self.dir)}},
+                },
+            ],
+        )
+        names = {t["name"] for t in r[0]["result"]["tools"]}
+        self.assertTrue({"pc_run", "pc_read_file", "pc_write_file", "pc_list_dir"} <= names)
+        self.assertIn("mcp-pc-ok", r[1]["result"]["content"][0]["text"])
+        self.assertFalse(r[2]["result"]["isError"])
+        self.assertEqual(r[3]["result"]["content"][0]["text"], "привет")
+        self.assertIn("pc-note.txt", r[4]["result"]["content"][0]["text"])
+
+    def test_pc_tools_respect_the_switch(self):
+        P.save(Vault(self.dir), {"pc_access": False})
+        r = self.session(
+            "claude",
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": "pc_run", "arguments": {"command": "echo nope"}},
+                }
+            ],
+        )
+        self.assertTrue(r[0]["result"]["isError"])
+        self.assertIn("выключен", r[0]["result"]["content"][0]["text"])
 
     def test_chatgpt_limits_over_mcp(self):
         lock_cloud(Vault(self.dir))

@@ -29,7 +29,8 @@ class Knowledge(unittest.TestCase):
         self.assertFalse(web.should_search(q))
         kb = SK.kb_for(q)
         self.assertIn("## Файлы и документы, в том числе PDF", kb)
-        self.assertIn("## Действия с файлами", kb)  # making a PDF is an action now, with the owner's word
+        self.assertIn("## Действия на компьютере", kb)  # making a PDF is an action now, with the owner's word
+        self.assertIn("Терминал и управление компьютером", kb)  # the model knows about its PC access
         self.assertIn("не заполняет формы PDF", kb)
         sp = system_prompt(self.v, "claude_code", query=q)
         self.assertIn("Ты — Mnemai", sp)

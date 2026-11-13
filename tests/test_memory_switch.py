@@ -55,9 +55,12 @@ class MemorySwitch(unittest.TestCase):
     def test_off_actions_have_no_memory_folder_and_no_remember(self):
         v = _vault(False)
         self.assertEqual(TL.roots(v), [])
-        self.assertFalse(TL.enabled(v))  # nowhere to act until a work folder is added
+        self.assertTrue(TL.enabled(v))  # the terminal still works without the memory folder
+        self.assertTrue(TL.pc_enabled(v))
+        P.save(v, {"pc_access": False})
+        self.assertFalse(TL.enabled(v))  # no memory folder, no work folders, no terminal: nowhere to act
         work = Path(tempfile.mkdtemp())
-        P.save(v, {"tool_folders": [str(work)]})
+        P.save(v, {"pc_access": True, "tool_folders": [str(work)]})
         self.assertTrue(TL.enabled(v))
         with self.assertRaises(TL.Refused):
             TL.run(v, {"tool": "remember", "body": "NEWFACT"})

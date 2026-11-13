@@ -3438,7 +3438,17 @@
 "больше не работает в чате (снята с поддержки или сделана не для разговора) — я убрала её из списка. Выбери другую слева вверху.": "no longer works in chat (it was discontinued or isn't built for conversation) — I removed it from the list. Pick another one at the top left.",
 "Модель «": "The model “",
 "больше не работает в чате (снята с поддержки или сделана не для разговора)": "no longer works in chat (it was discontinued or isn't built for conversation)",
-"Для окна Mnemai нужен компонент Microsoft WebView2. Сейчас он установится — это один раз, около минуты, нужен интернет. Mnema needs the Microsoft WebView2 component. It will be installed now, once.": "Mnemai needs the Microsoft WebView2 component to show its window. I'll install it now — it only happens once, takes about a minute, and needs an internet connection."
+"Для окна Mnemai нужен компонент Microsoft WebView2. Сейчас он установится — это один раз, около минуты, нужен интернет. Mnema needs the Microsoft WebView2 component. It will be installed now, once.": "Mnemai needs the Microsoft WebView2 component to show its window. I'll install it now — it only happens once, takes about a minute, and needs an internet connection.",
+"Действия на компьютере": "Actions on the computer",
+"Читать, искать, создавать и править файлы, делать PDF, Word и Excel, записывать в память. В интернет ничего не уходит. Любую запись можно откатить: «Память» → «История».": "Read, search, create and edit files, make PDF, Word and Excel, write to memory. Nothing goes to the internet. Any change can be undone: “Memory” → “History”.",
+"Терминал и управление компьютером": "Terminal and computer control",
+"Модель может выполнять команды в терминале этого компьютера: смотреть процессы, железо и сеть, запускать программы, работать с git и файлами вне рабочих папок. Каждая команда — с таймаутом, в журнале «Память» → «История». Выключи, если доступ к системе не нужен.": "The model can run commands in this computer's terminal: look at processes, hardware and network, start programs, work with git and files outside the work folders. Every command has a timeout and is kept in “Memory” → “History”. Switch it off if system access isn't needed.",
+"Терминал включён": "Terminal is on",
+"Терминал выключен: только файлы": "Terminal is off: files only",
+"эта папка не открыта для действий. Добавить её можно в Настройки → Программа → «Действия на компьютере»": "this folder isn't open for actions. You can add it in Settings → App → “Actions on the computer”",
+"терминал выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»": "the terminal is switched off by the owner: turn it on in Settings → App → “Actions on the computer”",
+"Действия на компьютере включены": "Actions on the computer are on",
+"Действия на компьютере выключены": "Actions on the computer are off"
 },
 "patterns": {
 "{}Новый разговор": "{}New chat",

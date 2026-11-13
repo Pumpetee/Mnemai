@@ -158,7 +158,8 @@ DEFAULT = {
     "economy": True,  # token economy: memory, documents and history trimmed to the question on the computer
     "web": False,  # «Интернет» switch in the composer: search the web for every message
     "terms": True,  # «Подсказки»: the model adds a glossary, the chat shows it as pop-up hints
-    "tools": True,  # «Действия с файлами»: the model may read and write files, the owner says yes to each action
+    "tools": True,  # «Действия на компьютере»: the model may read and write files and run terminal commands
+    "pc_access": True,  # the terminal and PC control are allowed by default; off — files only
     "tool_folders": [],  # work folders open for actions besides the memory folder
     "tools_ask": False,  # ask the owner before each action; off — actions run at once, undo stays in «История»
     "ui_theme": "",  # chosen on the first screen: light | dark | system; the app starts in it

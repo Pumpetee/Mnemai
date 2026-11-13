@@ -519,6 +519,62 @@ APP_ALIASES = {
 }
 
 
+WIN_APPS = {
+    "chrome": ["chrome.exe", "google-chrome.exe"],
+    "firefox": ["firefox.exe"],
+    "telegram": ["Telegram.exe", "telegram.exe"],
+    "code": ["Code.exe", "code.exe"],
+    "terminal": ["wt.exe", "powershell.exe", "cmd.exe"],
+    "steam": ["steam.exe"],
+    "discord": ["Discord.exe"],
+}
+MAC_APPS = {
+    "chrome": "Google Chrome",
+    "firefox": "Firefox",
+    "telegram": "Telegram",
+    "code": "Visual Studio Code",
+    "terminal": "Terminal",
+    "steam": "Steam",
+    "discord": "Discord",
+}
+
+
+def _win_app_path(name: str) -> str | None:
+    """A program registered in Windows «App Paths» (Chrome, Telegram, VS Code are there, not on PATH)."""
+    try:
+        import winreg
+    except ImportError:
+        return None
+    for exe in WIN_APPS.get(name, [name, f"{name}.exe"]):
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                with winreg.OpenKey(
+                    root, "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\" + exe
+                ) as key:
+                    path, _ = winreg.QueryValueEx(key, "")
+                    if path and Path(path).exists():
+                        return path
+            except OSError:
+                continue
+    return None
+
+
+def _start_detached(args: list[str]) -> None:
+    if os.name == "nt":
+        subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-a", args[0]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.Popen(
+            args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True
+        )
+
+
 def _desktop_dirs() -> list[Path]:
     home = Path.home()
     return [
@@ -605,6 +661,16 @@ def _open_app(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str
         return f"Открыла ссылку: {name}", f"Открыла ссылку: {name[:120]}", ""
     candidates = APP_ALIASES.get(name.lower(), [name])
     exe = next((shutil.which(c) for c in candidates if shutil.which(c)), None)
+    if not exe and os.name == "nt":
+        exe = _win_app_path(name) or next((_win_app_path(c) for c in candidates if _win_app_path(c)), None)
+    if not exe and sys.platform == "darwin":
+        app = MAC_APPS.get(name.lower())
+        if app:
+            try:
+                _start_detached([app])
+            except OSError as e:
+                raise Refused(f"не получилось открыть «{name}»: {e}") from e
+            return f"Открыла программу: {app}", f"Открыла: {app}", ""
     if not exe:
         entry = _desktop_match(name) or next((_desktop_match(c) for c in candidates if _desktop_match(c)), None)
         if entry:

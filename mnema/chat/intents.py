@@ -198,13 +198,16 @@ def _run(vault: Vault, tool: str, args: dict) -> tuple[str, str]:
                 result = TL.run(vault, {"tool": "run_command", "command": cmd, "timeout": 10}, "owner")[0]
             except Exception:
                 continue
-            body = result.split("\n", 1)[1] if "\n" in result else result
+            lines = [ln.strip() for ln in result.splitlines() if ln.strip() and not ln.startswith("[")]
+            body = "\n".join(lines)
             if name == "cpu":
-                body = f"Ядер CPU: {body.strip()}"
+                body = f"Ядер CPU: {lines[0]}" if lines else ""
             elif name == "disk":
-                body = "Диск: " + " ".join(body.split()[:5])
+                body = "Диск: " + " ".join(lines[0].split()[:5]) if lines else ""
             else:
-                body = body.strip().splitlines()[0] if body.strip() else ""
+                mem = next((ln for ln in lines if ln.lower().startswith("mem") or "памят" in ln.lower()), "")
+                fields = mem.split()
+                body = f"Память: всего {fields[1]}, доступно {fields[-1]}" if len(fields) >= 3 else ""
             parts.append(body)
         return "\n".join(p for p in parts if p) or "Не смогла узнать.", ""
     if tool == "memory_show":

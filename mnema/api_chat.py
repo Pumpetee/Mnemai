@@ -500,27 +500,31 @@ def post(vault: Vault, path: str, b: dict):
         return 200, {"url": d["url"], "title": d.get("title") or url, "text": d["text"][:120_000]}
     if path == "/api/chat/action":  # the owner's word on an action the model asked for
         return 200, CH.answer_action(str(b.get("chat", "")), str(b.get("id", "")), str(b.get("choice", "")))
-    if path == "/api/files/open":  # «Открыть» a document the AI made: in its own program
-        from .chat import tools as TL
+    if path in ("/api/files/open", "/api/files/reveal"):
+        # «Открыть» / «Показать в папке» under an action. This is the owner clicking a path the action itself
+        # reported (a `claude` binary found by `which`, a folder from a command): it may be outside the memory
+        # folders, and that is fine — we only show it in the file manager or open it in its program, never read
+        # or write it for the model. TL.resolve is for actions, not for the owner's own file manager.
+        from pathlib import Path
 
         from . import osapi
+        from .chat import tools as TL
 
-        p = TL.resolve(vault, str(b.get("path", "")))
-        if not p.is_file():
+        raw = str(b.get("path", "")).strip()
+        try:
+            p = Path(raw).expanduser().resolve()
+        except (OSError, RuntimeError, ValueError):
+            return 400, {"error": "Не поняла путь к файлу"}
+        if not p.exists():
             return 404, {"error": "Файла нет: его переместили или удалили"}
-        if p.suffix.lower() not in TL.OPENABLE:
-            return 400, {"error": "Такой файл открывается только из папки: «Показать в папке»"}
-        osapi.open_path(p)
-        return 200, {"ok": True}
-    if path == "/api/files/reveal":  # «Показать в папке» under an action
-        import os
-
-        from .chat import tools as TL
-
-        from . import osapi
-
-        p = TL.resolve(vault, str(b.get("path", "")))
-        osapi.reveal(p) if p.is_file() else osapi.open_path(p)
+        if path == "/api/files/open":
+            if not p.is_file():
+                return 404, {"error": "Файла нет: его переместили или удалили"}
+            if p.suffix.lower() not in TL.OPENABLE:
+                return 400, {"error": "Такой файл открывается только из папки: «Показать в папке»"}
+            osapi.open_path(p)
+        else:
+            osapi.reveal(p) if p.is_file() else osapi.open_path(p)
         return 200, {"ok": True}
     if path == "/api/chat/stop":
         CH.stop(str(b.get("chat", "")))

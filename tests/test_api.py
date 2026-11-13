@@ -91,6 +91,22 @@ class TestApi(unittest.TestCase):
         self.assertNotEqual(self.req("/api/observe", {"client": "chatgpt", "text": "x"})[0], 200)
         self.assertNotEqual(self.req("/api/extension/open", {})[0], 200)
 
+    def test_reveal_a_path_outside_memory(self):
+        """«Показать в папке» under an action may point outside the memory roots (a `claude` binary, a log)."""
+        from unittest.mock import patch
+
+        from mnema import osapi
+
+        outside = Path(tempfile.mkdtemp()) / "outside.md"
+        outside.write_text("x", encoding="utf-8")
+        try:
+            with patch.object(osapi, "reveal", lambda p: None), patch.object(osapi, "open_path", lambda p: None):
+                code, body = self.req("/api/files/reveal", {"path": str(outside)})
+            self.assertEqual(code, 200)
+            self.assertTrue(body["ok"])
+        finally:
+            shutil.rmtree(outside.parent, ignore_errors=True)
+
     def test_token_required(self):
         code, _ = self.req("/api/now", tok=False)
         self.assertEqual(code, 401)

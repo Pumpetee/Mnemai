@@ -17480,9 +17480,12 @@ body.wlc-on .tour {
   gap: 5px;
 }
 
-/* the dots while the answer is on its way: centred on the avatar beside them (30px tall, 2px from the top) */
-.msg.ai .md > .typing:only-child {
+/* the dots and the «модель думает · N с» line while the answer is on its way: centred on the avatar beside them
+   (30px tall, 2px from the top) */
+.msg.ai .md > .typing:only-child,
+.msg.ai .md > .phase:only-child {
   display: flex;
+  align-items: center;
   height: 30px;
   margin-top: 2px;
 }

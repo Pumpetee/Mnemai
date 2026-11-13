@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -34,6 +35,12 @@ PROVIDERS = {
     "local": {
         "name": "Встроенная модель",
         "note": "Работает на этом компьютере, без интернета и ключей.",
+        "client": "local",
+        "key": False,
+    },
+    "harness": {
+        "name": "DeepSeek Harness",
+        "note": "Агент DSH на этом компьютере: сам выполняет команды и работает с файлами.",
         "client": "local",
         "key": False,
     },
@@ -127,6 +134,28 @@ YANDEX_MODELS = [
     "qwen3.6-35b-a3b",
 ]
 CLAUDE_CODE_MODELS = [("", "Claude"), ("sonnet", "Claude Sonnet"), ("opus", "Claude Opus"), ("haiku", "Claude Haiku")]
+HARNESS_MODEL = "deepseek-flash"
+DSH_PATCH = """# Written by Mnemai: the DeepSeek Harness profile for the chat brain.
+# The headless profile turns the signed-in account and credentials off by default; this layer turns them back on and
+# uses the same account provider as the web app, so no API key is needed on this computer.
+- id: authorization
+  name: "@deepseek-ai/dsh-authorization"
+  disabled: false
+- id: deepseek-account
+  name: "@deepseek-ai/dsh-deepseek-account-platform"
+  disabled: false
+- id: credentials
+  name: "@deepseek-ai/dsh-credentials-local"
+  disabled: false
+- id: llm-deepseek-account
+  name: "@deepseek-ai/dsh-llm-deepseek-account"
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: deepseek-account
+    model: deepseek-flash
+    reasoningEffort: high
+"""
 
 
 def _vid(vault: Vault) -> str:
@@ -225,7 +254,10 @@ def status(vault: Vault) -> list[dict]:
     out = []
     for pid, p in PROVIDERS.items():
         key = key_of(vault, pid) if p["key"] else ""
-        if pid == "local":
+        if pid == "harness":
+            ready = bool(dsh_exe())
+            models = [{"id": HARNESS_MODEL, "name": "DeepSeek Flash"}]
+        elif pid == "local":
             from .. import localllm
 
             inst = localllm.installed_models()
@@ -289,6 +321,8 @@ def fetch_models(vault: Vault, pid: str) -> list[str]:
     """Ask the provider which models exist — nothing hard-coded."""
     if pid == "claude_code":
         return [m for m, _ in CLAUDE_CODE_MODELS]
+    if pid == "harness":
+        return [HARNESS_MODEL]
     if pid == "codex":
         from . import codex_server as CS
 
@@ -687,6 +721,159 @@ def _flatten(system: str, messages: list[dict]) -> str:
     return head + ("\n\n".join(hist) + "\n\n[Владелец — новое сообщение]\n" if hist else "") + last
 
 
+# ---------------------------------------------------------------- DeepSeek Harness as the chat brain
+
+def dsh_exe() -> str | None:
+    """The DeepSeek Harness launcher (installed by npx or on PATH)."""
+    exe = shutil.which("dsh")
+    if exe:
+        return exe
+    for p in sorted(Path.home().glob(".npm/_npx/*/node_modules/.bin/dsh")):
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def harness_patch() -> Path:
+    """The profile layer that gives headless DSH the signed-in DeepSeek account (no API key needed)."""
+    home = Path(os.environ.get("MNEMA_HOME") or (Path.home() / ".mnema"))
+    p = home / "dsh-harness.yml"
+    try:
+        if not p.exists() or p.read_text(encoding="utf-8") != DSH_PATCH:
+            home.mkdir(parents=True, exist_ok=True)
+            p.write_text(DSH_PATCH, encoding="utf-8")
+    except OSError:
+        pass
+    return p
+
+
+def _short_line(text, limit: int = 240) -> str:
+    one = " ".join(str(text or "").split())
+    return one[:limit] + ("…" if len(one) > limit else "")
+
+
+def _stream_harness(
+    vault: Vault, model: str, system: str, messages: list[dict], stop=None, usage: dict | None = None
+) -> Iterator[str]:
+    """Run the task through `dsh headless`: the harness agent itself calls the tools (bash, files) and streams its
+    answer back. Its tool calls are shown in the conversation as short lines, so the owner sees what happened."""
+    exe = dsh_exe()
+    if not exe:
+        raise NotSent(
+            "DeepSeek Harness не найден: нужен dsh (npx @deepseek-ai/dsh). Выбери другую модель слева вверху."
+        )
+    patch = harness_patch()
+    task = _flatten(system, messages)
+    cmd = [
+        exe,
+        "headless",
+        "--patch",
+        str(patch),
+        "--permission-mode",
+        "danger-full-access",  # the chat has the computer access the owner gave it
+        "--json",
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(Path.home()),
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=net.env({}),
+        start_new_session=True,
+    )
+
+    def feed() -> None:
+        try:
+            proc.stdin.write(task)
+            proc.stdin.close()
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+
+    threading.Thread(target=feed, daemon=True, name="dsh-stdin").start()
+
+    err: list[str] = []
+
+    def read_err() -> None:
+        try:
+            for line in proc.stderr:  # type: ignore[union-attr]
+                err.append(line.rstrip())
+        except (OSError, ValueError):
+            pass
+
+    threading.Thread(target=read_err, daemon=True, name="dsh-stderr").start()
+    killed = {"timeout": False}
+
+    def watchdog() -> None:
+        began = time.time()
+        while proc.poll() is None:
+            if time.time() - began > 900:
+                killed["timeout"] = True
+                _kill_tree(proc)
+                return
+            time.sleep(1)
+
+    threading.Thread(target=watchdog, daemon=True, name="dsh-watchdog").start()
+    got_answer = False
+    try:
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            if stop and stop():
+                _kill_tree(proc)
+                return
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            typ = ev.get("type")
+            if typ == "text" and ev.get("text"):
+                got_answer = True
+                yield str(ev["text"])
+            elif typ == "tool_call":
+                inp = ev.get("input") or {}
+                desc = inp.get("description") or inp.get("command") or inp.get("path") or inp.get("query") or ""
+                yield f"\n\n⚙ `{ev.get('tool') or 'tool'}`: {_short_line(desc)}\n\n"
+            elif typ == "tool_result":
+                result = str(ev.get("result") or "").strip()
+                if result:
+                    yield f"\n→ {_short_line(result)}\n\n"
+            elif typ == "status" and ev.get("phase") == "step_end" and usage is not None:
+                u = ev.get("usage") or {}
+                usage["in"] = int(usage.get("in", 0)) + int(u.get("inputTokens") or 0)
+                usage["out"] = int(usage.get("out", 0)) + int(u.get("outputTokens") or 0)
+                usage["cache"] = int(usage.get("cache", 0)) + int(u.get("cacheReadTokens") or 0)
+            elif typ == "final" and not got_answer and ev.get("text"):
+                got_answer = True
+                yield str(ev["text"])
+        proc.wait(timeout=30)
+    finally:
+        if proc.poll() is None:
+            _kill_tree(proc)
+    if killed["timeout"]:
+        raise RuntimeError("DeepSeek Harness не ответил за 15 минут — задача остановлена. Попробуй разбить её на части.")
+    if proc.returncode not in (0, None) and not got_answer:
+        raise RuntimeError("DeepSeek Harness: " + (" ".join(err[-4:])[:400] or "ошибка запуска"))
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    try:
+        if os.name == "nt":
+            proc.kill()
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
 def stream(
     vault: Vault,
     pid: str,
@@ -788,6 +975,9 @@ def _stream_raw(
     """Yield text pieces of the answer. messages: [{role: user|assistant, text}].
     usage (optional) gets filled with tokens spent: {"in", "out", "cache"} as the provider reports them."""
     usage = usage if usage is not None else {}
+    if pid == "harness":
+        yield from _stream_harness(vault, model, system, messages, stop, usage)
+        return
     if pid == "codex":
         from . import codex_server as CS
         from . import codex_auth as CA

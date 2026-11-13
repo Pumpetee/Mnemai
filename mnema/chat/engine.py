@@ -925,7 +925,13 @@ def _generate(
         "started": time.time(),
         "stop": False,
         "pid": pid,
-        "who": {"claude_code": "Claude", "anthropic": "Claude", "openai": "ChatGPT", "gemini": "Gemini"}.get(pid, ""),
+        "who": {
+            "harness": "DeepSeek",
+            "claude_code": "Claude",
+            "anthropic": "Claude",
+            "openai": "ChatGPT",
+            "gemini": "Gemini",
+        }.get(pid, ""),
     }
     _gen[chat["id"]] = g
 
@@ -946,11 +952,13 @@ def _generate(
                 system += "\n\n" + TM.RULE
             from . import tools as TL
 
-            acts = TL.enabled(vault) and text != OPENER
+            acts = TL.enabled(vault) and text != OPENER and pid != "harness"
             if acts:  # the model may ask for an action on files; the owner says yes to each one
                 from . import small as SM
 
                 system += "\n\n" + TL.rule(vault, small=SM.is_small(pid, mname))
+            if pid == "harness":  # the harness agent has real tools: tell it so, instead of the ```mnema blocks
+                system += "\n\n" + HARNESS_NOTE
             if not web and text != OPENER:  # no search this time: it says so itself when it needs one
                 system += "\n\n" + WEB_OFF
             if prompt:  # the owner's prompt for this recurring task
@@ -1233,6 +1241,13 @@ def answer_self_ask(vault: Vault, cid: str, i: int, action: str, text: str = "")
 
     return modify_chat(vault, cid, mark)
 
+
+HARNESS_NOTE = """=== Инструменты DeepSeek Harness ===
+Ты отвечаешь как модель в Mnemai, но работаешь через агент DeepSeek Harness: у тебя ЕСТЬ его инструменты — bash
+(терминал), чтение и запись файлов, поиск. Не пиши блоки ```mnema: просто выполни нужное инструментом и продолжи.
+Владелец дал доступ к компьютеру по умолчанию. Не выводи в ответ пароли, ключи и токены.
+Если просят открыть программу — открой именно её. Если её нет, честно скажи и предложи варианты: ничего не устанавливай
+и не подменяй запрошенную программу другой без разрешения."""
 
 WEB_MARK = "{{нужен интернет}}"
 WEB_OFF = (

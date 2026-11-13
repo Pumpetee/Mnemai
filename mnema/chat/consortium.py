@@ -449,7 +449,7 @@ def run(
         own_sources: list = []
         g.update(text="", speaker=me, speaker_ref=ref, pid=pid, phase="пишу", who=me, usage={})
 
-        def say(sysm: str, msgs: list) -> str:
+        def say(sysm: str, msgs: list, prefix: str = "") -> str:
             """One pass of the speaker. A reply that may be a «[поиск: …]» line is not shown while it streams."""
             buf, use = "", {}
             for piece in PR.stream(
@@ -466,7 +466,7 @@ def run(
                 lead = buf.lstrip()
                 if look and ("[поиск:".startswith(lead[:7]) or lead.startswith("[поиск")):
                     continue
-                g["text"] = buf
+                g["text"] = prefix + buf
             for k, v in use.items():
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
                     g["usage"][k] = g["usage"].get(k, 0) + v
@@ -486,6 +486,16 @@ def run(
         try:
             stage = STAGES[stage_of(min(r, rounds - 1), rounds, fmt)]
             head = CH.system_prompt(vault, pid, log=False, query=text, model=mname)
+            head += f"\n\nТы подключён через {PR.PROVIDERS[pid]['name']}"
+            head += f", модель {mname or PR.PROVIDERS[pid]['name']}." if mname else "."
+            from . import tools as TL
+            from ..agent import profile as P
+
+            can_act = TL.enabled(vault) and not P.load(vault).get("tools_ask", False) and pid != "harness"
+            if pid == "harness":
+                head += "\n\n" + CH.HARNESS_NOTE
+            elif can_act:
+                head += "\n\n" + TL.rule(vault)
 
             def build(rule: str, found: str = "") -> str:
                 return (
@@ -517,6 +527,41 @@ def run(
                 localllm.ensure_server(mname, vault)
                 g["phase"] = "пишу"
             raw = say(system, msgs)
+            steps = 0
+            while can_act and not (g["stop"] or g.get("cut")) and steps < 4:
+                call = TL.parse(CH.strip_thinking(raw))
+                if not call:
+                    break
+                steps += 1
+                head_text = TL.before(CH.strip_thinking(raw), call).strip()
+                g["phase"] = "делаю: " + call["tool"]
+                g["text"] = head_text
+                try:
+                    result, line, _ = TL.run(vault, call, PR.PROVIDERS[pid]["client"])
+                except Exception as e:  # a failed action must not kill the speaker
+                    result, line = f"Не получилось: {str(e)[:300]}", ""
+                if line:
+                    act = {
+                        "role": "assistant",
+                        "kind": "action",
+                        "ts": CH._now(),
+                        "text": line,
+                        "model": ref,
+                        "speaker": me,
+                        "round": r + 1,
+                    }
+                    CH.modify_chat(
+                        vault, cid, lambda c: (c["messages"].append(act), c.update(updated=CH._now()))
+                    )
+                msgs = msgs + [
+                    {
+                        "role": "assistant",
+                        "text": head_text + f"\n[action: {call['tool']} {call.get('path') or call.get('command') or ''}]",
+                    },
+                    {"role": "user", "text": "[Результат действия от Mnemai]\n" + result},
+                ]
+                g["phase"] = "пишу"
+                raw = say(system, msgs, prefix=(head_text + "\n\n") if head_text else "")
             queries = SEARCH_RE.findall(CH.strip_thinking(raw))[:MAX_SEARCHES] if look else []
             if queries and not (g["stop"] or g.get("cut")):
                 g.update(phase="ищу в интернете", text="", searching=queries)

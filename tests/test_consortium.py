@@ -63,6 +63,38 @@ class TestConsortium(unittest.TestCase):
         self.assertEqual([m["role"] for m in fourth], ["user", "assistant", "user"])
         self.assertEqual(fourth[1]["text"], "Мнение claude_code №1")
 
+    def test_speaker_can_use_mnema_tools(self):
+        target = self.v.root / "00 Inbox" / "tool-note.md"
+        target.write_text("секретное содержимое для спикера", encoding="utf-8")
+
+        class ActionTalk:
+            def __init__(self):
+                self.calls = 0
+                self.systems = []
+
+            def __call__(self, vault, pid, model, system, messages, stop=None, usage=None, meta=None):
+                self.calls += 1
+                self.systems.append(system)
+                if usage is not None:
+                    usage.update({"in": 5, "out": 5})
+                if self.calls == 1:
+                    yield f'Проверю файл.\n```mnema read_file path="{target}"\n```'
+                else:
+                    yield "Файл прочитан."
+
+        self.talk = ActionTalk()
+        PR.stream = self.talk
+        cfg = {"members": ["claude_code:sonnet", "openai:gpt-4o"], "rounds": 1}
+        r = CH.send(self.v, "Проверь файл", sync=True, learn=False, consortium=cfg)
+        c = CH.load_chat(self.v, r["chat"])
+        actions = [m for m in c["messages"] if m.get("kind") == "action"]
+        self.assertEqual(len(actions), 1)
+        self.assertIn("tool-note.md", actions[0]["text"])
+        self.assertIn("Ты подключён через", self.talk.systems[0])
+        self.assertIn("Действия на компьютере", self.talk.systems[0])  # the speaker is told about its tools
+        # the second pass saw the file content and answered
+        self.assertTrue(any("Файл прочитан" in (m.get("text") or "") for m in c["messages"] if m["role"] == "assistant"))
+
     def test_memory_rules_per_participant(self):
         lock_cloud(self.v)
         cfg = {"members": ["claude_code:sonnet", "gemini:gemini-2.5-pro"], "rounds": 1}

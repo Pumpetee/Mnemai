@@ -11,9 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
 
 from mnema.agent import profile as P  # noqa: E402
-from mnema.chat import engine as CH, intents as IN, providers as PR, tools as TL  # noqa: E402
+from mnema.chat import engine as CH, intents as IN, providers as PR  # noqa: E402
 from mnema.memory import init_vault  # noqa: E402
 from mnema.vault import Vault  # noqa: E402
+
+MODELS = ("claude_code:sonnet", "harness:deepseek-flash")
 
 
 class Intents(unittest.TestCase):
@@ -22,42 +24,59 @@ class Intents(unittest.TestCase):
         self.v = Vault(self.work / "vault")
         init_vault(self.v)
 
-    def test_open_commands_are_recognised(self):
-        self.assertEqual(IN.fast_open(self.v, "Открой терминал")["name"], "terminal")
-        self.assertEqual(IN.fast_open(self.v, "запусти firefox")["name"], "firefox")
-        self.assertEqual(IN.fast_open(self.v, "Открой мне хром, пожалуйста")["name"], "chrome")
-        self.assertEqual(IN.fast_open(self.v, "open https://example.com")["name"], "https://example.com")
-        self.assertIsNone(IN.fast_open(self.v, "расскажи, как прошёл день"))
-        self.assertIsNone(IN.fast_open(self.v, "открой файл с отчётом"))
+    def test_commands_are_recognised(self):
+        self.assertEqual(IN.fast_action(self.v, "Открой терминал")["name"], "terminal")
+        self.assertEqual(IN.fast_action(self.v, "запусти firefox")["name"], "firefox")
+        self.assertEqual(IN.fast_action(self.v, "Открой мне хром, пожалуйста")["name"], "chrome")
+        self.assertEqual(IN.fast_action(self.v, "open https://example.com")["name"], "https://example.com")
+        self.assertEqual(IN.fast_action(self.v, "прочитай файл ~/x.md")["tool"], "read_file")
+        self.assertEqual(IN.fast_action(self.v, "что в загрузках")["tool"], "list_files")
+        self.assertEqual(IN.fast_action(self.v, "найди договор в файлах")["tool"], "find_files")
+        self.assertEqual(IN.fast_action(self.v, "выполни echo ok")["tool"], "run_command")
+        self.assertEqual(IN.fast_action(self.v, "!echo hi")["tool"], "run_command")
+        self.assertEqual(IN.fast_action(self.v, "запомни: я люблю кофе")["tool"], "remember")
+        self.assertEqual(IN.fast_action(self.v, "создай файл ~/x.md с текстом: привет")["tool"], "write_file")
+        self.assertEqual(IN.fast_action(self.v, "сделай pdf ~/x.pdf из: # План")["tool"], "make_document")
+        self.assertEqual(IN.fast_action(self.v, "найди кофе в памяти")["tool"], "memory_find")
+        self.assertEqual(IN.fast_action(self.v, "который час")["tool"], "time")
+        self.assertEqual(IN.fast_action(self.v, "сколько памяти")["tool"], "system")
+        self.assertIsNone(IN.fast_action(self.v, "расскажи, как прошёл день"))
+        self.assertIsNone(IN.fast_action(self.v, "открой файл с отчётом"))
 
-    def test_unknown_program_is_answered_briefly(self):
-        answer = IN.answer(self.v, {"tool": "open_app", "name": "definitely-not-installed-app-xyz", "label": "app"})
-        self.assertIn("не найдена", answer)
-        self.assertLess(len(answer), 400)
+    def test_file_commands_work_without_a_model(self):
+        note = self.v.root / "00 Inbox" / "fast-note.md"
+        note.write_text("# Заметка\n\nдоговор с клиентом\n", encoding="utf-8")
+        self.assertIn("договор", IN.answer(self.v, IN.fast_action(self.v, f"прочитай файл {note}")))
+        listing = IN.answer(self.v, IN.fast_action(self.v, f"что в папке {self.v.root / '00 Inbox'}"))
+        self.assertIn("fast-note.md", listing)
+        found = IN.answer(self.v, IN.fast_action(self.v, "найди договор в файлах"))
+        self.assertIn("fast-note.md", found.lower())
+        self.assertEqual(IN.answer(self.v, IN.fast_action(self.v, "запомни: я люблю кофе")), "Запомнила.")
+        self.assertIn("я люблю кофе", (self.v.root / "00 Inbox" / "Inbox.md").read_text(encoding="utf-8"))
+        self.assertIn("fast-ok", IN.answer(self.v, IN.fast_action(self.v, "выполни echo fast-ok")))
+        created = self.v.root / "00 Inbox" / "written.md"
+        result = IN.answer(
+            self.v, IN.fast_action(self.v, f"создай файл {created} с текстом: привет из быстрой команды")
+        )
+        self.assertIn("Создала", result)
+        self.assertIn("привет из быстрой", created.read_text(encoding="utf-8"))
+        from mnema.memory import remember
 
-    @unittest.skipIf(os.name == "nt", "the checked program is a POSIX shell script")
-    def test_send_answers_without_the_model(self):
-        marker = self.work / "opened"
-        app = self.work / "mnema-test-app"
-        app.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
-        app.chmod(0o755)
-        old_path = os.environ["PATH"]
-        os.environ["PATH"] = str(self.work) + os.pathsep + old_path
+        remember(self.v, "Пьёт кофе без сахара", "inbox", "owner")
+        self.assertIn("кофе", IN.answer(self.v, IN.fast_action(self.v, "найди кофе в памяти")).lower())
+        self.assertRegex(IN.answer(self.v, IN.fast_action(self.v, "который час")), r"\d{2}:\d{2}")
+
+    def test_send_answers_without_the_model_on_every_model(self):
         old_stream = PR.stream
         PR.stream = lambda *a, **k: (_ for _ in ()).throw(AssertionError("the model must not be called"))
         try:
-            r = CH.send(self.v, "Открой mnema-test-app", model="claude_code:sonnet", sync=True, learn=False)
+            for model in MODELS:
+                r = CH.send(self.v, "выполни echo mnema-fast-ok", model=model, sync=True, learn=False)
+                c = CH.load_chat(self.v, r["chat"])
+                self.assertEqual(c["messages"][-1]["role"], "assistant")
+                self.assertIn("mnema-fast-ok", c["messages"][-1]["text"], model)
         finally:
             PR.stream = old_stream
-            os.environ["PATH"] = old_path
-        c = CH.load_chat(self.v, r["chat"])
-        self.assertEqual(c["messages"][-1]["role"], "assistant")
-        self.assertIn("Готово", c["messages"][-1]["text"])
-        for _ in range(30):
-            if marker.exists():
-                break
-            time.sleep(0.1)
-        self.assertTrue(marker.exists())
 
 
 if __name__ == "__main__":

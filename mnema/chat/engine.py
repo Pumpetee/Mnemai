@@ -738,7 +738,7 @@ def send(
         # of answer: no model round-trip, no 40–90 s wait, the same on every model.
         from . import intents as IN
 
-        call = IN.fast_open(vault, text)
+        call = IN.fast_action(vault, text)
         if call is not None and not P.load(vault).get("tools_ask", False):
             say = IN.answer(vault, call)
 

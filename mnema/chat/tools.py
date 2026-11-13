@@ -490,6 +490,24 @@ def _open_app(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str
     if not name:
         raise Refused("не указано, что открыть: name=\"chrome\" или name=\"https://…\"")
     log_event(vault, client, "exec", f"открыть: {name[:160]}")
+    candidate = Path(name).expanduser()
+    if candidate.exists():  # a file or a folder the owner asked to open, not a program
+        try:
+            if os.name == "nt":
+                os.startfile(str(candidate))  # noqa: S606 — opening the owner's file is the point
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(candidate)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(
+                    ["xdg-open", str(candidate)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+        except OSError as e:
+            raise Refused(f"не получилось открыть {candidate}: {e}") from e
+        shown = candidate.name or str(candidate)
+        return f"Открыла: {shown}", f"Открыла: {shown}", str(candidate.parent)
     if name.startswith(("http://", "https://", "mailto:")):
         try:
             if os.name == "nt":

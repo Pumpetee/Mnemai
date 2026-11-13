@@ -218,6 +218,32 @@ class ActionsTest(unittest.TestCase):
         CH.send(v, "привет ещё", model="openai:m1", learn=False, sync=True)
         self.assertNotIn("run_command", off.seen[0][0])
 
+    @unittest.skipIf(os.name == "nt", "the checked program is a POSIX shell script")
+    def test_open_app_launches_a_program(self):
+        v = _vault(self.work)
+        marker = self.work / "opened-marker"
+        app = self.work / "mnema-test-app"
+        app.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
+        app.chmod(0o755)
+        old = os.environ["PATH"]
+        os.environ["PATH"] = str(self.work) + os.pathsep + old
+        try:
+            text, line, _ = TL.run(v, {"tool": "open_app", "name": "mnema-test-app"})
+        finally:
+            os.environ["PATH"] = old
+        self.assertIn("Открыла программу", text)
+        self.assertIn("mnema-test-app", line)
+        for _ in range(30):
+            if marker.exists():
+                break
+            time.sleep(0.1)
+        self.assertTrue(marker.exists())
+
+    def test_open_app_says_what_is_installed(self):
+        v = _vault(self.work)
+        with self.assertRaises(TL.Refused):
+            TL.run(v, {"tool": "open_app", "name": "definitely-not-installed-app-xyz"})
+
     def test_terminal_runs_and_the_model_gets_the_output(self):
         v = _vault(self.work)
         s = Script('Проверю систему.\n```mnema run_command command="echo mnema-pc-ok"\n```', 'Команда сработала.')

@@ -458,11 +458,21 @@ def strip_tool_markup(text: str) -> str:
 
 
 def _phase(g: dict) -> str:
-    """What the owner sees while there are no words yet — what exactly is going on and, on this computer, how far."""
+    """What the owner sees while there are no words yet — what exactly is going on and how long it has been going on."""
+    elapsed = int(time.time() - g.get("started", time.time()))
     if g["phase"] != "пишу" or strip_thinking(g["text"]).strip():
-        return g["phase"]
-    if g.get("pid") != "local":  # a plain chat: just the dots; who speaks matters in a consortium
-        return f"{g.get('who') or 'модель'} думает" if g.get("consortium") else ""
+        phase = g["phase"]
+        if phase.startswith("делаю:") and elapsed >= 5:
+            return f"{phase} · {elapsed} с"
+        if phase == "думаю" and elapsed >= 5:
+            return f"модель думает · {elapsed} с"
+        return phase
+    if g.get("pid") != "local":  # a plain chat: who speaks matters only in a consortium
+        if not g.get("consortium") and elapsed < 5:
+            return ""
+        who = g.get("who") or "модель"
+        tail = " · можно остановить" if elapsed >= 60 else f" · {elapsed} с" if elapsed >= 5 else ""
+        return f"{who} думает{tail}"
     if (g.get("usage") or {}).get("reasoning") or g["text"].lstrip().startswith("<think>"):
         return "модель рассуждает, потом ответит"
     pr = (g.get("usage") or {}).get("progress")
@@ -912,6 +922,7 @@ def _generate(
         "done": False,
         "error": "",
         "phase": "думаю",
+        "started": time.time(),
         "stop": False,
         "pid": pid,
         "who": {"claude_code": "Claude", "anthropic": "Claude", "openai": "ChatGPT", "gemini": "Gemini"}.get(pid, ""),
@@ -1004,6 +1015,7 @@ def _generate(
                     g["phase"] = "запускаю модель на компьютере"  # loading a model from disk takes 10–30 s
                 localllm.ensure_server(mname, vault)
             g["phase"] = "пишу"
+            g["started"] = time.time()
             usage: dict = {}
             g["usage"] = usage
             g["web_hid"] = web_hid
@@ -1077,6 +1089,7 @@ def _generate(
                 ]
                 g["text"] = ""
                 g["phase"] = "пишу"
+                g["started"] = time.time()
             g["text"] = strip_tool_markup(strip_thinking(g["text"]))
             if not web and not g.get("sources") and text != OPENER:  # Mnemai speaking first never needs the web
                 from .. import web as W

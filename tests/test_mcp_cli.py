@@ -129,10 +129,17 @@ class TestMcp(unittest.TestCase):
                     "method": "tools/call",
                     "params": {"name": "pc_list_dir", "arguments": {"path": str(self.dir)}},
                 },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "tools/call",
+                    "params": {"name": "pc_open_app", "arguments": {"name": "definitely-not-installed-app-xyz"}},
+                },
             ],
         )
         names = {t["name"] for t in r[0]["result"]["tools"]}
-        self.assertTrue({"pc_run", "pc_read_file", "pc_write_file", "pc_list_dir"} <= names)
+        self.assertTrue({"pc_run", "pc_read_file", "pc_write_file", "pc_list_dir", "pc_open_app"} <= names)
+        self.assertTrue(r[5]["result"]["isError"])  # nothing to open: the tool says so instead of pretending
         self.assertIn("mcp-pc-ok", r[1]["result"]["content"][0]["text"])
         self.assertFalse(r[2]["result"]["isError"])
         self.assertEqual(r[3]["result"]["content"][0]["text"], "привет")

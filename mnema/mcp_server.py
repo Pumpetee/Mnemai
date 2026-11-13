@@ -99,6 +99,11 @@ TOOLS = [
         "description": "Показать, что лежит в папке на компьютере.",
         "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
     },
+    {
+        "name": "pc_open_app",
+        "description": "Открыть программу или ссылку на компьютере владельца (chrome, firefox, telegram, https://…).",
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    },
 ]
 
 
@@ -176,8 +181,8 @@ class Server:
         from .chat import tools as TL
         from .journal import log_event
 
-        if name in ("pc_run", "pc_write_file") and not c.can_write:
-            raise PermissionDenied(f"{c.name} не может менять файлы и запускать команды")
+        if name in ("pc_run", "pc_write_file", "pc_open_app") and not c.can_write:
+            raise PermissionDenied(f"{c.name} не может менять файлы, запускать команды и программы")
         if name == "pc_run":
             cmd = str(args.get("command") or "").strip()
             if not cmd:
@@ -193,6 +198,9 @@ class Server:
             data = p.read_bytes()[: TL.MAX_READ]
             log_event(self.vault, self.client_id, "read", f"файл {p}", [])
             return data.decode("utf-8", "replace")
+        if name == "pc_open_app":
+            opened = TL.run(self.vault, {"tool": "open_app", "name": str(args.get("name") or "")}, self.client_id)
+            return opened[0]
         if name == "pc_list_dir":
             p = Path(str(args.get("path") or "~")).expanduser()
             if not p.is_dir():

@@ -28,6 +28,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -47,8 +48,9 @@ TOOLS = (
     "edit_pdf",
     "remember",
     "run_command",
+    "open_app",
 )
-WRITES = {"write_file", "edit_file", "make_document", "edit_pdf", "remember", "run_command"}
+WRITES = {"write_file", "edit_file", "make_document", "edit_pdf", "remember", "run_command", "open_app"}
 TEXT_EXT = {".md", ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".log", ".ini", ".tsv"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
 MAX_READ = 60_000
@@ -110,7 +112,12 @@ TERMINAL_RULE = """```mnema run_command command="одна команда тер�
 домашняя папка; timeout — секунды, по умолчанию 120, максимум 300. Так можно смотреть процессы, железо, сеть, git,
 запускать программы, ставить пакеты, работать с файлами вне рабочих папок — всё, что делает терминал.
 Если команда сложная, пиши её в теле блока: ```mnema run_command cwd="…"``` и следующей строкой саму команду.
-Терминал работает по всему компьютеру, а не только в папках памяти и рабочих папках.)"""
+Терминал работает по всему компьютеру, а не только в папках памяти и рабочих папках.
+
+```mnema open_app name="chrome"
+```
+(открывает программу или ссылку на этом компьютере: "chrome", "firefox", "telegram", "code", или https://… — Mnemai
+сама найдёт установленную программу. Для «открой хром» используй это, а не догадки про имя команды в терминале.)"""
 
 SMALL_RULE = """Файлы: чтобы прочитать файл, напиши блок ```mnema read_file path="путь"``` и остановись.
 Чтобы создать файл: ```mnema write_file path="путь"``` с текстом внутри блока. Папки: {folders}
@@ -249,6 +256,7 @@ def what(vault: Vault, call: dict) -> str:
         }.get(call.get("do", ""), f"изменить PDF {call.get('from', '')} → {path}"),
         "remember": f"записать в память ({call.get('where', 'inbox')}): «{call.get('body', '')[:200]}»",
         "run_command": f"выполнить в терминале: {_command(call)[:200]}",
+        "open_app": f"открыть программу: {call.get('name', '')}",
     }[t]
 
 
@@ -458,6 +466,73 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     return text, line, str(work)
 
 
+APP_ALIASES = {
+    "chrome": ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"],
+    "хром": ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"],
+    "firefox": ["firefox", "firefox-esr"],
+    "файрфокс": ["firefox", "firefox-esr"],
+    "telegram": ["telegram-desktop", "telegram"],
+    "телеграм": ["telegram-desktop", "telegram"],
+    "code": ["code", "codium"],
+    "vscode": ["code", "codium"],
+    "terminal": ["konsole", "gnome-terminal", "xterm"],
+    "терминал": ["konsole", "gnome-terminal", "xterm"],
+}
+
+
+def _open_app(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
+    """Open a program or a link on this computer, detached from Mnemai."""
+    import shutil
+
+    from ..journal import log_event
+
+    name = " ".join(str(call.get("name") or call.get("body") or "").split()).strip().strip('"')
+    if not name:
+        raise Refused("не указано, что открыть: name=\"chrome\" или name=\"https://…\"")
+    log_event(vault, client, "exec", f"открыть: {name[:160]}")
+    if name.startswith(("http://", "https://", "mailto:")):
+        try:
+            if os.name == "nt":
+                os.startfile(name)  # noqa: S606 — opening a link is the point
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(
+                    ["xdg-open", name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+        except OSError as e:
+            raise Refused(f"не получилось открыть ссылку: {e}") from e
+        return f"Открыла ссылку: {name}", f"Открыла ссылку: {name[:120]}", ""
+    candidates = APP_ALIASES.get(name.lower(), [name])
+    exe = next((shutil.which(c) for c in candidates if shutil.which(c)), None)
+    if not exe:
+        installed = [c for c in ("google-chrome", "chromium", "firefox", "code", "telegram-desktop") if shutil.which(c)]
+        raise Refused(
+            f"программа «{name}» не найдена. Установлены: {', '.join(installed) or 'не вижу известных программ'}"
+        )
+    try:
+        if os.name == "nt":
+            subprocess.Popen(
+                [exe],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-a", exe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.Popen(
+                [exe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True
+            )
+    except OSError as e:
+        raise Refused(f"не получилось открыть «{name}»: {e}") from e
+    shown = Path(exe).name
+    return f"Открыла программу: {shown} ({exe})", f"Открыла: {shown}", str(Path(exe).parent)
+
+
 def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
     """Do an approved action: (result for the model, line for the owner, path or "")."""
     t = call["tool"]
@@ -477,6 +552,10 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
         if not pc_enabled(vault):
             raise Refused("терминал выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»")
         return _run_command(vault, call, client)
+    if t == "open_app":
+        if not pc_enabled(vault):
+            raise Refused("доступ к компьютеру выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»")
+        return _open_app(vault, call, client)
     p = resolve(vault, call.get("path", ""))
     if t == "list_files":
         if not p.is_dir():

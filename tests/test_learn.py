@@ -293,6 +293,15 @@ class TestPolicy(Base):
             }
         ],
         "отчёт": [{"text": "Отвечать без вступлений", "kind": "rule", "confidence": 0.9}],
+        "монетизация": [
+            {
+                "text": "Монетизация Копилки: подписка 199 рублей в месяц",
+                "kind": "decision",
+                "where": "decisions",
+                "key": "монетизация",
+                "confidence": 0.95,
+            }
+        ],
         "уверен": [
             {
                 "text": "Главный проект — запуск Mnemai",
@@ -412,7 +421,8 @@ class TestPolicy(Base):
         cid, q = self.ask_in_chat("моя зарплата и кофе")
         self.assertEqual(q["kind"], "personal")
         self.assertNotIn("300 тысяч", self.v.read_raw("70 Memory/Cards/Деньги.md") or "")
-        self.assertFalse(Ledger(self.v).queue())  # nothing waits anywhere else
+        waiting = Ledger(self.v).queue()  # the question is visible in the queue and in the conversation
+        self.assertTrue(any(i["id"] == q["item"] and i["state"] == "asking" for i in waiting))
         engine.review(self.v, q["item"], "keep")
         self.assertIn("Доход 300 тысяч", self.v.read_raw("70 Memory/Cards/Деньги.md"))
 
@@ -478,6 +488,172 @@ class TestPolicy(Base):
         engine.review(self.v, q["item"], "keep_old")
         self.assertNotIn("Москв", self.v.read_raw("70 Memory/Profile.md"))
         self.assertEqual(Ledger(self.v).get(q["item"])["state"], "rejected")
+
+    def test_explicit_change_replaces_right_away(self):
+        base = {
+            "text": "Монетизация — разовая покупка 499 рублей",
+            "kind": "decision",
+            "where": "decisions",
+            "confidence": 0.95,
+            "count": 1,
+            "tags": ["money"],
+            "contradicts": "Монетизация — подписка 199 рублей",
+            "sources": ["mnema_chat"],
+            "last_source": "mnema_chat",
+            "evidence": ["Подписку убираем совсем, вместо неё разовая покупка за 499 рублей"],
+        }
+        settings = S.load(self.v)
+        self.assertEqual(engine.decide_why(base, settings, can_ask=True)[0], "replace")
+        silent = {**base, "text": "Монетизация 499 рублей", "evidence": ["разовая покупка 499 рублей"]}
+        self.assertEqual(engine.decide_why(silent, settings, can_ask=True)[0], "ask")
+
+    def test_explicit_change_replaces_the_old_line_without_a_model_hint(self):
+        from mnema.chat import engine as CH
+        from mnema.learn.sources import Episode
+
+        self.settings(claude_code="mixed", corrections="mixed")
+        cid, q = self.ask_in_chat("моя монетизация: подписка 199 рублей в месяц")
+        engine.review(self.v, q["item"], "keep")
+        self.assertIn("подписка 199", self.v.read_raw("70 Memory/Cards/Деньги.md"))
+        text = "Подписку убираем совсем, вместо неё разовая покупка за 499 рублей"
+        CH.save_chat(self.v, {"id": cid, "title": "t", "messages": [{"role": "user", "text": text}], "updated": ""})
+        brain = FakeBrain(
+            {
+                "убираем": [
+                    {
+                        "text": "Монетизация Копилки: подписка убрана, вместо неё разовая покупка за 499 рублей",
+                        "kind": "decision",
+                        "where": "decisions",
+                        "confidence": 1.0,
+                        "evidence": text,
+                    }
+                ]
+            }
+        )
+        engine.learn_episodes(self.v, [Episode("mnema_chat", f"{cid}#2", "", text)], "mnema_chat", brain=brain)
+        card = self.v.read_raw("70 Memory/Cards/Деньги.md")
+        self.assertIn("499", card)
+        self.assertNotIn("подписка 199", card)
+        archived = list((self.v.root / "70 Memory" / "Fact archive").glob("*.md"))
+        self.assertTrue(any("199" in f.read_text(encoding="utf-8") for f in archived))
+
+    def test_memory_questions_stay_in_a_queue(self):
+        from mnema import api_learn
+        from mnema.chat import engine as CH
+        from mnema.learn.sources import Episode
+
+        self.settings(claude_code="mixed", corrections="mixed")
+        cid = "abc123abc123"
+        CH.save_chat(
+            self.v, {"id": cid, "title": "t", "messages": [{"role": "user", "text": "моя зарплата"}], "updated": ""}
+        )
+        brain = FakeBrain(
+            {"зарплата": [{"text": "Доход 300 тысяч в месяц", "kind": "fact", "where": "inbox", "confidence": 0.95}]}
+        )
+        engine.learn_episodes(
+            self.v, [Episode("mnema_chat", f"{cid}#1", "", "моя зарплата")], "mnema_chat", brain=brain
+        )
+        brain2 = FakeBrain(
+            {"кредит": [{"text": "Кредит 500 тысяч", "kind": "fact", "where": "inbox", "confidence": 0.95}]}
+        )
+        engine.learn_episodes(self.v, [Episode("mnema_chat", f"{cid}#2", "", "мой кредит")], "mnema_chat", brain=brain2)
+        c = CH.load_chat(self.v, cid)
+        self.assertEqual(len(c.get("learn_asks") or []), 2)  # the second question is not lost
+        first = c["learn_asks"][0]["item"]
+        api_learn.post(self.v, "/api/learn/review", {"chat": cid, "id": first, "action": "keep"})
+        c = CH.load_chat(self.v, cid)
+        self.assertEqual(len(c.get("learn_asks") or []), 1)  # the next one shows instead
+
+    def test_goal_of_a_project_goes_to_its_hub(self):
+        from mnema.chat import engine as CH
+        from mnema.learn.sources import Episode
+
+        self.settings(claude_code="mixed")
+        cid = "goalgoalgoal"
+        CH.save_chat(
+            self.v, {"id": cid, "title": "t", "messages": [{"role": "user", "text": "цель сайта"}], "updated": ""}
+        )
+        brain = FakeBrain(
+            {
+                "цель": [
+                    {
+                        "text": "Цель проекта «Сайт»: сдать макет к пятнице",
+                        "kind": "decision",
+                        "where": "decisions",
+                        "confidence": 0.95,
+                    }
+                ]
+            }
+        )
+        engine.learn_episodes(self.v, [Episode("mnema_chat", f"{cid}#1", "", "цель сайта")], "mnema_chat", brain=brain)
+        note = self.v.find_note("projects", "Сайт")
+        self.assertEqual(note.meta.get("goal", ""), "показать макет заказчику")  # a guess does not replace the goal
+        brain2 = FakeBrain(
+            {
+                "цель": [
+                    {
+                        "text": "Цель проекта «Сайт» изменилась: выйти на 10 000 посетителей в месяц",
+                        "kind": "decision",
+                        "where": "decisions",
+                        "confidence": 0.95,
+                    }
+                ]
+            }
+        )
+        engine.learn_episodes(
+            self.v, [Episode("mnema_chat", f"{cid}#2", "", "цель сайта изменилась")], "mnema_chat", brain=brain2
+        )
+        note = self.v.find_note("projects", "Сайт")
+        self.assertIn("посетителей", note.meta.get("goal", ""))
+
+    def test_one_off_instruction_is_not_a_rule(self):
+        from mnema.chat import engine as CH
+        from mnema.learn.sources import Episode
+
+        self.settings(claude_code="mixed")
+        cid = "rulesrules11"
+        text = "Сначала собери вопросы и уточни, потом давай план. Не придумывай детали за меня."
+        CH.save_chat(self.v, {"id": cid, "title": "t", "messages": [{"role": "user", "text": text}], "updated": ""})
+        brain = FakeBrain(
+            {
+                "собери": [
+                    {
+                        "text": "Когда деталей мало: сначала собери вопросы и уточни, потом давай план",
+                        "kind": "rule",
+                        "where": "rules",
+                        "confidence": 1.0,
+                        "evidence": text,
+                    }
+                ]
+            }
+        )
+        engine.learn_episodes(self.v, [Episode("mnema_chat", f"{cid}#1", "", text)], "mnema_chat", brain=brain)
+        self.assertNotIn("собери вопросы", self.v.read_raw("70 Memory/Rules.md"))
+        it = next(i for i in Ledger(self.v).items if "собери вопросы" in i["text"])
+        self.assertEqual(it["state"], "weak")  # waits for a repeat instead of becoming a standing rule
+        self.assertAlmostEqual(it["confidence"], 0.7)
+
+    def test_bare_project_status_is_not_a_learned_line(self):
+        from mnema.chat import engine as CH
+        from mnema.learn.sources import Episode
+
+        self.settings(claude_code="mixed")
+        cid = "statusstatus"
+        CH.save_chat(
+            self.v, {"id": cid, "title": "t", "messages": [{"role": "user", "text": "статус проекта"}], "updated": ""}
+        )
+        brain = FakeBrain(
+            {
+                "статус": [
+                    {"text": "Статус: active", "kind": "project", "where": "project:Сайт", "confidence": 0.9}
+                ]
+            }
+        )
+        engine.learn_episodes(
+            self.v, [Episode("mnema_chat", f"{cid}#1", "", "статус проекта")], "mnema_chat", brain=brain
+        )
+        hub = self.v.read_raw("20 Projects/Сайт/_Project.md")
+        self.assertNotIn("Статус: active", hub)  # the status lives in the frontmatter, the journal stays clean
 
     def test_correction_becomes_rule_and_respects_corrections_switch(self):
         self.go("этот отчёт слишком длинный", prev="Вот отчёт")

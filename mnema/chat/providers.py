@@ -25,7 +25,7 @@ import datetime as dt
 from .. import net
 from .. import tuning as _tuning
 from ..learn import secrets_store
-from ..learn.brains import claude_exe, claude_signed_in
+from ..learn.brains import claude_exe, claude_settings_env, claude_signed_in
 from ..vault import Vault
 from ..fsutil import read_json, write_json
 from . import model_rank
@@ -853,6 +853,7 @@ def _stream_raw(
             cwd=cwd,
             env=net.env(
                 {
+                    **claude_settings_env(),  # a proxy/subscription configured in Claude Code keeps working
                     "GIT_CEILING_DIRECTORIES": str(cwd.parent),
                     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",  # no notes of its own about the owner
                     # the same longest answer as every other model (Настройки → Движок)

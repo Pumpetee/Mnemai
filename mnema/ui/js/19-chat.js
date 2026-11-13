@@ -121,7 +121,7 @@ async function viewChat(id) {
         ? consAct("pause")
         : CHAT.cons
           ? sendMsg()
-          : post("/api/chat/stop", { chat: CHAT.id })
+          : post("/api/chat/stop", { chat: CHAT.id }).then(() => $("#inp").focus())
       : sendMsg();
   CHAT.files = [];
   drawFiles();
@@ -1057,8 +1057,10 @@ async function renderEmpty() {
     isLocal = String(CHAT.model).startsWith("local:");
 
   const TOUR = tourSteps();
-  const tour = LS.get("tour", true)
-    ? `<div class="tour"><div class="tc"><h3>Как устроена Mnemai</h3><div class="sub">6 шагов, минута чтения</div>${TOUR.map(([b, t, a, l], i) => `<div class="st"><span class="n">${i + 1}</span><div><b>${esc(b)}</b><p>${esc(t)}</p></div><button data-tour="${a}">${esc(l)}</button></div>`).join("")}<div class="foot">${tr("Показывается в каждом новом разговоре.")} <a href="#" id="tourx">${tr("Больше не показывать")}</a> · ${tr("вернуть — в шестерёнке справа вверху")}</div></div></div>`
+  const firstTime = LS.get("tour", true) && !LS.get("tour_seen", false);
+  if (firstTime) LS.set("tour_seen", true);
+  const tour = firstTime
+    ? `<div class="tour"><div class="tc"><h3>Как устроена Mnemai</h3><div class="sub">6 шагов, минута чтения</div>${TOUR.map(([b, t, a, l], i) => `<div class="st"><span class="n">${i + 1}</span><div><b>${esc(b)}</b><p>${esc(t)}</p></div><button data-tour="${a}">${esc(l)}</button></div>`).join("")}<div class="foot"><a href="#" id="tourx">${tr("Больше не показывать")}</a> · ${tr("вернуть — в шестерёнке справа вверху")}</div></div></div>`
     : "";
   if (CHAT.cons) {
     $("#msgs").innerHTML =
@@ -1357,8 +1359,12 @@ function askAnswer(card, text) {
   if (!text || card.classList.contains("done")) return;
   card.classList.replace("live", "done");
   markAsk(card, text);
+  const draft = $("#inp").value.trim();
   $("#inp").value = text;
-  sendMsg();
+  const p = sendMsg();
+  if (draft && p && p.finally) p.finally(() => {
+    if (!$("#inp").value.trim()) $("#inp").value = draft;
+  });
 }
 function markAsk(card, text) {
   const hit = $$(".askopt", card).find((b) => b.dataset.ans === text);
@@ -1467,6 +1473,10 @@ function learnAskHtml(q) {
     ${q.kind === "personal" ? `<div class="askw">${tr("Попадёт в скрытую часть: её видят только ИИ, которым ты разрешил")}</div>` : ""}
     <div class="laskacts">${acts.map(([a, l], k) => `<button class="btn ${k ? "g" : ""} sm" data-la="${a}">${l}</button>`).join("")}</div></div>`;
 }
+function learnAsksHtml(c) {
+  const qs = c && c.learn_asks && c.learn_asks.length ? c.learn_asks : c && c.learn_ask ? [c.learn_ask] : [];
+  return qs.slice(0, 3).map((q) => learnAskHtml(q)).join("");
+}
 async function answerLearnAsk(card, action) {
   const body = { id: card.dataset.lask, action, chat: CHAT.id };
   if (action === "edit") {
@@ -1559,6 +1569,7 @@ function renderChat(c) {
     .map((m) => m.role)
     .lastIndexOf("assistant");
   let rnd = 0;
+  const stick = msgsNearBottom();
   $("#msgs").innerHTML =
     ms
       .map((m, i) => {
@@ -1571,10 +1582,10 @@ function renderChat(c) {
         return sep + msgHtml(m, i === tail, i, i === lastAi && i === tail);
       })
       .join("") +
-    [learnAskHtml(c.learn_ask), costTipHtml(c)].map((h) => (h ? `<div class="msg lwrap">${h}</div>` : "")).join("");
+    [learnAsksHtml(c), costTipHtml(c)].map((h) => (h ? `<div class="msg lwrap">${h}</div>` : "")).join("");
   bindMsg();
   bindCostTip();
-  scrollEnd();
+  if (stick) scrollEnd();
   drawPrivate();
   drawTable();
 }
@@ -1749,6 +1760,14 @@ function scrollEnd() {
   const m = $("#msgs");
   if (m) m.scrollTop = m.scrollHeight;
 }
+// follow the answer only when the owner is at the bottom: reading above must not be interrupted by a jump
+function msgsNearBottom() {
+  const m = $("#msgs");
+  return !m || m.scrollHeight - m.scrollTop - m.clientHeight < 200;
+}
+function scrollIfNear() {
+  if (msgsNearBottom()) scrollEnd();
+}
 async function startByMnema() {
   if (CHAT.polling || CHAT.id) return;
   $("#msgs").innerHTML =
@@ -1806,7 +1825,18 @@ async function sendMsg() {
     files = CHAT.files || [];
   if (!text && !files.length) return;
   if (CHAT.polling) {
-    if (!CHAT.cons) return;
+    if (!CHAT.cons) {
+      // the answer is still being written: hold the message and send it when the answer is done, never swallow it
+      CHAT.queue = CHAT.queue || [];
+      CHAT.queue.push({ text, files, quote: CHAT.quote || "" });
+      inp.value = "";
+      inp.style.height = "auto";
+      CHAT.files = [];
+      drawFiles();
+      setQuote("");
+      toast(tr("Ответ ещё пишется — это сообщение уйдёт сразу после него"), 4000);
+      return;
+    }
     clearInterval(CHAT.polling);
     CHAT.polling = null;
     $("#live") && $("#live").remove();
@@ -1949,8 +1979,17 @@ function poll() {
         "beforeend",
         `<div class="msg ai"><div class="av"></div><p class="err">${linkSettings(esc(T.error))}</p></div>`,
       );
-    scrollEnd();
+    scrollIfNear();
     $("#inp").focus();
+    if (CHAT.id === cid && (CHAT.queue || []).length) {
+      const q = CHAT.queue.shift();
+      $("#inp").value = q.text;
+      CHAT.files = q.files || [];
+      if (q.quote) setQuote(q.quote);
+      drawFiles();
+      sendMsg();
+      return;
+    }
   };
   T.raf = requestAnimationFrame(frame);
   CHAT.polling = setInterval(async () => {

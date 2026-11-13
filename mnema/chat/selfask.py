@@ -16,6 +16,14 @@ from ..vault import Vault
 
 GAP_MIN, GAP_MAX = 40, 120  # minutes between two questions
 
+# A message that asks Mnemai to show or check the memory is not an invitation for a question of her own: the owner is
+# already waiting for an answer, not for a new card.
+RECALL = re.compile(
+    r"(?:что\s+(?:ты\s+)?(?:записал|запомнил|помнишь|знаешь)|перечисли|покажи\s+.{0,20}(?:памят|факт|проект)|"
+    r"список\s+(?:факт|запис|проект)|проверь\s+памят|что\s+(?:в|из)\s+памяти|что\s+записано)",
+    re.I,
+)
+
 
 def _words(text: str) -> set[str]:
     return {stem(w) for w in re.findall(r"\w{3,}", text.lower())}
@@ -49,6 +57,8 @@ def pick(vault: Vault, text: str, now: dt.datetime | None = None, today: dt.date
     from ..memory import stale_items
 
     now = now or dt.datetime.now()
+    if RECALL.search(text):
+        return None  # the owner asked about the memory itself: answer first, ask nothing
     prof = P.load(vault)
     if not P.memory_on(vault) or prof.get("self_ask") is False:
         return None

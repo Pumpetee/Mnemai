@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import json
+import re
 import threading
 
 from ..journal import log_event, write_with_journal
@@ -132,13 +133,50 @@ def never_hit(it: dict, settings: dict) -> bool:
 
 TAG_RU = {"money": "деньги", "health": "здоровье", "private": "личное"}
 
+# The owner changed a requirement in plain words. Then there is nothing to ask about: the new line replaces the old
+# one (the old one goes to the fact archive with its date), and the feed says so. Without these markers a
+# contradiction is still a question for the owner.
+CHANGE_MARK = re.compile(
+    r"\b(?:вместо|меняю|меняем|изменил|изменила|изменилось|убираю|убираем|уберём|уберу|отменяю|отменяем|"
+    r"отменён|отменен|теперь|больше не|перестал|перестала|заменяю|заменяем|заменил|заменила|переходим на|"
+    r"передумал|передумала)\b",
+    re.I,
+)
+
+# A goal or a deadline of a project belongs to the project hub, not to the general list of decisions.
+GOAL_MARK = re.compile(r"^(?:цель|goal|дедлайн|deadline|срок|к сроку)\b", re.I)
+STATUS_MARK = re.compile(r"^(?:статус|status)\s*[:—-]\s*\S+\s*$", re.I)
+
+
+def _fix_meta(vault: Vault, c: dict) -> dict | None:
+    """Two deterministic fixes after the brain has spoken: a bare status is not a fact, and a goal/deadline of the
+    only open project goes into that project's hub (otherwise «10 Now» shows an empty goal)."""
+    text = c.get("text", "")
+    where = str(c.get("where") or "")
+    if STATUS_MARK.match(text) and not where.startswith("project:"):
+        return None  # «Статус: active» alone says nothing about where the status belongs
+    if GOAL_MARK.match(text) and where == "decisions":
+        projects = [
+            n
+            for n in vault.by_scope("projects")
+            if str(n.meta.get("status", "active")) in ("active", "paused")
+        ]
+        named = [n for n in projects if n.title.lower() in text.lower()]
+        target = named[0] if len(named) == 1 else (projects[0] if not named and len(projects) == 1 else None)
+        if target is not None:
+            c["where"] = f"project:{target.title}"
+    return c
+
 
 def decide_why(it: dict, settings: dict, can_ask: bool = False) -> tuple[str, str]:
     """What to do with an item the owner hasn't decided yet — and why, in plain words.
 
-    There is no waiting queue. can_ask — it was said in a conversation in Mnemai: what needs the owner (something
-    personal, a contradiction, "always ask" mode) is asked right there, once. Anywhere else Mnemai decides by itself:
-    personal goes to a hidden part, the newer fact replaces the older one, a weak guess waits to be seen again."""
+    can_ask — it was said in a conversation in Mnemai: what needs the owner (something personal, a contradiction,
+    "always ask" mode) is asked in that conversation, in a queue of such questions. Anywhere else Mnemai decides by
+    itself: personal goes to a hidden part, the newer fact replaces the older one, a weak guess waits to be seen again.
+
+    An explicit change ("убираем подписку", "вместо 199 — 499", "теперь") is not a contradiction to ask about:
+    it is the newer decision, so it replaces the old line right away."""
     mode = mode_for(it, settings)
     conf = round(it["confidence"] * 100)
     if mode == "off":
@@ -152,7 +190,8 @@ def decide_why(it: dict, settings: dict, can_ask: bool = False) -> tuple[str, st
             return "ask", "режим «всё спрашивает»: уточню в разговоре"
         return "observed", "режим «всё спрашивает»: из других мест сама не записываю"
     if it.get("contradicts") and mode != "quiet":
-        if can_ask:
+        explicit = bool(CHANGE_MARK.search(it["text"] + " " + " ".join(it.get("evidence") or [])))
+        if can_ask and not explicit:
             return "ask", f"противоречит памяти («{it['contradicts'][:80]}») — уточню в разговоре"
         return "replace", f"новее того, что было в памяти («{it['contradicts'][:80]}»): заменила, прежнее — в архиве"
     if mode == "quiet":
@@ -209,6 +248,20 @@ def live(vault: Vault, since: str = "", limit: int = 80) -> list:
         buf = [json.loads(l) for l in f.read_text(encoding="utf-8").splitlines()[-300:]] if f.exists() else []
         _live[str(vault.root)] = buf
     return [e for e in buf if e["ts"] > since][-limit:]
+
+
+def _counterpart_in_memory(vault: Vault, it: dict, threshold: float = 0.5) -> str:
+    """A memory line the confirmed fact would sit beside and contradict (same subject, different value).
+
+    A question about money sits in the queue until the owner answers; by then memory may already say something
+    else about the same subject (an older subscription instead of a one-time price). Confirming the new fact must
+    replace the old line, not leave both "true"."""
+    best, score = "", 0.0
+    for _, line in memory_lines(vault):
+        s = similar(line, it["text"])
+        if s > score:
+            best, score = line, s
+    return best if score >= threshold else ""
 
 
 def _write(vault: Vault, it: dict, by: str) -> None:
@@ -463,8 +516,8 @@ def _ask_paused(vault: Vault, chat_id: str, settings: dict) -> bool:
 
 def learn_episodes(vault: Vault, eps: list, source: str, brain=None) -> dict:
     """Learn right now from fresh episodes. From a conversation in Mnemai (source "mnema_chat", ref "<chat>#<n>") what
-    needs the owner is asked in that conversation: one question at a time, shown under the messages."""
-    """Learn right now from fresh episodes (the wrapper chat): no cursors, live feed on."""
+    needs the owner is asked in that conversation: every question goes into a queue shown under the messages, so a
+    second and a third fact never wait behind the first one silently."""
     from ..agent import profile as P
 
     settings = S.load(vault)
@@ -484,21 +537,39 @@ def learn_episodes(vault: Vault, eps: list, source: str, brain=None) -> dict:
             emit(vault, "ошибка", f"не смогла разобрать: {e}", source=source)
             report["errors"].append(str(e))
             return report
+        cands = [c for c in (_fix_meta(vault, c) for c in cands) if c]
+        for c in cands:  # an explicit change ("убираем", "вместо") without a model-flagged contradiction still
+            ev = c.get("evidence") or ""  # has the old line to replace; evidence may be a string or a list
+            if not isinstance(ev, str):
+                ev = " ".join(str(x) for x in ev)
+            if not c.get("contradicts") and CHANGE_MARK.search(c["text"] + " " + ev):
+                old = _counterpart_in_memory(vault, c)
+                if old:
+                    c["contradicts"] = old
         if not cands:
             emit(vault, "ничего нового", "в этом сообщении нечего запоминать", source=source)
         led = Ledger(vault)
         lines = memory_lines(vault)
         chat_id = eps[-1].ref.split("#")[0] if source == "mnema_chat" and "#" in eps[-1].ref else ""
+        asks: list[dict] = []
+        if chat_id:  # questions left unanswered in this conversation come back to the queue instead of getting lost
+            for old in led.items:
+                if old.get("state") == "asking" and old.get("ask_chat") == chat_id:
+                    asks.append(old)
         ask_ready = bool(chat_id) and not _ask_paused(vault, chat_id, settings)
-        asked = None
+        new_ask = None
         for c in cands:
             c["source"] = source
-            it = consider(vault, led, c, settings, report, lines, can_ask=ask_ready and asked is None)
-            if it and it.get("state") == "asking" and asked is None:
-                asked = it
+            it = consider(vault, led, c, settings, report, lines, can_ask=ask_ready and new_ask is None)
+            if it and it.get("state") == "asking" and new_ask is None:
+                new_ask = it
+        if new_ask is not None:
+            asks.append(new_ask)
+        for it in asks:
+            it["ask_chat"] = chat_id
         led.save()
-        if asked:
-            _ask_in_chat(vault, chat_id, asked)
+        for it in asks:
+            _ask_in_chat(vault, chat_id, it)
         if report["written"]:
             generate_now(vault)
             _portrait(vault)
@@ -513,15 +584,22 @@ def _portrait(vault: Vault) -> None:
 
 
 def _ask_in_chat(vault: Vault, chat_id: str, it: dict) -> None:
-    """Put one question about memory under the conversation; the next one waits until this is answered."""
+    """Put a question about memory under the conversation. Questions form a queue: several facts that need the
+    owner's word in one message are all kept, and the interface shows them one after another — nothing is lost."""
     from ..chat import engine as CH
 
     kind = "conflict" if it.get("contradicts") else "personal" if it.get("tags") else "confirm"
     q = {"item": it["id"], "kind": kind, "text": it["text"], "old": it.get("contradicts", "")}
 
     def put(c):
-        if not c.get("learn_ask"):
-            c["learn_ask"] = q
+        qs = c.get("learn_asks") if isinstance(c.get("learn_asks"), list) else []
+        if c.get("learn_ask") and all(c["learn_ask"].get("item") != x.get("item") for x in qs):
+            qs.insert(0, c["learn_ask"])  # a question from the old layout stays in the queue
+        if all(x.get("item") != q["item"] for x in qs):
+            qs.append(q)
+        c["learn_asks"] = qs[-10:]
+        if qs:
+            c["learn_ask"] = c["learn_asks"][0]
             c["learn_ask_at"] = dt.datetime.now().isoformat(timespec="seconds")
 
     try:
@@ -585,7 +663,15 @@ def _replace_line_now(vault, needle, new_line, summary, insert_after=False):
         lines.insert(idx + 1, new_line)
     else:
         lines[idx] = new_line
-    return write_with_journal(vault, "owner", rel, "\n".join(lines) + "\n", summary)
+    ev = write_with_journal(vault, "owner", rel, "\n".join(lines) + "\n", summary)
+    if new_line is not None and not insert_after:  # the owner may want to see what was replaced
+        from ..memory import _archive_lines
+
+        try:
+            _archive_lines(vault, rel, [line], "заменено")
+        except Exception:
+            pass
+    return ev
 
 
 REVISE = """{mark}
@@ -595,6 +681,11 @@ REVISE = """{mark}
 Новый факт: {new}"""
 
 
+def _bare_fact(text: str) -> str:
+    """A fact line without the date and the «· выучено» marker: they are added once, by the writer."""
+    return re.sub(r"\s*\(\d{1,2}\.\d{1,2}\.\d{4}\)\s*·\s*выучено\s*$", "", text).strip()
+
+
 def resolve_conflict(vault: Vault, it: dict, settings: dict) -> dict | None:
     """ "Новое верно" must never lose what else the old line said.
     Same fact → replace. The line says more → the brain rewrites it keeping the rest. No brain → add next to it."""
@@ -602,7 +693,7 @@ def resolve_conflict(vault: Vault, it: dict, settings: dict) -> dict | None:
     if not hit:
         return None
     _, old = hit
-    new_line = f"- {it['text']} ({ru_date()}) · выучено"
+    new_line = f"- {_bare_fact(it['text'])} ({ru_date()}) · выучено"
     if similar(old, it["text"]) >= 0.5:
         return _replace_line(vault, old, new_line, f"обновлено: {it['text'][:100]}")
     brain = None if settings.get("demo") else make_brain(settings)

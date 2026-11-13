@@ -728,18 +728,20 @@ def send(
     from . import prompts as PRM
 
     d = {} if opener else PRM.decide(vault, chat, text)
-    if "offer" in d:  # a recurring task: ask before doing it
-        return _offer(vault, chat, text, d["offer"], model, web, terms)
-    return _generate(vault, chat, model, text, sync, web=web, terms=terms, prompt=d.get("use"))
+    result = _generate(vault, chat, model, text, sync, web=web, terms=terms, prompt=d.get("use"))
+    if "offer" in d:  # a recurring task: answer first, the recipe card only after it — never instead of the answer
+        result["offer"] = True
+        _offer_after(vault, result["chat"], text, d["offer"], model, web, terms, sync)
+    return result
 
 
-def _offer(vault: Vault, chat: dict, text: str, before: str, model: str, web: bool, terms: bool) -> dict:
+def _offer_msg(text: str, before: str, model: str, web: bool, terms: bool) -> dict:
     said = (
         f"Похожая задача уже была: «{before[:140].strip()}{'…' if len(before) > 140 else ''}». "
         if before
         else "Похоже, эта задача будет повторяться. "
     )
-    msg = {
+    return {
         "role": "assistant",
         "kind": "prompt_offer",
         "ts": _now(),
@@ -747,6 +749,41 @@ def _offer(vault: Vault, chat: dict, text: str, before: str, model: str, web: bo
         "text": said + "Записать рецепт этой задачи? В следующий раз сделаю так же — без объяснений и уточнений.",
         "offer": {"request": text, "similar": before, "web": web, "terms": terms},
     }
+
+
+def _offer_after(
+    vault: Vault, cid: str, text: str, before: str, model: str, web: bool, terms: bool, sync: bool
+) -> None:
+    """Put the «write a recipe?» card after the answer, so it can be read, used, or ignored."""
+
+    def put() -> None:
+        if not sync:  # wait for the answer itself (it streams in the background)
+            for _ in range(1200):
+                g = _gen.get(cid)
+                if not g or g.get("done"):
+                    break
+                time.sleep(0.5)
+        try:
+            chat = load_chat(vault, cid)
+        except KeyError:
+            return
+        msgs = chat.get("messages") or []
+        if any(
+            m.get("kind") == "prompt_offer" and not (m.get("offer") or {}).get("choice") for m in msgs[-4:]
+        ):
+            return  # one unanswered offer is enough
+        msg = _offer_msg(text, before, model, web, terms)
+        modify_chat(vault, cid, lambda c: (c["messages"].append(msg), c.update(updated=_now())))
+
+    if sync:
+        put()
+    else:
+        threading.Thread(target=put, daemon=True, name="mnema-offer").start()
+
+
+def _offer(vault: Vault, chat: dict, text: str, before: str, model: str, web: bool, terms: bool) -> dict:
+    """The old blocking card (kept for callers that need the question before doing the task)."""
+    msg = _offer_msg(text, before, model, web, terms)
     modify_chat(vault, chat["id"], lambda c: (c["messages"].append(msg), c.update(updated=_now())))
     _gen[chat["id"]] = {"text": "", "done": True, "error": "", "phase": "", "stop": False}
     return {"chat": chat["id"], "title": chat["title"], "model": model, "offer": True}
@@ -770,6 +807,11 @@ def answer_offer(vault: Vault, cid: str, choice: str, sync: bool = False) -> dic
     offer = chat["messages"][idx]["offer"]
     model = chat.get("model") or default_model(vault)
     pid, mname = split_model(model)
+    # in the new layout the card comes after the answer: the task is already done, so the answer must not be repeated
+    answered_before = any(
+        m.get("role") == "assistant" and m.get("kind") not in ("prompt_offer", "self_ask") and m.get("text")
+        for m in chat["messages"][:idx]
+    )
 
     def mark(extra: dict):
         def f(c):
@@ -781,6 +823,8 @@ def answer_offer(vault: Vault, cid: str, choice: str, sync: bool = False) -> dic
         PRM.never(vault, offer["request"])
     if choice != "write":
         chat = mark({})
+        if answered_before:  # «Просто сделать»: it has been done already
+            return {"chat": cid}
         return _generate(
             vault, chat, model, offer["request"], sync, web=offer.get("web", False), terms=offer.get("terms", False)
         )
@@ -800,6 +844,9 @@ def answer_offer(vault: Vault, cid: str, choice: str, sync: bool = False) -> dic
                 p["examples"].insert(0, offer["similar"])
                 PRM._write(vault, p)
             c = mark({"file": p["file"], "name": p["name"]})
+            if answered_before:  # the answer is already there: saving the recipe is enough
+                g["done"] = True
+                return
             g["done"] = True
             _generate(
                 vault,

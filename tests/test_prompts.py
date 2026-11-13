@@ -72,15 +72,20 @@ class TestPrompts(unittest.TestCase):
         self.assertEqual([p["name"] for p in files], ["Письмо клиенту о задержке"])
         self.assertIn("Новый срок", files[0]["body"])
         c = CH.load_chat(self.v, r2["chat"])
-        self.assertEqual(c["messages"][-1]["prompt"], "Письмо клиенту о задержке")  # the task is done by the prompt
-        self.assertIn("Промт владельца на эту задачу", PR.stream.calls[-1]["system"])
-        # the offer itself never goes to the model as part of the conversation
-        self.assertFalse(any("Пишу для неё промт" in m["text"] for m in PR.stream.calls[-1]["messages"]))
+        self.assertEqual(c["messages"][-1]["kind"], "prompt_offer")  # the card stays after the answer
+        self.assertEqual(c["messages"][-1]["offer"]["choice"], "write")
+        self.assertEqual(c["messages"][-1]["offer"]["name"], "Письмо клиенту о задержке")
+        # the answer came first: saving the recipe must not answer the same task a second time
+        answers = [m for m in c["messages"] if m.get("role") == "assistant" and m.get("kind") != "prompt_offer"]
+        self.assertEqual(len(answers), 1)
         r3 = self.send("Напиши письмо клиенту о задержке поставки на три дня")
         self.assertFalse(r3.get("offer"))
         m = CH.load_chat(self.v, r3["chat"])["messages"][-1]
         self.assertEqual(m["prompt"], "Письмо клиенту о задержке")
-        self.assertEqual(PRM.all_prompts(self.v)[0]["uses"], 2)
+        self.assertIn("Промт владельца на эту задачу", PR.stream.calls[-1]["system"])
+        # the offer card itself never goes to the model as part of the conversation
+        self.assertFalse(any("Записать рецепт" in m["text"] for m in PR.stream.calls[-1]["messages"]))
+        self.assertEqual(PRM.all_prompts(self.v)[0]["uses"], 1)  # used once, by the next similar task
 
     def test_never_and_off(self):
         self.send("Составь отчёт по продажам за неделю для команды")

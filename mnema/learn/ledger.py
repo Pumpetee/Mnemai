@@ -23,7 +23,10 @@ from pathlib import Path
 
 from ..vault import Vault
 
-QUEUE_STATES = {"pending", "conflict", "forget_pending"}
+QUEUE_STATES = {"pending", "conflict", "forget_pending", "asking"}
+# states the old design parked in the queue forever: on load they go back to "wait to be seen again".
+# "asking" is different — it waits for the owner's word under the conversation and must survive a reload.
+LEGACY_QUEUE = {"pending", "conflict", "forget_pending"}
 IN_MEMORY = {"written", "confirmed"}
 
 
@@ -108,8 +111,8 @@ class Ledger:
         self.vault = vault
         f = _file(vault)
         self.items: list[dict] = json.loads(f.read_text(encoding="utf-8"))["items"] if f.exists() else []
-        for i in self.items:  # the waiting queue is gone: what waited there waits to be seen again
-            if i.get("state") in QUEUE_STATES:
+        for i in self.items:  # the old waiting queue is gone: what waited there waits to be seen again
+            if i.get("state") in LEGACY_QUEUE:
                 i["state"] = "weak"
 
     def save(self) -> None:
@@ -192,7 +195,7 @@ class Ledger:
         return it, True
 
     def queue(self) -> list[dict]:
-        order = {"conflict": 0, "pending": 1, "forget_pending": 2}
+        order = {"conflict": 0, "pending": 1, "forget_pending": 2, "asking": 3}
         return sorted(
             (i for i in self.items if i["state"] in QUEUE_STATES),
             key=lambda i: (order[i["state"]], -i["confidence"], i["last_seen"]),

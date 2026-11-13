@@ -434,10 +434,22 @@ def remember(
             if st != meta.get("status"):
                 event = f"проект «{name.strip()}»: {meta.get('status', 'active')} → {st}"
             meta.update(status=st, status_updated=today_str(today))
-        m = re.match(r"^(?:цель|goal)\s*[:—-](.*)$", fact, re.I)
+        m = re.match(r"^(?:цель|goal)\b[^:—\n]*[:—]\s*(.+)$", fact, re.I)
         if m and m.group(1).strip():
-            meta["goal"] = m.group(1).strip()
-        body, replaced = _put_fact(body, f"- {date} · {fact}{src}" if not status_dates(fact) else line, "Журнал")
+            goal = m.group(1).strip()
+            # the first goal stays until the owner says it changed: a goal guessed from the audience must not
+            # silently replace the goal he named
+            changed = bool(re.search(r"(?:изменил|изменилась|изменился|новая|теперь|вместо|передумал)", fact, re.I))
+            if not str(meta.get("goal") or "").strip() or changed:
+                meta["goal"] = goal
+        dl = re.match(r"^(?:дедлайн|deadline|срок)\b[^:—\n]*[:—]\s*(.+)$", fact, re.I)
+        if dl and dl.group(1).strip():
+            meta["deadline"] = dl.group(1).strip()
+        if word and STATUS_WORDS.get(word):
+            # the status lives in the frontmatter; a "learned fact" line «Статус: active» in the journal is noise
+            replaced = []
+        else:
+            body, replaced = _put_fact(body, f"- {date} · {fact}{src}" if not status_dates(fact) else line, "Журнал")
         new = dump_frontmatter(meta, body)
         if replaced and not event:
             event = f"{name.strip()}: {fact}"

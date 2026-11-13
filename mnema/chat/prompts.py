@@ -193,7 +193,10 @@ def _read(f: Path) -> dict | None:
 
 
 def similar_before(vault: Vault, text: str, chat_id: str, msg_index: int) -> str:
-    """An earlier request of the owner that looks like this one ("" — none)."""
+    """An earlier request of the owner that looks like this one AND got an answer ("" — none).
+
+    A request that failed or was never answered is not an example of "how it was done": offering a recipe for it
+    would mean recording "do it without explaining and without questions" for a task nobody has done yet."""
     from .engine import _dir
 
     q = terms(text)
@@ -208,9 +211,16 @@ def similar_before(vault: Vault, text: str, chat_id: str, msg_index: int) -> str
         c = _read(f)
         if c is None:
             continue
-        for i, m in enumerate(c.get("messages", [])):
+        msgs = c.get("messages", [])
+        for i, m in enumerate(msgs):
             if m.get("role") != "user" or (c["id"] == chat_id and i >= msg_index):
                 continue
+            answered = any(
+                later.get("role") == "assistant" and later.get("kind") not in ("prompt_offer", "self_ask") and later.get("text")
+                for later in msgs[i + 1 :]
+            )
+            if not answered:
+                continue  # it never got an answer: not a recipe yet
             if sim(q, terms(m.get("text", ""))) >= 0.6:
                 return m["text"]
     return ""

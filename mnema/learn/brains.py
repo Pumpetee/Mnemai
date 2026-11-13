@@ -27,11 +27,32 @@ from .sources import BRAIN_MARK, Episode
 
 KINDS = {"fact", "rule", "decision", "project", "person", "preference"}
 
+# What is truly personal. A word alone is not enough: «аудитория — молодые семьи, средний доход» is a market
+# description, not the owner's money or family, and must not be hidden from AIs or put into a hidden card.
 SENSITIVE = {
-    "money": r"деньг|доход|зарплат|кредит|долг|ипотек|рубл|₽|\$\d|бюджет|сбережен|инвестиц|salary|income|debt",
+    "money": (
+        r"(?:₽|€|\$|рубл|доллар|евро|\b(?:тыс|млн|миллион|миллиард)\b|"
+        r"\d[\d\s.,]{2,}\s*(?:руб|₽|тыс|млн|доллар|евро|€|\$))"
+        r"|(?:\b(?:мой|моя|моё|мои|наш|наша|наше|у меня|мне)\b[^.?!]{0,60}"
+        r"\b(?:доход|зарплат|кредит|долг|ипотек|сбережен|инвестиц|накоплен|трат|расход|бюджет|подписк|плат))"
+        r"|(?:\b(?:зарплат|кредит|долг|ипотек|сбережен)\w*)"
+        r"|(?:\b(?:доход|бюджет|подписк|тариф|выручк)\w*\b[^.?!]{0,20}\d)"
+        r"|(?:salary|income|debt|\bmy budget\b)"
+    ),
     "health": r"здоров|врач|диагноз|болит|болезн|таблет|лекарств|анализ|давлени|бессонниц|депресс|терапи|health|doctor",
-    "private": r"жена|муж\b|супруг|развод|семь[яи]|ребён|дет[ейи]|интим|любовн|родител|wife|husband|divorce",
+    "private": (
+        r"жена|муж\b|супруг|развод|(?:\b(?:мой|моя|мои|наша|наши)\b[^.?!]{0,30}\b(?:семь|ребён|дет|родител))|"
+        r"интим|любовн|(?:\b(?:сын|дочь|ребёнок)\b)|wife|husband|divorce"
+    ),
 }
+
+# A task instruction («в этом задании сначала уточняй») is not a rule for every future conversation: a rule needs
+# an explicit "always/never" or a correction of the AI. Otherwise the candidate waits for a repeat like a weak fact.
+RULE_MARK = re.compile(
+    r"\b(?:всегда|никогда|при любом|при любых|правило|не делай|не пиши|не говори|не используй|"
+    r"обязательно|запомни как правило)\b",
+    re.I,
+)
 
 PROMPT = """{mark}
 Ты — модуль обучения личной памяти. Ниже реплики владельца памяти из его разговоров, писем и заметок.
@@ -56,6 +77,10 @@ PROMPT = """{mark}
 "Работа", "Здоровье", "Семья", "Финансы", "Хобби" и т.п.). Если подходящая карточка уже есть в списке КАРТОЧКИ —
 пиши в неё, новую тему заводи, только если ни одна не подходит. inbox — только если непонятно, куда.
 Смена статуса проекта — where project:<Название>, text "Статус: active|paused|closed".
+Цель проекта, дедлайн или срок — where project:<Название>, text начинается с "Цель: " или "Дедлайн: "; в decisions их
+не пиши: у каждого проекта есть поле цели, и оно должно заполняться, а не пустовать.
+Теги money/health/private ставь, только если это личное о владельце (его деньги, его здоровье, его семья), а не
+аудитория, рынок, бюджет проекта или чужие люди.
 Источник calendar — встречи: бери людей, с кем он регулярно встречается, и проекты, а не каждую встречу.
 Источник browser_history — заголовки прочитанных страниц: только устойчивые интересы, если тема повторяется
 много раз, confidence не выше 0.6; о здоровье и личном по истории браузера выводов не делай.
@@ -119,11 +144,17 @@ def clean(raw: list, episodes: list[Episode], source_by_ref: dict | None = None)
             conf = 0.5
         ref = str(c.get("ref") or "")
         ep = refs.get(ref) or (episodes[0] if len(episodes) == 1 else None)
+        correction = bool(ep and ep.prev and kind == "rule")
+        where = _norm_where({**c, "kind": kind})
+        if kind == "rule" and not correction and not RULE_MARK.search(text):
+            # A one-off instruction for the current task ("сначала собери вопросы, потом план") is not a rule for
+            # every future conversation. Keep it as a decision that waits for a repeat instead of a standing rule.
+            kind, where, conf = "decision", "decisions", min(conf, 0.7)
         out.append(
             {
                 "text": text,
                 "kind": kind,
-                "where": _norm_where({**c, "kind": kind}),
+                "where": where,
                 "key": " ".join(str(c.get("key") or "").split())[:60],
                 "tags": tags,
                 "confidence": conf,
@@ -132,7 +163,7 @@ def clean(raw: list, episodes: list[Episode], source_by_ref: dict | None = None)
                 "ref": ep.ref if ep else ref,
                 "source": ep.source if ep else "",
                 "said_at": ep.ts if ep else "",
-                "correction": bool(ep and ep.prev and kind == "rule"),
+                "correction": correction,
             }
         )
     return out
@@ -417,6 +448,27 @@ def claude_signed_in() -> bool:
     return False
 
 
+def claude_settings_env() -> dict:
+    """ANTHROPIC_* from Claude Code's own settings.json. Mnemai runs the CLI with --setting-sources "" (no hooks, no
+    MCP, no project files) — right for privacy, but it also hides a proxy or a subscription configured there, and then
+    «Claude по подписке» answers «Not logged in» although the owner is signed in. Environment variables are inherited
+    by the child process anyway, so pass exactly the ANTHROPIC_* ones through."""
+    import json as _json
+
+    p = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "settings.json"
+    try:
+        env = _json.loads(p.read_text(encoding="utf-8")).get("env") or {}
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(env, dict):
+        return {}
+    return {
+        k: str(v)
+        for k, v in env.items()
+        if str(k).startswith("ANTHROPIC_") and isinstance(v, str) and k not in os.environ
+    }
+
+
 class ClaudeCodeBrain(_LLMBrain):
     """Headless Claude Code: no tools, no hooks/settings, no MCP, session not saved.
     Runs in its own folder so its transcripts (if any) are never read back as the owner's words."""
@@ -436,7 +488,13 @@ class ClaudeCodeBrain(_LLMBrain):
         from .. import net
 
         # Claude Code keeps no notes of its own about what it read here (its auto-memory)
-        env = net.env({"GIT_CEILING_DIRECTORIES": str(self.cwd.parent), "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"})
+        env = net.env(
+            {
+                **claude_settings_env(),
+                "GIT_CEILING_DIRECTORIES": str(self.cwd.parent),
+                "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+            }
+        )
         args = [
             exe,
             "-p",

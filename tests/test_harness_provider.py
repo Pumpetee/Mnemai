@@ -61,7 +61,7 @@ class HarnessProvider(unittest.TestCase):
         )
         text = "".join(pieces)
         self.assertIn("harness-provider-ok", text)
-        self.assertIn("bash", text)  # the tool call is shown in the conversation
+        self.assertNotIn("⚙", text)  # the owner sees the answer, not the tool narration
         self.assertGreater(usage.get("in", 0), 0)
 
 

@@ -160,9 +160,11 @@ DSH_PATCH = """# Written by Mnemai: the DeepSeek Harness profile for the chat br
 # The harness agent is autonomous: it once went to install a browser when asked to open one. Two hard rules exist
 # at two levels: the task text starts with the owner's limits, and the event stream is checked before the result.
 HARNESS_HARD = (
-    "[ПРАВИЛА ВЛАДЕЛЬЦА — ВЫСШИЙ ПРИОРИТЕТ] Ничего не устанавливать, не скачивать, не обновлять и не менять пакеты "
-    "без прямой просьбы владельца. Не использовать sudo. Если запрошенной программы нет — проверить одной командой, "
-    "честно сказать и предложить варианты, но не подменять её другой и не устанавливать."
+    "[ПРАВИЛА ВЛАДЕЛЬЦА — ВЫСШИЙ ПРИОРИТЕТ] Отвечай очень коротко: одна-две фразы, сразу результат. Никаких разделов "
+    "вроде «Что сделал», «Детали», «Варианты», никаких списков и пересказа команд — если владелец не попросил "
+    "подробно. Не отчитывайся о проверках. Ничего не устанавливать, не скачивать, не обновлять и не менять пакеты "
+    "без прямой просьбы владельца. Не использовать sudo. Если запрошенной программы нет — проверить одной командой "
+    "и коротко сказать."
 )
 INSTALL_RE = re.compile(
     r"\b(?:"
@@ -847,6 +849,7 @@ def _stream_harness(
             time.sleep(1)
 
     threading.Thread(target=watchdog, daemon=True, name="dsh-watchdog").start()
+    trace = os.environ.get("MNEMA_HARNESS_TRACE") == "1"
     got_answer = False
     try:
         assert proc.stdout is not None
@@ -876,10 +879,11 @@ def _stream_harness(
                         "Ничего не установлено и не изменено.\n\n"
                     )
                     return
-                yield f"\n\n⚙ `{ev.get('tool') or 'tool'}`: {_short_line(desc)}\n\n"
+                if trace:
+                    yield f"\n\n⚙ `{ev.get('tool') or 'tool'}`: {_short_line(desc)}\n\n"
             elif typ == "tool_result":
                 result = str(ev.get("result") or "").strip()
-                if result:
+                if result and trace:
                     yield f"\n→ {_short_line(result)}\n\n"
             elif typ == "status" and ev.get("phase") == "step_end" and usage is not None:
                 u = ev.get("usage") or {}

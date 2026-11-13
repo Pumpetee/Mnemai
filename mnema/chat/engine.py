@@ -733,6 +733,28 @@ def send(
             title=chat["title"],
         )
         threading.Thread(target=lambda: _safe_learn(vault, ep), daemon=True, name="mnema-learn-chat").start()
+    if not opener and not chat.get("consortium") and not files and not quote:
+        # A plain computer command («открой терминал», «запусти firefox», «open https://…») is one action and one line
+        # of answer: no model round-trip, no 40–90 s wait, the same on every model.
+        from . import intents as IN
+
+        call = IN.fast_open(vault, text)
+        if call is not None and not P.load(vault).get("tools_ask", False):
+            say = IN.answer(vault, call)
+
+            def add_brief(c):
+                c["messages"].append({"role": "assistant", "text": say, "ts": _now(), "model": model})
+                c["updated"] = _now()
+
+            try:
+                modify_chat(vault, chat["id"], add_brief)
+            except KeyError:
+                pass
+            from .. import achievements as ACH
+
+            ACH.event(vault, "action", tool="open_app")
+            _gen[chat["id"]] = {"text": say, "done": True, "error": "", "phase": "", "stop": False}
+            return {"chat": chat["id"], "title": chat["title"], "model": model}
     if chat.get("consortium"):
         return CO.start(vault, chat, text, sync, web, terms)
     from . import prompts as PRM

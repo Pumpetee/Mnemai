@@ -50,6 +50,78 @@ SHOWMEM = re.compile(
 )
 POLITE = re.compile(r"[,\s]*(?:пожалуйста|плиз|please)[.!?]*$", re.I)
 
+# «Открой википедию со словом "сон"», «открой в ютубе котиков»: a site with an optional query opens right in the
+# browser. One action and one line of answer, like «открой терминал» — no model round-trip.
+SITE_COMMAND = re.compile(
+    r"^\s*(?:пожалуйста[,\s]+)?(?:открой(?:те)?|запусти(?:те)?|открывай(?:те)?|open|launch)\s+(?:мне\s+)?"
+    r"(?:(?:в|на)\s+)?(?:(?:сайт|сайте|страниц[ауе])\s+)?"
+    r"(?P<site>википеди\w*|вики|wikipedia|гугл\w*|google|яндекс\w*|yandex|ютуб\w*|youtube|"
+    r"гитхаб\w*|github|хабр\w*|habr|стековерфлоу|stackoverflow|кинопоиск\w*)"
+    r"(?P<rest>(?:\s+.*)?)$",
+    re.I | re.S,
+)
+QUERY_MARK = re.compile(r"^\s*(?:со\s+словом|с\s+поиском|по\s+запросу|по\s+теме|про)\s*[:：]?\s*(.+)$", re.I | re.S)
+# «открой ютуб в терминале» is not a browser open, «открой гугл хром» is the Chrome program — let the usual path decide.
+SITE_NOISE = re.compile(
+    r"\b(?:терминал\w*|консол\w*|браузер\w*|вкладк\w*|хром|chrome|фаерфокс|файрфокс|firefox|мозил\w*|"
+    r"карт[аыуе]|диск|почт\w*|документ\w*|переводчик)\b",
+    re.I,
+)
+SITE_BASE = {
+    "wikipedia": ("https://ru.wikipedia.org", "https://ru.wikipedia.org/w/index.php?search={q}"),
+    "google": ("https://www.google.com", "https://www.google.com/search?q={q}"),
+    "yandex": ("https://yandex.ru", "https://yandex.ru/search/?text={q}"),
+    "youtube": ("https://www.youtube.com", "https://www.youtube.com/results?search_query={q}"),
+    "github": ("https://github.com", "https://github.com/search?q={q}&type=repositories"),
+    "habr": ("https://habr.com", "https://habr.com/ru/search/?q={q}"),
+    "stackoverflow": ("https://stackoverflow.com", "https://stackoverflow.com/search?q={q}"),
+    "kinopoisk": ("https://www.kinopoisk.ru", "https://www.kinopoisk.ru/index.php?kp_query={q}"),
+}
+
+
+def _site_key(word: str) -> str:
+    low = word.lower()
+    for begin, key in (
+        ("вики", "wikipedia"),
+        ("wikipedia", "wikipedia"),
+        ("гугл", "google"),
+        ("google", "google"),
+        ("яндекс", "yandex"),
+        ("yandex", "yandex"),
+        ("ютуб", "youtube"),
+        ("youtube", "youtube"),
+        ("гитхаб", "github"),
+        ("github", "github"),
+        ("хабр", "habr"),
+        ("habr", "habr"),
+        ("стековерфлоу", "stackoverflow"),
+        ("stackoverflow", "stackoverflow"),
+        ("кинопоиск", "kinopoisk"),
+    ):
+        if low.startswith(begin):
+            return key
+    return ""
+
+
+def _site_action(raw: str) -> dict | None:
+    """A known site, with a search query if the owner named one, or None when this is not that kind of command."""
+    m = SITE_COMMAND.match(raw)
+    if not m:
+        return None
+    rest = " ".join((m.group("rest") or "").split())
+    if SITE_NOISE.search(rest) or re.match(r"^[,;]?\s*и\b", rest):
+        return None
+    base, search = SITE_BASE[_site_key(m.group("site"))]
+    if not rest:
+        return {"tool": "open_app", "name": base, "label": "ссылка"}
+    query = QUERY_MARK.sub(r"\1", rest).strip(" «»\"'.,!?:：")
+    if not query or len(query) > 120:
+        return None
+    from urllib.parse import quote
+
+    return {"tool": "open_app", "name": search.format(q=quote(query, safe="")), "label": "ссылка"}
+
+
 # Names the owner may say besides the executable names the action already knows.
 NAMES = {
     "терминал": "terminal",
@@ -124,6 +196,10 @@ def fast_action(vault: Vault, text: str) -> dict | None:
     raw = (text or "").strip()
     if not raw:
         return None
+
+    site = _site_action(raw)
+    if site is not None:
+        return site
 
     m = OPEN.match(raw)
     if m:

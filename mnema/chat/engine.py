@@ -2,6 +2,7 @@
 
 Flow of one message:
   1. saved to the chat; learning on it starts at once in the background (live feed shows "читаю → поняла → …");
+     a plain computer command is answered without a model and is not learned at all;
   2. system prompt = how to work with him (behavior profile) + memory this model may see + the extra memory folders;
   3. the answer streams; with "второй проход" on, a second call checks the draft against the rules and fixes it;
   4. a ```ask block in the answer becomes a question with buttons.
@@ -549,6 +550,7 @@ def state(cid: str) -> dict:
             "error": g["error"],
             "phase": _phase(g),
             **({"pending": g["pending"]} if g.get("pending") else {}),
+            **({"sudo": g["sudo"]} if g.get("sudo") else {}),
         }
         if g
         else {"text": "", "done": True, "error": "", "phase": ""}
@@ -691,6 +693,29 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
             modify_chat(
                 vault, cid, lambda c: c.__setitem__("tools_ok", sorted(set(c.get("tools_ok") or []) | {call["tool"]}))
             )
+    if call.get("tool") == "run_command" and TL.needs_sudo(str(call.get("command") or "")):
+        # sudo needs the administrator password: it is asked here in the chat, once, and the command runs without a
+        # terminal window — so the owner never types it twice and never leaves the conversation
+        pw = _sudo_password_in_chat(vault, cid, g, str(call.get("command") or ""))
+        if pw is None:
+            return None  # stopped while waiting for the password
+        if not pw:
+            _add_msg(
+                vault,
+                cid,
+                {
+                    "role": "assistant",
+                    "kind": "action",
+                    "ts": _now(),
+                    "text": "Не выполнено: нужен пароль администратора",
+                    "failed": True,
+                },
+            )
+            return (
+                "Владелец не ввёл пароль администратора — команда не выполнена. Не повторяй её с sudo: предложи "
+                "способ без администратора или спроси владельца, что делать дальше."
+            )
+        call = {**call, "sudo_password": pw}
     mid = secrets.token_hex(4)
     pending_text = (
         ("Выполняю: " + str(call.get("command") or "")[:90]) if call.get("tool") == "run_command" else "Делаю: " + desc
@@ -744,6 +769,52 @@ def answer_action(cid: str, aid: str, choice: str) -> dict:
     box["choice"] = choice if choice in ("yes", "no", "always") else "no"
     box["event"].set()
     return {"ok": True}
+
+
+def answer_sudo(cid: str, aid: str, password: str = "", choice: str = "ok") -> dict:
+    """The administrator password typed in the chat card (or «Отмена»). It is used for the command and kept only on
+    this computer — never in the conversation, the journal or a model's prompt."""
+    box = _answers.get(aid)
+    if not box:
+        raise ValueError("этот пароль уже не ждут")
+    if box.get("chat") and box["chat"] != cid:
+        raise ValueError("этот пароль ждут в другом разговоре")
+    box["choice"] = "ok" if choice == "ok" else "no"
+    box["password"] = str(password or "")
+    box["event"].set()
+    return {"ok": True}
+
+
+def _sudo_password_in_chat(vault: Vault, cid: str, g: dict, command: str) -> str | None:
+    """The administrator password for one command: from this process/the system store, or asked right here in the
+    chat. "" — the owner refused, None — the answer was stopped while waiting."""
+    from . import tools as TL
+
+    pw = TL.sudo_cached(vault)
+    if pw and TL.sudo_check(pw):
+        return pw
+    if pw:  # stale or changed: never keep a password that sudo no longer accepts
+        TL.sudo_forget(vault)
+    for attempt in range(3):
+        aid = secrets.token_hex(4)
+        box = {"event": threading.Event(), "choice": "", "password": "", "chat": cid}
+        _answers[aid] = box
+        g["sudo"] = {"id": aid, "command": command[:160], "wrong": attempt > 0}
+        g["phase"] = "жду пароль администратора"
+        try:
+            while not box["event"].wait(0.3):
+                if g.get("stop"):
+                    return None
+        finally:
+            _answers.pop(aid, None)
+            g.pop("sudo", None)
+        if box.get("choice") != "ok":
+            return ""
+        pw = str(box.get("password") or "")
+        if TL.sudo_check(pw):
+            TL.sudo_remember(vault, pw)
+            return pw
+    return ""
 
 
 def stop(cid: str) -> None:
@@ -902,8 +973,18 @@ def send(
         ACH.event(vault, "message", text=text, quote=bool(quote), private=bool(chat.get("private")))
     for f in saved:
         ACH.event(vault, "file", ext=Path(f["name"]).suffix, chars=f.get("chars", 0))
-    # learn from it right away — in parallel with the answer (unless this chat is private)
-    if learn and not chat.get("private"):
+    # A plain computer command («открой терминал», «запусти firefox», «open https://…», «открой википедию со
+    # словом "сон"») is one action and one line of answer: no model round-trip, no 40–90 s wait, the same on every
+    # model. It is decided before learning, so a command never costs a background model call either — that call
+    # would only answer «ничего нового».
+    from . import intents as IN
+
+    call = None
+    if not opener and not chat.get("consortium") and not files and not quote and not chat.get("private"):
+        call = IN.fast_action(vault, text)
+    fast = call is not None and not P.load(vault).get("tools_ask", False)
+    # learn from it right away — in parallel with the answer (unless this chat is private or it is a command)
+    if learn and not chat.get("private") and not fast:
         ep = Episode(
             "mnema_chat",
             f"{chat['id']}#{len(chat['messages'])}",
@@ -913,28 +994,20 @@ def send(
             title=chat["title"],
         )
         threading.Thread(target=lambda: _safe_learn(vault, ep), daemon=True, name="mnema-learn-chat").start()
-    if not opener and not chat.get("consortium") and not files and not quote and not chat.get("private"):
-        # A plain computer command («открой терминал», «запусти firefox», «open https://…») is one action and one line
-        # of answer: no model round-trip, no 40–90 s wait, the same on every model.
-        from . import intents as IN
+    if fast:
+        say = IN.answer(vault, call)
 
-        call = IN.fast_action(vault, text)
-        if call is not None and not P.load(vault).get("tools_ask", False):
-            say = IN.answer(vault, call)
+        def add_brief(c):
+            c["messages"].append({"role": "assistant", "text": say, "ts": _now(), "model": model})
+            c["updated"] = _now()
 
-            def add_brief(c):
-                c["messages"].append({"role": "assistant", "text": say, "ts": _now(), "model": model})
-                c["updated"] = _now()
-
-            try:
-                modify_chat(vault, chat["id"], add_brief)
-            except KeyError:
-                pass
-            from .. import achievements as ACH
-
-            ACH.event(vault, "action", tool="open_app")
-            _gen[chat["id"]] = {"text": say, "done": True, "error": "", "phase": "", "stop": False}
-            return {"chat": chat["id"], "title": chat["title"], "model": model}
+        try:
+            modify_chat(vault, chat["id"], add_brief)
+        except KeyError:
+            pass
+        ACH.event(vault, "action", tool="open_app")
+        _gen[chat["id"]] = {"text": say, "done": True, "error": "", "phase": "", "stop": False}
+        return {"chat": chat["id"], "title": chat["title"], "model": model}
     if not opener and not sync:
         _add_msg(
             vault,

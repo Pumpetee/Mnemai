@@ -29,6 +29,17 @@ class Intents(unittest.TestCase):
         self.assertEqual(IN.fast_action(self.v, "открой фаерфокс")["name"], "firefox")
         self.assertEqual(IN.fast_action(self.v, "Открой мне хром, пожалуйста")["name"], "chrome")
         self.assertEqual(IN.fast_action(self.v, "open https://example.com")["name"], "https://example.com")
+        self.assertEqual(
+            IN.fast_action(self.v, 'Открой википедию со словом "сон"')["name"],
+            "https://ru.wikipedia.org/w/index.php?search=%D1%81%D0%BE%D0%BD",
+        )
+        self.assertEqual(
+            IN.fast_action(self.v, "открой в википедии сон")["name"],
+            "https://ru.wikipedia.org/w/index.php?search=%D1%81%D0%BE%D0%BD",
+        )
+        self.assertEqual(IN.fast_action(self.v, "открой ютуб")["name"], "https://www.youtube.com")
+        self.assertIn("search_query=", IN.fast_action(self.v, "открой в ютубе котиков")["name"])
+        self.assertEqual(IN.fast_action(self.v, "открой гугл хром")["name"], "chrome")  # the program, not a site
         note = self.v.root / "00 Inbox" / "x.md"
         note.write_text("x", encoding="utf-8")
         self.assertEqual(IN.fast_action(self.v, f"прочитай файл {note}")["tool"], "read_file")
@@ -68,6 +79,20 @@ class Intents(unittest.TestCase):
         remember(self.v, "Пьёт кофе без сахара", "inbox", "owner")
         self.assertIn("кофе", IN.answer(self.v, IN.fast_action(self.v, "найди кофе в памяти")).lower())
         self.assertRegex(IN.answer(self.v, IN.fast_action(self.v, "который час")), r"\d{2}:\d{2}")
+
+    def test_commands_skip_the_learning_model_call(self):
+        calls = []
+        old_learn, old_stream, old_answer = CH._safe_learn, PR.stream, IN.answer
+        CH._safe_learn = lambda *a, **k: calls.append(1)
+        PR.stream = lambda *a, **k: (_ for _ in ()).throw(AssertionError("the model must not be called"))
+        IN.answer = lambda *a, **k: "Готово — открыла Википедию."
+        try:
+            r = CH.send(self.v, 'Открой википедию со словом "сон"', model="claude_code:sonnet", sync=True)
+            chat = CH.load_chat(self.v, r["chat"])
+        finally:
+            CH._safe_learn, PR.stream, IN.answer = old_learn, old_stream, old_answer
+        self.assertEqual(calls, [], "a command must not go to the learning model")
+        self.assertEqual(chat["messages"][-1]["text"], "Готово — открыла Википедию.")
 
     def test_send_answers_without_the_model_on_every_model(self):
         old_stream = PR.stream

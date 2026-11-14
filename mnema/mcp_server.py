@@ -389,7 +389,7 @@ TOOLS = [
                 "timeout": {"type": "integer", "minimum": 1, "maximum": 300, "default": 120},
                 "terminal": {
                     "type": "boolean",
-                    "description": "Показать команду в видимом терминале (для установки и sudo).",
+                    "description": "Показать команду в видимом терминале (только для интерактивных программ; sudo и установка идут без окна).",
                 },
             },
             "required": ["command"],
@@ -489,7 +489,10 @@ ACTION_TOOLS = [
                 "command": {"type": "string"},
                 "cwd": {"type": "string"},
                 "timeout": {"type": "integer", "minimum": 1, "maximum": 300, "default": 120},
-                "terminal": {"type": "boolean", "description": "Показать команду в видимом терминале."},
+                "terminal": {
+                    "type": "boolean",
+                    "description": "Показать команду в видимом терминале (только интерактивным программам).",
+                },
             },
             "required": ["command"],
         },

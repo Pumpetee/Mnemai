@@ -500,6 +500,13 @@ def post(vault: Vault, path: str, b: dict):
         return 200, {"url": d["url"], "title": d.get("title") or url, "text": d["text"][:120_000]}
     if path == "/api/chat/action":  # the owner's word on an action the model asked for
         return 200, CH.answer_action(str(b.get("chat", "")), str(b.get("id", "")), str(b.get("choice", "")))
+    if path == "/api/chat/sudo":  # the administrator password typed in the chat card: used for the command, not saved
+        return 200, CH.answer_sudo(
+            str(b.get("chat", "")),
+            str(b.get("id", "")),
+            str(b.get("password", "")),
+            str(b.get("choice", "ok")),
+        )
     if path in ("/api/files/open", "/api/files/reveal"):
         # «Открыть» / «Показать в папке» under an action. This is the owner clicking a path the action itself
         # reported (a `claude` binary found by `which`, a folder from a command): it may be outside the memory

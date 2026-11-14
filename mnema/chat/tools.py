@@ -112,8 +112,10 @@ TERMINAL_RULE = """```mnema run_command command="одна команда тер�
 домашняя папка; timeout — секунды, по умолчанию 120, максимум 300. Так можно смотреть процессы, железо, сеть, git,
 запускать программы, ставить пакеты, работать с файлами вне рабочих папок — всё, что делает терминал.
 Если команда сложная, пиши её в теле блока: ```mnema run_command cwd="…"``` и следующей строкой саму команду.
-Терминал работает по всему компьютеру, а не только в папках памяти и рабочих папках. sudo разрешён: если нужен
-пароль администратора, Mnemai сама покажет системное окно; пароль не сохраняется. Ставить пакеты можно, когда
+Терминал работает по всему компьютеру, а не только в папках памяти и рабочих папках. sudo разрешён: пароль
+администратора Mnemai сама спросит прямо в чате — не открывай для этого терминал и не пиши пароль в команде.
+Видимое окно терминала нужно только интерактивным программам, которым нужен экран; для sudo и установки пакетов
+terminal не указывай — Mnemai выполнит команду без окна и покажет ход в чате. Ставить пакеты можно, когда
 владелец об этом просит.
 
 ```mnema open_app name="chrome"
@@ -368,7 +370,12 @@ def what(vault: Vault, call: dict) -> str:
             "split": f"разрезать {call.get('from', '')} на части в папку {path}",
         }.get(call.get("do", ""), f"изменить PDF {call.get('from', '')} → {path}"),
         "remember": f"записать в память ({call.get('where', 'inbox')}): «{call.get('body', '')[:200]}»",
-        "run_command": f"выполнить в терминале: {_command(call)[:200]}",
+        "run_command": (
+            "выполнить в терминале: "
+            if call.get("terminal") and not needs_sudo(_command(call))
+            else "выполнить команду: "
+        )
+        + _command(call)[:200],
         "open_app": f"открыть программу: {call.get('name', '')}",
     }[t]
 
@@ -496,9 +503,17 @@ SECRET_ACCESS = re.compile(
     r"secret-tool\b|secrets\.json|gnome-keyring|kwallet|keyring\.(?:get|list)|"
     r"security\s+find-generic-password"
 )
+
+
 INSTALL_COMMAND = re.compile(
     r"\b(?:apt(?:-get)?|dnf|yum|zypper|pacman|apk|snap|flatpak)\b[^\n]*\b(?:install|add|-S)\b", re.I
 )
+
+
+def needs_sudo(command: str) -> bool:
+    """The command asks for root. The password is asked once, in the chat — never in a terminal window."""
+    return bool(re.search(r"(?<![\w./-])sudo(?![\w.-])", str(command or "")))
+
 
 ASKPASS = """#!/bin/sh
 # sudo has no terminal here: ask for the administrator password in a small desktop window, never store it.
@@ -543,42 +558,51 @@ def _stored_sudo(vault: Vault) -> str:
         return ""
 
 
-def _gui_password() -> str:
-    """Ask the owner for the administrator password once, in a small system window."""
-    for argv in (
-        ["kdialog", "--title", "Mnemai", "--password", "Пароль администратора — Mnemai запомнит его для sudo"],
-        ["zenity", "--password", "--title=Mnemai"],
-    ):
-        if shutil.which(argv[0]):
-            try:
-                r = subprocess.run(argv, capture_output=True, text=True, timeout=180)
-            except (OSError, subprocess.TimeoutExpired):
-                return ""
-            return r.stdout.rstrip("\r\n") if r.returncode == 0 else ""
-    return ""
+_sudo_memory: dict[str, str] = {}
 
 
-def _sudo_password(vault: Vault) -> str:
-    """The stored sudo password, or ask once and remember it in the system secret store (never in the prompt)."""
-    pw = _stored_sudo(vault)
+def sudo_cached(vault: Vault) -> str:
+    """The administrator password for this memory: this process first, then the system secret store."""
+    key = str(vault.root)
+    pw = _sudo_memory.get(key) or _stored_sudo(vault)
     if pw:
-        return pw
-    pw = _gui_password()
-    if not pw:
-        return ""
+        _sudo_memory[key] = pw
+    return pw
+
+
+def sudo_check(pw: str) -> bool:
+    """Is this the administrator password? sudo itself says yes or no; no command runs."""
+    if not pw or os.name == "nt":
+        return False
     try:
-        check = subprocess.run(["sudo", "-S", "-k", "-v"], input=pw + "\n", text=True, capture_output=True, timeout=30)
+        r = subprocess.run(["sudo", "-S", "-k", "-v"], input=pw + "\n", text=True, capture_output=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
-        return ""
-    if check.returncode != 0:
-        return ""
+        return False
+    return r.returncode == 0
+
+
+def sudo_remember(vault: Vault, pw: str) -> None:
+    """Keep a password the owner typed in the chat: this process and the system secret store, never a chat file."""
+    if not pw:
+        return
+    _sudo_memory[str(vault.root)] = pw
     try:
         from ..learn import secrets_store
 
         secrets_store.put(secrets_store.vault_id(vault), SUDO_SLOT, pw)
-    except Exception:  # noqa: BLE001 — still use it for this run
+    except Exception:  # noqa: BLE001 — still usable for this run
         pass
-    return pw
+
+
+def sudo_forget(vault: Vault) -> None:
+    """The password is wrong or stale: ask again instead of failing every command in silence."""
+    _sudo_memory.pop(str(vault.root), None)
+    try:
+        from ..learn import secrets_store
+
+        secrets_store.put(secrets_store.vault_id(vault), SUDO_SLOT, "")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _password_askpass(pw: str) -> tuple[Path, Path] | None:
@@ -717,19 +741,22 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
         timeout = int(float(str(call.get("timeout") or DEFAULT_COMMAND_SECONDS).strip()))
     except ValueError:
         timeout = DEFAULT_COMMAND_SECONDS
+    if not call.get("timeout") and INSTALL_COMMAND.search(command):
+        timeout = MAX_COMMAND_SECONDS  # a package manager must not be killed mid-transaction by the 2-minute default
     timeout = max(1, min(MAX_COMMAND_SECONDS, timeout))
-    needs_sudo = bool(re.search(r"(?<![\w./-])sudo(?![\w.-])", command))
+    root = needs_sudo(command)
     visible = bool(call.get("terminal") or call.get("visible"))
-    if "terminal" not in call and "visible" not in call and INSTALL_COMMAND.search(command):
-        visible = True  # installing is shown in a real terminal: the owner sees sudo and the progress
-    pw = _stored_sudo(vault) if needs_sudo else ""
-    if needs_sudo and visible and not pw:
-        pw = _sudo_password(vault)  # ask once, remember in the system keychain, never show to a model
+    if root:
+        # the password is asked in the chat; a visible terminal would ask it a second time, so sudo never opens one
+        visible = False
+    pw = ""
+    if root:
+        pw = str(call.get("sudo_password") or "") or sudo_cached(vault)
     if os.name != "nt" and visible:
         return _run_in_terminal(vault, command, work, timeout, client, pw)
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1", "TERM": "dumb"}
     ask_dir: Path | None = None
-    if needs_sudo:
+    if root:
         made = _password_askpass(pw) if pw else None
         if made:
             ask_dir, askpass = made
@@ -786,6 +813,10 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     seconds = time.time() - started
     log_event(vault, client, "exec", f"терминал ({timeout} с): {command[:160]}")
     code = proc.returncode
+    if root and code != 0 and pw:
+        blob = f"{out}\n{err}".lower()
+        if re.search(r"incorrect password|try again|попробуйте (?:ещ[её] )?раз|неверн\w* парол", blob):
+            sudo_forget(vault)  # stale or mistyped: the next sudo asks again, in the chat
     head = f"[код {code} · {seconds:.1f} с · {work}]"
     if timed_out:
         head = f"[остановлена по таймауту {timeout} с · {work}]"

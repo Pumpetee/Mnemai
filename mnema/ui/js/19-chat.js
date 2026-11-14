@@ -1373,6 +1373,65 @@ function actionAsk(cid, p) {
   );
   scrollEnd();
 }
+// the administrator password for sudo is asked right here in the chat: typed once, used for the command, never kept
+function sudoAsk(cid, p) {
+  const old = $("#sudoask");
+  if (!p) {
+    if (old) old.remove();
+    return;
+  }
+  if (old && old.dataset.id === p.id) return;
+  if (old) old.remove();
+  const live = $("#live");
+  if (!live) return;
+  live.insertAdjacentHTML(
+    "afterend",
+    `<div class="actask" id="sudoask" data-id="${esc(p.id)}"><div class="actaskh">${ic("lock")}<b>${tr("Нужен пароль администратора")}</b></div>
+     <div class="actwhat" data-noi18n>${esc(p.command || "")}</div>
+     ${p.wrong ? `<p class="hint">${tr("Пароль не подошёл — попробуй ещё раз.")}</p>` : ""}
+     <input class="inp" id="sudopw" type="password" autocomplete="current-password" placeholder="${tr("пароль администратора")}">
+     <div class="row"><button class="btn sm" id="sudook">${tr("Продолжить")}</button><button class="btn g sm" id="sudocancel">${tr("Отмена")}</button></div>
+     <p class="hint">${tr("Пароль останется на этом компьютере и не попадёт ни в переписку, ни к модели.")}</p></div>`,
+  );
+  const waiting = () => {
+    const el = $("#sudoask");
+    if (el) el.innerHTML = `<div class="actaskh">${ic("lock")}<b>${tr("Проверяю пароль…")}</b></div>`;
+  };
+  const answer = async (body) => {
+    $$("#sudoask .btn").forEach((x) => (x.disabled = true));
+    try {
+      await post("/api/chat/sudo", { chat: cid, id: p.id, ...body });
+    } catch (e) {
+      toast(e.message);
+      $$("#sudoask .btn").forEach((x) => (x.disabled = false));
+      return;
+    }
+    waiting();
+  };
+  const submit = () => {
+    const f = $("#sudopw");
+    if (!f || !f.value) {
+      if (f) f.focus();
+      return;
+    }
+    const value = f.value;
+    f.value = "";
+    answer({ password: value, choice: "ok" });
+  };
+  $("#sudook").onclick = submit;
+  $("#sudopw").onkeydown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  };
+  $("#sudocancel").onclick = () => answer({ choice: "no" });
+  setTimeout(() => {
+    const f = $("#sudopw");
+    if (f) f.focus();
+  }, 60);
+  scrollEnd();
+}
 document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest("[data-reveal]");
   if (b) post("/api/files/reveal", { path: b.dataset.reveal }).catch((err) => toast(err.message));
@@ -2192,6 +2251,7 @@ function poll() {
     T.error = st.error;
     WORK(st.done ? "" : st.phase || "думаю");
     actionAsk(cid, st.pending);
+    sudoAsk(cid, st.sudo);
     if (st.done) {
       clearInterval(CHAT.polling);
       CHAT.polling = null;

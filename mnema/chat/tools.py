@@ -112,7 +112,9 @@ TERMINAL_RULE = """```mnema run_command command="одна команда тер�
 домашняя папка; timeout — секунды, по умолчанию 120, максимум 300. Так можно смотреть процессы, железо, сеть, git,
 запускать программы, ставить пакеты, работать с файлами вне рабочих папок — всё, что делает терминал.
 Если команда сложная, пиши её в теле блока: ```mnema run_command cwd="…"``` и следующей строкой саму команду.
-Терминал работает по всему компьютеру, а не только в папках памяти и рабочих папках.
+Терминал работает по всему компьютеру, а не только в папках памяти и рабочих папках. sudo разрешён: если нужен
+пароль администратора, Mnemai сама покажет системное окно; пароль не сохраняется. Ставить пакеты можно, когда
+владелец об этом просит.
 
 ```mnema open_app name="chrome"
 ```
@@ -415,6 +417,37 @@ def _command(call: dict) -> str:
     return " ".join(str(call.get("command") or call.get("body") or "").split())
 
 
+ASKPASS = """#!/bin/sh
+# sudo has no terminal here: ask for the administrator password in a small desktop window, never store it.
+if command -v kdialog >/dev/null 2>&1; then
+  exec kdialog --title "Mnemai" --password "Пароль администратора, чтобы выполнить команду на компьютере"
+fi
+if command -v zenity >/dev/null 2>&1; then
+  exec zenity --password --title="Mnemai"
+fi
+if command -v ssh-askpass >/dev/null 2>&1; then
+  exec ssh-askpass "Mnemai: пароль администратора"
+fi
+exit 1
+"""
+
+
+def _sudo_askpass() -> Path | None:
+    """A small GUI askpass helper so `sudo` works without a terminal and without storing the password."""
+    if os.name == "nt":
+        return None
+    home = Path(os.environ.get("MNEMA_HOME") or (Path.home() / ".mnema"))
+    p = home / "sudo-askpass.sh"
+    try:
+        if not p.exists() or p.read_text(encoding="utf-8") != ASKPASS:
+            home.mkdir(parents=True, exist_ok=True)
+            p.write_text(ASKPASS, encoding="utf-8")
+        p.chmod(0o700)
+    except OSError:
+        return None
+    return p
+
+
 def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
     """Run one command in the owner's shell and turn its stdout/stderr/exit code into a short answer for the model.
 
@@ -435,6 +468,11 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
         timeout = DEFAULT_COMMAND_SECONDS
     timeout = max(1, min(MAX_COMMAND_SECONDS, timeout))
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1", "TERM": "dumb"}
+    if re.search(r"(?<![\w./-])sudo(?![\w.-])", command):
+        askpass = _sudo_askpass()
+        if askpass:
+            env["SUDO_ASKPASS"] = str(askpass)
+            env["SUDO_ASKPASS_REQUIRE"] = "force"  # also for sudo versions that need it without -A
     started = time.time()
     if os.name == "nt":
         proc = subprocess.Popen(

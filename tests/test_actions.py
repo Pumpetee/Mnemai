@@ -253,6 +253,31 @@ class ActionsTest(unittest.TestCase):
         self.assertTrue(any(m.get("kind") == "action" and "mnema-pc-ok" in (m.get("text") or "") for m in msgs))
         self.assertTrue(any(e["action"] == "exec" for e in events(v, 30)))  # and it is in the journal
 
+    @unittest.skipIf(os.name == "nt", "the fake sudo helper is a POSIX shell script")
+    def test_sudo_gets_a_gui_askpass_without_a_terminal(self):
+        v = _vault(self.work)
+        bindir = self.work / "bin"
+        bindir.mkdir(exist_ok=True)
+        fake = bindir / "sudo"
+        marker = self.work / "sudo-env.txt"
+        fake.write_text(
+            '#!/bin/sh\nprintf "%s|%s" "$SUDO_ASKPASS" "$SUDO_ASKPASS_REQUIRE" > "$MNEMA_SUDO_MARK"\n', encoding="utf-8"
+        )
+        fake.chmod(0o755)
+        old_path, old_mark = os.environ["PATH"], os.environ.get("MNEMA_SUDO_MARK")
+        os.environ["PATH"] = str(bindir) + os.pathsep + old_path
+        os.environ["MNEMA_SUDO_MARK"] = str(marker)
+        try:
+            text, _, _ = TL.run(v, {"tool": "run_command", "command": "sudo -n true"})
+        finally:
+            os.environ["PATH"] = old_path
+            if old_mark is None:
+                os.environ.pop("MNEMA_SUDO_MARK", None)
+            else:
+                os.environ["MNEMA_SUDO_MARK"] = old_mark
+        self.assertIn("0", text)
+        self.assertIn("sudo-askpass.sh|force", marker.read_text(encoding="utf-8"))
+
     def test_terminal_can_be_switched_off(self):
         v = _vault(self.work)
         P.save(v, {"pc_access": False})

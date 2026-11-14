@@ -494,6 +494,8 @@ def search(query: str, n: int = 6) -> list[dict]:
             _cache[query] = (_t.time(), wiki)
             return wiki[:n]
     res = _search_once(query, n)
+    if not res and not fresh:
+        res = [r for r in _wiki(query) if trusted(r["url"])][:n]
     if res:
         _cache[query] = (_t.time(), res)
     return res

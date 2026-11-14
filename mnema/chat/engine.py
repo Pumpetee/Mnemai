@@ -735,7 +735,7 @@ def send(
             title=chat["title"],
         )
         threading.Thread(target=lambda: _safe_learn(vault, ep), daemon=True, name="mnema-learn-chat").start()
-    if not opener and not chat.get("consortium") and not files and not quote:
+    if not opener and not chat.get("consortium") and not files and not quote and not chat.get("private"):
         # A plain computer command («открой терминал», «запусти firefox», «open https://…») is one action and one line
         # of answer: no model round-trip, no 40–90 s wait, the same on every model.
         from . import intents as IN

@@ -167,8 +167,11 @@ def fast_action(vault: Vault, text: str) -> dict | None:
             return {"tool": "read_file", "path": path, "label": "файл"}
     m = LIST.match(raw)
     if m:
-        path = _path(vault, _target(m.group(1)))
-        if Path(path).is_dir():
+        target = _target(m.group(1))
+        path = _path(vault, target)
+        # a known folder («что в загрузках») is a command even on a machine where that folder is absent:
+        # the answer will say so in a line instead of sending the phrase to the model.
+        if Path(path).is_dir() or target.lower() in FOLDERS:
             return {"tool": "list_files", "path": path, "label": "папка"}
     m = FIND.match(raw)
     if m:

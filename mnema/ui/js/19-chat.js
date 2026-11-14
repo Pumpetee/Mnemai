@@ -14,6 +14,17 @@ const CHAT = {
 };
 // while there are no words yet: three dots, no "Claude думает" (who speaks is shown only in a consortium)
 const TYPING = '<span class="typing"><i></i><i></i><i></i></span>',
+  WORK = (phase) => {
+    const w = $("#workbar");
+    if (!w) return;
+    if (!phase) {
+      w.hidden = true;
+      return;
+    }
+    w.hidden = false;
+    const p = $("#workphase");
+    if (p) p.textContent = phase;
+  },
   QUIET_PHASE = new Set(["", "думаю", "пишу"]);
 const SEND_ICON = '<svg viewBox="0 0 24 24"><path d="M3 20l18-8L3 4v6l12 2-12 2z"/></svg>';
 async function viewChat(id) {
@@ -42,6 +53,7 @@ async function viewChat(id) {
      <div class="tcenter"><div class="title" id="ctitle" title="${tr("Нажми дважды, чтобы переименовать")}"></div><span class="tside"><button class="ib rename" id="crn" title="Переименовать">${ic("edit")}</button><span id="privtag"></span></span></div>
 </div>
      <div id="ctable"></div><div class="msgs" id="msgs"></div>
+     <div class="workbar" id="workbar" hidden><span class="workdot"></span><span class="worklabel">Mnemai работает</span><span class="workphase" id="workphase"></span><span class="workline"><i></i></span></div>
      <div class="composer" id="composer"><div id="recbar"></div><div class="cbox"><button class="hq chelp" id="chelp" title="${tr("Что умеет строка ввода")}">?</button><button class="ccfg" id="ccfg" title="Настроить строку ввода">${ic("gear")}</button><div class="qbar" id="qbar" hidden></div><div class="fbar" id="fbar" hidden></div><textarea id="inp" rows="1" placeholder="Напиши что угодно — я помню тебя и учусь по ходу" title="Enter — отправить, Shift+Enter — новая строка"></textarea>
        <div class="cbar"><button class="ib" id="clip" title="Прикрепить файл">${ic("clip")}</button><input type="file" id="fpick" multiple hidden>
        <input type="file" id="apick" accept="audio/*,video/*,.m4a,.ogg,.opus,.amr" hidden>
@@ -168,6 +180,7 @@ async function viewChat(id) {
   $("#crn").onclick = renameInline;
   clearInterval(CHAT.polling);
   CHAT.polling = null;
+  WORK("");
   CHAT.id = id || "";
   if (CHAT.id) LS.set("lastchat", CHAT.id); // «Чаты» on the rail comes back here
   CHAT.chat = null;
@@ -1845,6 +1858,7 @@ async function startByMnema() {
     drawList("");
     poll();
   } catch (e) {
+    WORK("");
     $("#live") && $("#live").remove();
     toast(e.message);
     renderEmpty();
@@ -1915,6 +1929,7 @@ async function sendMsg() {
     if ($("#model") && !$(".mmenu")) modelMenu($("#model"));
     return;
   }
+  WORK("принял…");
   const quote = CHAT.quote || "";
   inp.value = "";
   inp.style.height = "auto";
@@ -2023,6 +2038,7 @@ function poll() {
     T.raf = requestAnimationFrame(frame);
   };
   const finish = async () => {
+    WORK("");
     btn.classList.remove("stop");
     btn.innerHTML = SEND_ICON;
     CHAT.live = null;
@@ -2095,6 +2111,7 @@ function poll() {
     T.target = st.text;
     T.phase = st.phase;
     T.error = st.error;
+    WORK(st.done ? "" : st.phase || "думаю");
     actionAsk(cid, st.pending);
     if (st.done) {
       clearInterval(CHAT.polling);

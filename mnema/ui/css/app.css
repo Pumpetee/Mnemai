@@ -2284,6 +2284,84 @@ body.noterms .term {
 .ask.done::before {
   background: var(--line);
 }
+.workbar {
+  display: flex;
+  align-items: center;
+  gap: calc(9px * var(--den));
+  width: min(780px, calc(100% - 56px));
+  margin: 0 auto calc(8px * var(--den));
+  padding: calc(7px * var(--den)) calc(12px * var(--den));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: var(--sh1);
+  color: var(--ink2);
+  font-size: calc(12.5px * var(--fs));
+  animation: workin 0.22s ease-out;
+}
+.workbar[hidden] {
+  display: none;
+}
+.workbar .workdot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--acc);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 45%, transparent);
+  animation: workpulse 1.5s ease-out infinite;
+}
+.workbar .worklabel {
+  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.workbar .workphase {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink3);
+}
+.workbar .workline {
+  position: relative;
+  flex: 1;
+  min-width: 48px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+.workbar .workline i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -45%;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, var(--acc), transparent);
+  animation: workslide 1.35s linear infinite;
+}
+@keyframes workpulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@keyframes workslide {
+  to {
+    left: 100%;
+  }
+}
+@keyframes workin {
+  from {
+    transform: translateY(3px);
+  }
+}
 .typing {
   display: inline-flex;
   gap: 5px;

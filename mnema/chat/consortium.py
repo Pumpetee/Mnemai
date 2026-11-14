@@ -492,8 +492,10 @@ def run(
             from ..agent import profile as P
             from .. import mcp_server as MC
 
-            can_act = TL.enabled(vault) and not P.load(vault).get("tools_ask", False)
-            if can_act:
+            can_act = TL.enabled(vault) and not P.load(vault).get("tools_ask", False) and pid != "claude_code"
+            if pid == "claude_code":
+                head += "\n\n" + PR.CLAUDE_MCP_NOTE
+            elif can_act:
                 head += "\n\n" + TL.rule(vault)
                 if pid == "harness":
                     head += (

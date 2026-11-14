@@ -1043,6 +1043,31 @@ def _remember_problem(vault: Vault, pid: str, e: BaseException) -> None:
         pass
 
 
+CLAUDE_MCP_NOTE = """=== MCP Mnemai ===
+К тебе подключён MCP-сервер Mnemai (56 инструментов: memory_*, pc_*, web_*, task_*, todo_*, subagent_run и файловые
+действия). Вызывай их штатным способом — не пиши блоки ```mnema и не говори, что инструментов нет. Память уже
+загружена в системный промпт; для свежих фактов используй memory_search/memory_context."""
+
+
+def _claude_mcp_config(vault: Vault) -> Path:
+    """A per-request MCP config: Claude Code sees Mnemai's server and no tools of its own."""
+    cwd = Path(tempfile.gettempdir()) / "mnema-chat"
+    cwd.mkdir(exist_ok=True)
+    cfg = cwd / "mcp.json"
+    repo = str(Path(__file__).resolve().parents[2])
+    data = {
+        "mcpServers": {
+            "mnemai": {
+                "command": sys.executable,
+                "args": ["-m", "mnema", "--vault", str(vault.root), "mcp", "--client", "claude"],
+                "env": {"PYTHONPATH": repo, "PYTHONUTF8": "1"},
+            }
+        }
+    }
+    cfg.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return cfg
+
+
 def _stream_raw(
     vault: Vault,
     pid: str,
@@ -1088,17 +1113,12 @@ def _stream_raw(
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(system)
         binary = [f for f in (messages[-1].get("files") or []) if f.get("kind") in ("image", "pdf")] if messages else []
-        tools = (
-            ["--tools", "Read", "--allowedTools", "Read", "--add-dir", str(Path(binary[0]["path"]).parent)]
-            if binary
-            else ["--tools", ""]
-        )  # Read only, and only this chat's folder
-        if binary:
+        if binary:  # the files live outside the memory folders: pc_read_file is the right MCP tool
             messages = messages[:-1] + [
                 {
                     **messages[-1],
-                    "text": messages[-1]["text"] + "\n\n[Прикреплены файлы — открой их "
-                    "инструментом Read: " + "; ".join(f["path"] for f in binary) + "]",
+                    "text": messages[-1]["text"] + "\n\n[Прикреплены файлы — прочитай их инструментом "
+                    "mcp__mnemai__pc_read_file: " + "; ".join(f["path"] for f in binary) + "]",
                 }
             ]
         args = [
@@ -1109,7 +1129,12 @@ def _stream_raw(
             "--verbose",
             "--include-partial-messages",
             "--no-session-persistence",
-            *tools,
+            "--tools",
+            "",  # no built-in Claude tools: every action goes through Mnemai's MCP server
+            "--mcp-config",
+            str(_claude_mcp_config(vault)),
+            "--allowedTools",
+            "mcp__mnemai__*",
             "--setting-sources",
             "",
             "--strict-mcp-config",

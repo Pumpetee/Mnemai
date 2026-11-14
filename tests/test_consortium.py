@@ -84,7 +84,7 @@ class TestConsortium(unittest.TestCase):
 
         self.talk = ActionTalk()
         PR.stream = self.talk
-        cfg = {"members": ["claude_code:sonnet", "openai:gpt-4o"], "rounds": 1}
+        cfg = {"members": ["openai:gpt-4o", "gemini:gemini-2.5-pro"], "rounds": 1}
         r = CH.send(self.v, "Проверь файл", sync=True, learn=False, consortium=cfg)
         c = CH.load_chat(self.v, r["chat"])
         actions = [m for m in c["messages"] if m.get("kind") == "action"]

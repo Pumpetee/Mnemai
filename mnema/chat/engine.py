@@ -1165,11 +1165,13 @@ def _generate(
                 system += "\n\n" + TM.RULE
             from . import tools as TL
 
-            acts = TL.enabled(vault) and text != OPENER
+            acts = TL.enabled(vault) and text != OPENER and pid != "claude_code"
             if acts:  # the model may ask for an action; the owner says yes to each one
                 from . import small as SM
 
                 system += "\n\n" + TL.rule(vault, small=SM.is_small(pid, mname))
+            if pid == "claude_code":  # Claude has the real Mnema MCP server: no text blocks, no native tools
+                system += "\n\n" + PR.CLAUDE_MCP_NOTE
             if pid == "harness":  # its own DSH tools are off: every action goes through Mnemai's tools
                 system += (
                     "\n\nСвоих инструментов у тебя нет — только действия Mnemai блоками ```mnema, как в правилах "

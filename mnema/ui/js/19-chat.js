@@ -12,6 +12,71 @@ const CHAT = {
   newPrivate: false,
   chat: null,
 };
+const NET = { ok: true, ms: 0, timer: 0, frozen: false, resumePoll: false, resumeChat: "" };
+
+function netPaint(ok, ms) {
+  NET.ok = ok;
+  NET.ms = ms;
+  const pill = $("#netpill");
+  if (pill) {
+    pill.classList.toggle("off", !ok);
+    pill.classList.toggle("slow", ok && ms > 800);
+    pill.classList.toggle("ok", ok && ms <= 800);
+    pill.title = ok ? "Связь с Mnemai: " + ms + " мс" : "Нет связи с Mnemai";
+    const b = $("#netms");
+    if (b) b.textContent = ok ? (ms > 800 ? ">0.8 с" : ms + " мс") : "нет";
+  }
+  if (ok) unfreezeSession();
+  else freezeSession();
+}
+
+function freezeSession() {
+  if (NET.frozen || !$("#netfreeze")) return;
+  NET.frozen = true;
+  NET.resumePoll = NET.resumePoll || !!CHAT.polling;
+  if (NET.resumePoll) NET.resumeChat = CHAT.id;
+  if (CHAT.polling) {
+    clearInterval(CHAT.polling);
+    CHAT.polling = null;
+  }
+  const b = $("#send");
+  if (b) b.disabled = true;
+  $("#netfreeze").hidden = false;
+  WORK("жду связь");
+}
+
+function unfreezeSession() {
+  if (!NET.frozen) return;
+  NET.frozen = false;
+  const b = $("#send");
+  if (b) b.disabled = false;
+  const bar = $("#netfreeze");
+  if (bar) bar.hidden = true;
+  const resume = NET.resumePoll;
+  NET.resumePoll = false;
+  if (resume && CHAT.id && NET.resumeChat === CHAT.id && !CHAT.polling) poll();
+  else if (!CHAT.polling) WORK("");
+}
+
+async function pingNet() {
+  if (!document.querySelector("#netpill")) return;
+  const t0 = performance.now();
+  try {
+    await api("/api/ping");
+    netPaint(true, Math.max(1, Math.round(performance.now() - t0)));
+  } catch (e) {
+    netPaint(false, 0);
+  }
+}
+
+function startNet() {
+  if (NET.timer) return;
+  pingNet();
+  NET.timer = setInterval(pingNet, 4000);
+  window.addEventListener("offline", () => netPaint(false, 0));
+  window.addEventListener("online", () => pingNet());
+}
+
 // while there are no words yet: three dots, no "Claude думает" (who speaks is shown only in a consortium)
 const TYPING = '<span class="typing"><i></i><i></i><i></i></span>',
   WORK = (phase) => {
@@ -49,9 +114,10 @@ async function viewChat(id) {
      <div class="search">${ic("search")}<input id="csearch" placeholder="Поиск по разговорам"></div><div class="sortrow"><div class="sortbar" id="sortbar"><button data-sort="date">по дате</button><button data-sort="tokens">по токенам</button></div><button class="aibtn" id="aibtn" data-menu title="Показать разговоры с одним ИИ"><span id="ailbl">ИИ</span>${ic("chev")}</button></div><div class="clist" id="clist"></div><div class="localcard" id="localcard"></div></aside>
    <section class="main"><div class="top">
      <button class="ib" id="tleft" title="Список разговоров" ${L ? "hidden" : ""}>${ic("left")}</button>
-     <button class="modelpill" id="model" data-menu title="Модель"><span class="mdot"></span><span class="mtxt"><b id="mlabel"></b><small id="mfree"></small></span>${ic("chev")}${hq("models")}</button><button class="heatpill" id="heat" data-menu hidden data-level="idle">${ic("thermo")}<i class="hdot"></i>${hq("heat")}</button>
+     <button class="modelpill" id="model" data-menu title="Модель"><span class="mdot"></span><span class="mtxt"><b id="mlabel"></b><small id="mfree"></small></span>${ic("chev")}${hq("models")}</button><button class="heatpill" id="heat" data-menu hidden data-level="idle">${ic("thermo")}<i class="hdot"></i>${hq("heat")}</button><button class="netpill" id="netpill" title="Связь с Mnemai"><svg class="i"><use href="#i-wifi"/></svg><b id="netms">—</b></button>
      <div class="tcenter"><div class="title" id="ctitle" title="${tr("Нажми дважды, чтобы переименовать")}"></div><span class="tside"><button class="ib rename" id="crn" title="Переименовать">${ic("edit")}</button><span id="privtag"></span></span></div>
 </div>
+     <div class="netfreeze" id="netfreeze" hidden><i></i><span>Заморозил сессию, пока нет соединения. Контекст не потеряется.</span></div>
      <div id="ctable"></div><div class="msgs" id="msgs"></div>
      <div class="workbar" id="workbar" hidden><span class="workdot"></span><span class="worklabel">Mnemai работает</span><span class="workphase" id="workphase"></span><span class="workline"><i></i></span></div>
      <div class="composer" id="composer"><div id="recbar"></div><div class="cbox"><button class="hq chelp" id="chelp" title="${tr("Что умеет строка ввода")}">?</button><button class="ccfg" id="ccfg" title="Настроить строку ввода">${ic("gear")}</button><div class="qbar" id="qbar" hidden></div><div class="fbar" id="fbar" hidden></div><textarea id="inp" rows="1" placeholder="Напиши что угодно — я помню тебя и учусь по ходу" title="Enter — отправить, Shift+Enter — новая строка"></textarea>
@@ -64,6 +130,7 @@ async function viewChat(id) {
        <span class="cstate" id="cstate"></span>
        <button class="micbig" id="micb" data-menu title="Голос">${ic("mic")}</button><button class="send" id="send" title="Отправить">${SEND_ICON}</button></div></div></div></section>
    </div><aside class="panel drawer" id="panel" hidden></aside>`;
+  startNet();
   $("#newc").onclick = () => {
     CHAT.pendingCons = null;
     viewChat();
@@ -1888,6 +1955,11 @@ async function sendMsg() {
     text = inp.value.trim(),
     files = CHAT.files || [];
   if (!text && !files.length) return;
+  if (!NET.ok) {
+    freezeSession();
+    toast("Нет связи с Mnemai — заморозил сессию, контекст не потеряется");
+    return;
+  }
   if (CHAT.polling) {
     if (!CHAT.cons) {
       // The answer is still being written: accept the message now, stop the old plan and let the new turn
@@ -2078,6 +2150,7 @@ function poll() {
     try {
       st = await api("/api/chat/poll?id=" + cid);
     } catch (e) {
+      pingNet();
       return;
     }
     if (st.seq !== undefined && T.seq !== -1 && st.seq !== T.seq) {

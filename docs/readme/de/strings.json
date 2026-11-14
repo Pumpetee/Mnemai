@@ -155,6 +155,8 @@
  "more": "Und mehr",
  "more_text": [
   "**Arbeitet mit deinen Dateien.** Liest Scans, schreibt Notizen, erstellt PDF, Word und Excel, fügt PDFs zusammen und teilt sie. Jede Schreibaktion lässt sich unter Gedächtnis → Verlauf rückgängig machen.",
+  "**Befehle ohne Modell.** «Öffne Wikipedia mit dem Wort …», «öffne YouTube», «öffne diese Seite» und andere einmalige Anfragen laufen sofort, ohne eine KI zu fragen – auf jedem Modell gleich.",
+  "**Das Administratorkennwort bleibt im Chat.** sudo und Installieren brauchen kein Terminalfenster: Mnemai fragt das Kennwort direkt im Gespräch, einmal, und weder die Chatdatei noch ein Modell sieht es je.",
   "**Neun Sprachen.** Oberfläche und KI-Antworten richten sich nach der Sprache, die du auswählst – auch wenn du in einer anderen schreibst."
  ],
  "fold": [
@@ -165,5 +167,6 @@
  ],
  "lic": "Lizenz",
  "foot": "Wenn Mnemai sich etwas Nützliches für dich merkt, hilft ein ⭐ anderen, es zu finden.",
- "qr": "Scannen, um das Repository zu öffnen"
+ "qr": "Scannen, um das Repository zu öffnen",
+ "works_note": "Das offizielle Fenster „Sign in with ChatGPT“ verbindet das ChatGPT-Abo, mit einer eigenen Zustimmung zur Nutzung des Plan-Limits; die Generierung läuft über den Codex App Server. OpenCode Go wird mit dem Schlüssel des eigenen Abos verbunden."
 }

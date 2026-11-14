@@ -1,4 +1,4 @@
-Download the file for your system (every version with its number is in [Releases](../../releases)):
+Download the file for your system (all builds are in [Releases](../../releases)):
 
 | System | File | How |
 |---|---|---|

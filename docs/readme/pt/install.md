@@ -1,4 +1,4 @@
-Baixe o arquivo para o seu sistema (todas as versões, com seus números, estão em [Releases](../../releases)):
+Baixe o arquivo para o seu sistema (todas as compilações estão em [Releases](../../releases)):
 
 | Sistema | Arquivo | Como |
 |---|---|---|

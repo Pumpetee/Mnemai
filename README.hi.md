@@ -6,7 +6,7 @@
 
 <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=700&size=26&duration=2600&pause=900&color=A78BFA&center=true&vCenter=true&width=720&height=46&lines=%E0%A4%B9%E0%A4%B0%20AI%20%E0%A4%95%E0%A5%87%20%E0%A4%B2%E0%A4%BF%E0%A4%8F%20%E0%A4%8F%E0%A4%95%20%E0%A4%B9%E0%A5%80%20%E0%A4%AF%E0%A4%BE%E0%A4%A6%E0%A4%A6%E0%A4%BE%E0%A4%B6%E0%A5%8D%E0%A4%A4;%E0%A4%AE%E0%A5%81%E0%A4%AB%E0%A4%BC%E0%A5%8D%E0%A4%A4%2C%20%E0%A4%A4%E0%A5%81%E0%A4%AE%E0%A5%8D%E0%A4%B9%E0%A4%BE%E0%A4%B0%E0%A5%87%20%E0%A4%95%E0%A4%82%E0%A4%AA%E0%A5%8D%E0%A4%AF%E0%A5%82%E0%A4%9F%E0%A4%B0%20%E0%A4%AA%E0%A4%B0%2C%20%E0%A4%AC%E0%A4%BF%E0%A4%A8%E0%A4%BE%20%E0%A4%85%E0%A4%95%E0%A4%BE%E0%A4%89%E0%A4%82%E0%A4%9F" alt="हर AI के लिए एक ही याददाश्त">
 
-<a href="https://github.com/Pumpetee/Mnemai/releases/latest"><img src="https://img.shields.io/github/v/release/Pumpetee/Mnemai?style=flat-square&color=8b5cf6&label=release" alt="release"></a> <a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
+<a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
 
 <img src="https://img.shields.io/badge/MCP-Claude%20%C2%B7%20Cursor-7c3aed?style=flat-square&logo=modelcontextprotocol&logoColor=white" alt="MCP: Claude · Cursor"> <img src="https://img.shields.io/badge/Obsidian-%E0%A4%B8%E0%A4%BF%E0%A4%B0%E0%A5%8D%E0%A4%AB%E0%A4%BC%20%E0%A4%AA%E0%A4%A2%E0%A4%BC%E0%A4%A8%E0%A5%87%20%E0%A4%95%E0%A5%87%20%E0%A4%B2%E0%A4%BF%E0%A4%8F-7c3aed?style=flat-square&logo=obsidian&logoColor=white" alt="Obsidian: सिर्फ़ पढ़ने के लिए"> <img src="https://img.shields.io/badge/Telegram-%E0%A4%B8%E0%A4%BF%E0%A4%B0%E0%A5%8D%E0%A4%AB%E0%A4%BC%20%E0%A4%AA%E0%A4%A2%E0%A4%BC%E0%A4%A8%E0%A5%87%20%E0%A4%95%E0%A5%87%20%E0%A4%B2%E0%A4%BF%E0%A4%8F-229ED9?style=flat-square&logo=telegram&logoColor=white" alt="Telegram: सिर्फ़ पढ़ने के लिए"> <img src="https://img.shields.io/badge/AES--256-%E0%A4%8F%E0%A4%A8%E0%A5%8D%E0%A4%95%E0%A5%8D%E0%A4%B0%E0%A4%BF%E0%A4%AA%E0%A5%8D%E0%A4%B6%E0%A4%A8-15803d?style=flat-square" alt="AES-256: एन्क्रिप्शन"> <img src="https://img.shields.io/badge/Markdown-%E0%A4%A4%E0%A5%81%E0%A4%AE%E0%A5%8D%E0%A4%B9%E0%A4%BE%E0%A4%B0%E0%A5%80%20%E0%A4%AB%E0%A4%BC%E0%A4%BE%E0%A4%87%E0%A4%B2%E0%A5%87%E0%A4%82-555555?style=flat-square&logo=markdown&logoColor=white" alt="Markdown: तुम्हारी फ़ाइलें"> <img src="https://img.shields.io/badge/Python-3.13-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python: 3.13">
 
@@ -116,17 +116,20 @@ Mnemai याद रखता है कि तुम कौन हो, कि�
 
 <div align="center">
 <table><tr><td valign="middle" width="150"><b>क्लाउड AI</b><br><sub>कुंजी या सब्सक्रिप्शन से</sub></td><td align="center" width="92"><img src="docs/img/brand/claude.svg" width="40" alt="Claude"><br><sub><b>Claude</b></sub></td><td align="center" width="92"><img src="docs/img/brand/chatgpt.svg" width="40" alt="ChatGPT"><br><sub><b>ChatGPT</b></sub></td><td align="center" width="92"><img src="docs/img/brand/gemini.svg" width="40" alt="Gemini"><br><sub><b>Gemini</b></sub></td><td align="center" width="92"><img src="docs/img/brand/deepseek.svg" width="40" alt="DeepSeek"><br><sub><b>DeepSeek</b></sub></td><td align="center" width="92"><img src="docs/img/brand/yandex.svg" width="40" alt="YandexGPT"><br><sub><b>YandexGPT</b></sub></td><td align="center" width="92"><img src="docs/img/brand/openrouter.svg" width="40" alt="OpenRouter"><br><sub><b>OpenRouter</b></sub></td></tr><tr><td valign="middle" width="150"><b>तुम्हारे कंप्यूटर पर</b><br><sub>मुफ़्त, ऑफ़लाइन</sub></td><td align="center" width="92"><img src="docs/img/brand/local.svg" width="40" alt="इन-बिल्ट"><br><sub><b>इन-बिल्ट</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/ollama/ffffff" width="40" alt="Ollama"><br><sub><b>Ollama</b></sub></td><td align="center" width="92"><img src="docs/img/brand/strata.svg" width="40" alt="Strata"><br><sub><b>Strata</b></sub></td><td></td><td></td><td></td></tr><tr><td valign="middle" width="150"><b>तुम्हारे टूल्स में</b><br><sub>MCP के ज़रिए</sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/claude/D97757" width="40" alt="Claude Code"><br><sub><b>Claude Code</b></sub></td><td align="center" width="92"><img src="docs/img/brand/cursor.svg" width="40" alt="Cursor"><br><sub><b>Cursor</b></sub></td><td></td><td></td><td></td><td></td></tr><tr><td valign="middle" width="150"><b>सिस्टम</b><br><sub>एक ऐप</sub></td><td align="center" width="92"><img src="docs/img/brand/windows.svg" width="40" alt="Windows"><br><sub><b>Windows</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/apple/ffffff" width="40" alt="macOS"><br><sub><b>macOS</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/linux/FCC624" width="40" alt="Linux"><br><sub><b>Linux</b></sub></td><td></td><td></td><td></td></tr></table>
+<p>ChatGPT सब्सक्रिप्शन आधिकारिक Sign in with ChatGPT विंडो से जुड़ता है, प्लान की सीमा के इस्तेमाल के लिए अलग सहमति के साथ; जनरेशन Codex App Server से चलता है। OpenCode Go अपनी सब्सक्रिप्शन की कुंजी से जुड़ता है।</p>
 </div>
 
 ## ⚡ और भी बहुत कुछ
 
 - **तुम्हारी फ़ाइलों के साथ काम करता है।** स्कैन पढ़ता है, नोट्स लिखता है, PDF, Word और Excel बनाता है, PDF को जोड़ता और बाँटता है। हर बदलाव को Memory → History में वापस किया जा सकता है।
+- **मॉडल के बिना कमांड।** «विकिपीडिया खोलो शब्द … के साथ», «यूट्यूब खोलो», «यह साइट खोलो» और ऐसी एक-बार की बातें तुरंत पूरी होती हैं, किसी AI से पूछे बिना — हर मॉडल पर एक जैसा।
+- **एडमिन का पासवर्ड चैट में ही रहता है।** sudo और इंस्टॉल के लिए टर्मिनल की खिड़की नहीं चाहिए: Mnemai पासवर्ड सीधे बातचीत में, एक बार पूछती है, और वह न चैट फ़ाइल में जाता है, न किसी मॉडल तक।
 - **नौ भाषाएँ।** इंटरफ़ेस और AI के जवाब उसी भाषा में आते हैं जो तुम चुनते हो, भले ही तुम किसी और भाषा में लिखो।
 
 <details>
 <summary><b>इंस्टॉल करें</b></summary>
 
-अपने सिस्टम के लिए फ़ाइल डाउनलोड करें (हर संस्करण उसके नंबर के साथ [Releases](../../releases) में उपलब्ध है):
+अपने सिस्टम के लिए फ़ाइल डाउनलोड करें (सभी बिल्ड [Releases](../../releases) में हैं):
 
 | सिस्टम | फ़ाइल | कैसे |
 |---|---|---|
@@ -154,7 +157,7 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python tools\fetch_vendor.py      # llama.cpp, Xray, WebView2 from their official releases, verified
 .venv\Scripts\python -m mnema.desktop           # run the program
-.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-<version>.exe and the portable zip
+.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-*.exe and the portable zip
 ```
 
 macOS और Linux:
@@ -164,8 +167,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python tools/fetch_vendor.py           # llama.cpp and Xray for this system, verified by sha256
 .venv/bin/python -m mnema.desktop                # run the program
-.venv/bin/python tools/package.py                # macOS: dist/Mnemai-<version>-macos-arm64.dmg
-                                                 # Linux: dist/Mnemai-<version>-x86_64.AppImage and .tar.gz
+.venv/bin/python tools/package.py                # macOS: dist/Mnemai-*-macos-arm64.dmg
+                                                 # Linux: dist/Mnemai-*-x86_64.AppImage and .tar.gz
 ```
 
 हर push का परीक्षण Windows, macOS और Linux पर किया जाता है; तीनों पैकेज बनाए जाते हैं, एक बार उनकी विंडो के साथ चलाए जाते हैं और रन की फ़ाइलों के रूप में सहेजे जाते हैं (`.github/workflows`)।

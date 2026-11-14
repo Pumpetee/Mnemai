@@ -6,7 +6,7 @@
 
 <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=700&size=26&duration=2600&pause=900&color=A78BFA&center=true&vCenter=true&width=720&height=46&lines=%D0%9E%D0%B4%D0%BD%D0%B0%20%D0%BF%D0%B0%D0%BC%D1%8F%D1%82%D1%8C%20%D0%B4%D0%BB%D1%8F%20%D0%B2%D1%81%D0%B5%D1%85%20%D0%98%D0%98;%D0%91%D0%B5%D1%81%D0%BF%D0%BB%D0%B0%D1%82%D0%BD%D0%BE%2C%20%D0%BD%D0%B0%20%D1%82%D0%B2%D0%BE%D1%91%D0%BC%20%D0%BA%D0%BE%D0%BC%D0%BF%D1%8C%D1%8E%D1%82%D0%B5%D1%80%D0%B5%2C%20%D0%B1%D0%B5%D0%B7%20%D0%B0%D0%BA%D0%BA%D0%B0%D1%83%D0%BD%D1%82%D0%B0" alt="Одна память для всех ИИ">
 
-<a href="https://github.com/Pumpetee/Mnemai/releases/latest"><img src="https://img.shields.io/github/v/release/Pumpetee/Mnemai?style=flat-square&color=8b5cf6&label=release" alt="release"></a> <a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
+<a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
 
 <img src="https://img.shields.io/badge/MCP-Claude%20%C2%B7%20Cursor-7c3aed?style=flat-square&logo=modelcontextprotocol&logoColor=white" alt="MCP: Claude · Cursor"> <img src="https://img.shields.io/badge/Obsidian-%D1%82%D0%BE%D0%BB%D1%8C%D0%BA%D0%BE%20%D1%87%D1%82%D0%B5%D0%BD%D0%B8%D0%B5-7c3aed?style=flat-square&logo=obsidian&logoColor=white" alt="Obsidian: только чтение"> <img src="https://img.shields.io/badge/Telegram-%D1%82%D0%BE%D0%BB%D1%8C%D0%BA%D0%BE%20%D1%87%D1%82%D0%B5%D0%BD%D0%B8%D0%B5-229ED9?style=flat-square&logo=telegram&logoColor=white" alt="Telegram: только чтение"> <img src="https://img.shields.io/badge/AES--256-%D1%88%D0%B8%D1%84%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-15803d?style=flat-square" alt="AES-256: шифрование"> <img src="https://img.shields.io/badge/Markdown-%D1%82%D0%B2%D0%BE%D0%B8%20%D1%84%D0%B0%D0%B9%D0%BB%D1%8B-555555?style=flat-square&logo=markdown&logoColor=white" alt="Markdown: твои файлы"> <img src="https://img.shields.io/badge/Python-3.13-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python: 3.13">
 
@@ -122,12 +122,14 @@ Mnemai помнит, кто ты, над чем работаешь, что ре�
 ## ⚡ И ещё
 
 - **Работает с файлами.** Читает сканы, пишет заметки, делает PDF, Word и Excel, склеивает и режет PDF. Любую запись можно откатить: Память → История.
+- **Команды без модели.** «Открой википедию со словом „сон“», «открой в ютубе …», «открой гугл» и другие однозначные просьбы выполняются сразу, без обращения к ИИ — одинаково на любой модели.
+- **Пароль администратора — в чате.** Для sudo и установки не нужно окно терминала: Mnemai спросит пароль прямо в разговоре, один раз, и он не попадёт ни в переписку, ни к модели.
 - **Девять языков.** Интерфейс и ответы ИИ идут на выбранном, даже если пишешь на другом.
 
 <details>
 <summary><b>Установка</b></summary>
 
-Скачай файл для своей системы (все версии с номерами — в [Releases](../../releases)):
+Скачай файл для своей системы (все сборки — в [Releases](../../releases)):
 
 | Система | Файл | Как поставить |
 |---|---|---|
@@ -155,7 +157,7 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python tools\fetch_vendor.py      # llama.cpp, Xray, WebView2 с официальных релизов, с проверкой
 .venv\Scripts\python -m mnema.desktop           # запустить программу
-.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-<версия>.exe и переносной архив
+.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-*.exe и переносной архив
 ```
 
 macOS и Linux:
@@ -165,8 +167,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python tools/fetch_vendor.py           # llama.cpp и Xray для этой системы, с проверкой sha256
 .venv/bin/python -m mnema.desktop                # запустить программу
-.venv/bin/python tools/package.py                # macOS: dist/Mnemai-<версия>-macos-arm64.dmg
-                                                 # Linux: dist/Mnemai-<версия>-x86_64.AppImage и .tar.gz
+.venv/bin/python tools/package.py                # macOS: dist/Mnemai-*-macos-arm64.dmg
+                                                 # Linux: dist/Mnemai-*-x86_64.AppImage и .tar.gz
 ```
 
 Каждый push проверяется на Windows, macOS и Linux: собираются три пакета, каждый один раз запускается с окном и остаётся файлами прогона (`.github/workflows`).

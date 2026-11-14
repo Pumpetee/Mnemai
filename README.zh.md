@@ -6,7 +6,7 @@
 
 <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=700&size=26&duration=2600&pause=900&color=A78BFA&center=true&vCenter=true&width=720&height=46&lines=%E4%B8%80%E4%BB%BD%E8%AE%B0%E5%BF%86%EF%BC%8C%E6%89%80%E6%9C%89%20AI%20%E5%85%B1%E7%94%A8;%E5%85%8D%E8%B4%B9%EF%BC%8C%E5%9C%A8%E4%BD%A0%E7%9A%84%E7%94%B5%E8%84%91%E4%B8%8A%EF%BC%8C%E6%97%A0%E9%9C%80%E8%B4%A6%E5%8F%B7" alt="一份记忆，所有 AI 共用">
 
-<a href="https://github.com/Pumpetee/Mnemai/releases/latest"><img src="https://img.shields.io/github/v/release/Pumpetee/Mnemai?style=flat-square&color=8b5cf6&label=release" alt="release"></a> <a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
+<a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
 
 <img src="https://img.shields.io/badge/MCP-Claude%20%C2%B7%20Cursor-7c3aed?style=flat-square&logo=modelcontextprotocol&logoColor=white" alt="MCP: Claude · Cursor"> <img src="https://img.shields.io/badge/Obsidian-%E5%8F%AA%E8%AF%BB-7c3aed?style=flat-square&logo=obsidian&logoColor=white" alt="Obsidian: 只读"> <img src="https://img.shields.io/badge/Telegram-%E5%8F%AA%E8%AF%BB-229ED9?style=flat-square&logo=telegram&logoColor=white" alt="Telegram: 只读"> <img src="https://img.shields.io/badge/AES--256-%E5%8A%A0%E5%AF%86-15803d?style=flat-square" alt="AES-256: 加密"> <img src="https://img.shields.io/badge/Markdown-%E4%BD%A0%E7%9A%84%E6%96%87%E4%BB%B6-555555?style=flat-square&logo=markdown&logoColor=white" alt="Markdown: 你的文件"> <img src="https://img.shields.io/badge/Python-3.13-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python: 3.13">
 
@@ -116,17 +116,20 @@ Mnemai 记得你是谁、在做什么、做过哪些决定，以及你喜欢什�
 
 <div align="center">
 <table><tr><td valign="middle" width="150"><b>云端 AI</b><br><sub>通过密钥或订阅</sub></td><td align="center" width="92"><img src="docs/img/brand/claude.svg" width="40" alt="Claude"><br><sub><b>Claude</b></sub></td><td align="center" width="92"><img src="docs/img/brand/chatgpt.svg" width="40" alt="ChatGPT"><br><sub><b>ChatGPT</b></sub></td><td align="center" width="92"><img src="docs/img/brand/gemini.svg" width="40" alt="Gemini"><br><sub><b>Gemini</b></sub></td><td align="center" width="92"><img src="docs/img/brand/deepseek.svg" width="40" alt="DeepSeek"><br><sub><b>DeepSeek</b></sub></td><td align="center" width="92"><img src="docs/img/brand/yandex.svg" width="40" alt="YandexGPT"><br><sub><b>YandexGPT</b></sub></td><td align="center" width="92"><img src="docs/img/brand/openrouter.svg" width="40" alt="OpenRouter"><br><sub><b>OpenRouter</b></sub></td></tr><tr><td valign="middle" width="150"><b>在你的电脑上</b><br><sub>免费，离线</sub></td><td align="center" width="92"><img src="docs/img/brand/local.svg" width="40" alt="内置"><br><sub><b>内置</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/ollama/ffffff" width="40" alt="Ollama"><br><sub><b>Ollama</b></sub></td><td align="center" width="92"><img src="docs/img/brand/strata.svg" width="40" alt="Strata"><br><sub><b>Strata</b></sub></td><td></td><td></td><td></td></tr><tr><td valign="middle" width="150"><b>在你的工具中</b><br><sub>通过 MCP</sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/claude/D97757" width="40" alt="Claude Code"><br><sub><b>Claude Code</b></sub></td><td align="center" width="92"><img src="docs/img/brand/cursor.svg" width="40" alt="Cursor"><br><sub><b>Cursor</b></sub></td><td></td><td></td><td></td><td></td></tr><tr><td valign="middle" width="150"><b>系统</b><br><sub>一个应用</sub></td><td align="center" width="92"><img src="docs/img/brand/windows.svg" width="40" alt="Windows"><br><sub><b>Windows</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/apple/ffffff" width="40" alt="macOS"><br><sub><b>macOS</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/linux/FCC624" width="40" alt="Linux"><br><sub><b>Linux</b></sub></td><td></td><td></td><td></td></tr></table>
+<p>ChatGPT 订阅通过官方的 Sign in with ChatGPT 窗口连接,使用套餐额度需要单独同意;生成通过 Codex App Server 进行。OpenCode Go 用自己的订阅密钥连接。</p>
 </div>
 
 ## ⚡ 还有更多
 
 - **处理你的文件。**读取扫描件、撰写笔记、生成 PDF、Word 和 Excel，合并与拆分 PDF。每次写入都可以在“记忆 → 历史”中撤销。
+- **无需模型的命令。**「打开维基百科搜索…」「打开 YouTube」「打开这个网站」等一次性请求会立刻执行，不用问 AI，在所有模型上表现一致。
+- **管理员密码只在聊天里。**sudo 和安装不需要终端窗口：Mnemai 会在对话中直接询问一次密码，密码既不会进入聊天文件，也不会发给任何模型。
 - **九种语言。**界面和 AI 的回答都会跟随你选的语言，即使你用另一种语言书写也一样。
 
 <details>
 <summary><b>安装</b></summary>
 
-下载适用于你系统的文件(所有带版本号的版本都在 [Releases](../../releases) 中):
+下载适用于你系统的文件(所有构建都在 [Releases](../../releases) 中):
 
 | 系统 | 文件 | 方法 |
 |---|---|---|
@@ -154,7 +157,7 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python tools\fetch_vendor.py      # llama.cpp、Xray、WebView2，均来自官方发布并经过校验
 .venv\Scripts\python -m mnema.desktop           # 运行程序
-.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-<version>.exe 以及便携版 zip
+.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-*.exe 以及便携版 zip
 ```
 
 macOS 和 Linux：
@@ -164,8 +167,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python tools/fetch_vendor.py           # 适用于当前系统的 llama.cpp 和 Xray，经 sha256 校验
 .venv/bin/python -m mnema.desktop                # 运行程序
-.venv/bin/python tools/package.py                # macOS: dist/Mnemai-<version>-macos-arm64.dmg
-                                                 # Linux: dist/Mnemai-<version>-x86_64.AppImage 以及 .tar.gz
+.venv/bin/python tools/package.py                # macOS: dist/Mnemai-*-macos-arm64.dmg
+                                                 # Linux: dist/Mnemai-*-x86_64.AppImage 以及 .tar.gz
 ```
 
 每次推送都会在 Windows、macOS 和 Linux 上进行测试；三个安装包都会被构建，并带窗口启动一次，且作为本次运行的文件保留下来（`.github/workflows`）。

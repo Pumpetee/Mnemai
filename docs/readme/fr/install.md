@@ -1,4 +1,4 @@
-Téléchargez le fichier correspondant à votre système (toutes les versions, avec leur numéro, se trouvent dans [Releases](../../releases)) :
+Téléchargez le fichier correspondant à votre système (toutes les compilations se trouvent dans [Releases](../../releases)) :
 
 | Système | Fichier | Procédure |
 |---|---|---|

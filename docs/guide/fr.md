@@ -14,7 +14,7 @@ Comment fonctionne Mnemai, écran par écran et réglage par réglage. Mnemai r�
 
 ## Sommaire
 
-- [Qu'est-ce que Mnemai](#quest-ce-que-mnema)
+- [Qu'est-ce que Mnemai](#quest-ce-que-mnemai)
 - [La mémoire est activée ou désactivée](#la-mémoire-est-activée-ou-désactivée)
 - [Dossier de mémoire](#dossier-de-mémoire)
 - [Dossiers de mémoire supplémentaires](#dossiers-de-mémoire-supplémentaires)
@@ -22,15 +22,15 @@ Comment fonctionne Mnemai, écran par écran et réglage par réglage. Mnemai r�
 - [Onglet Mémoire](#onglet-mémoire)
 - [Portrait](#portrait)
 - [Résumé de 10 Now et table des matières](#résumé-de-10-now-et-table-des-matières)
-- [Comment Mnemai apprend](#comment-mnema-apprend)
+- [Comment Mnemai apprend](#comment-mnemai-apprend)
 - [Sources d'apprentissage](#sources-dapprentissage)
 - [Modes d'apprentissage](#modes-dapprentissage)
-- [Comment Mnemai comprend les textes](#comment-mnema-comprend-les-textes)
-- [Comment Mnemai décide : enregistrer ou demander](#comment-mnema-décide--enregistrer-ou-demander)
+- [Comment Mnemai comprend les textes](#comment-mnemai-comprend-les-textes)
+- [Comment Mnemai décide : enregistrer ou demander](#comment-mnemai-décide--enregistrer-ou-demander)
 - [Fil d'apprentissage et question en cours de conversation](#fil-dapprentissage-et-question-en-cours-de-conversation)
 - [Chat et modèles](#chat-et-modèles)
 - [Sessions](#sessions)
-- [Comment répond Mnemai](#comment-répond-mnema)
+- [Comment répond Mnemai](#comment-répond-mnemai)
 - [Ce que le modèle sait à chaque message](#ce-que-le-modèle-sait-à-chaque-message)
 - [Fichiers et documents, y compris les PDF](#fichiers-et-documents-y-compris-les-pdf)
 - [Internet](#internet)
@@ -39,7 +39,8 @@ Comment fonctionne Mnemai, écran par écran et réglage par réglage. Mnemai r�
 - [Tâches récurrentes](#tâches-récurrentes)
 - [Aide pour les termes](#aide-pour-les-termes)
 - [Consortium](#consortium)
-- [Actions sur les fichiers](#actions-sur-les-fichiers)
+- [Actions sur l'ordinateur](#actions-sur-lordinateur)
+- [Mot de passe administrateur](#mot-de-passe-administrateur)
 - [Conversation sans apprentissage](#conversation-sans-apprentissage)
 - [Voix et réunions](#voix-et-réunions)
 - [Modèle intégré sur ton ordinateur](#modèle-intégré-sur-ton-ordinateur)
@@ -48,14 +49,14 @@ Comment fonctionne Mnemai, écran par écran et réglage par réglage. Mnemai r�
 - [Ce qui quitte ton ordinateur](#ce-qui-quitte-ton-ordinateur)
 - [Chiffrement de la mémoire par mot de passe](#chiffrement-de-la-mémoire-par-mot-de-passe)
 - [Historique et annulation](#historique-et-annulation)
-- [Connecter d'autres IA](#connecter-dautres-ia)
+- [Connexion d'autres IA](#connexion-dautres-ia)
 - [Proxy et VPN](#proxy-et-vpn)
 - [Fenêtre, zone de notification, installation](#fenêtre-zone-de-notification-installation)
 - [Engrenage, thème, langue, succès](#engrenage-thème-langue-succès)
 - [Plusieurs mémoires](#plusieurs-mémoires)
 - [Telegram](#telegram)
 - [Carte « Mémoire » en bas à gauche](#carte--mémoire--en-bas-à-gauche)
-- [Ce que Mnemai ne sait pas faire](#ce-que-mnema-ne-sait-pas-faire)
+- [Ce que Mnemai ne sait pas faire](#ce-que-mnemai-ne-sait-pas-faire)
 
 ## Qu'est-ce que Mnemai
 
@@ -185,18 +186,18 @@ Le fil « J'apprends de toi » (engrenage → « Fil ») montre ce que Mnemai a 
 
 ## Chat et modèles
 
-Mnemai est un chat avec n'importe quel modèle, et tous les modèles sont sur un pied d'égalité. Le choix du modèle se fait en haut à gauche du chat ; le menu comporte deux groupes :
+Mnemai est un chat avec n'importe quel modèle, tous les modèles sont égaux. Le choix du modèle se fait en haut à gauche du chat, le menu comporte deux groupes :
 
-- Cloud : fonctionnent via internet, soit avec une clé (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek, YandexGPT ; Mnemai récupère la liste des modèles auprès du fournisseur, et pour YandexGPT dans le catalogue de Yandex Cloud AI Studio), soit avec un abonnement (Claude Code) ;
-- Sur l'ordinateur : gratuit, sans internet, rien ne sort de ta machine : modèle intégré (llama.cpp), Ollama et Strata.
+- Cloud — fonctionnent via Internet : par clé (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek, YandexGPT ; Mnemai récupère la liste des modèles auprès du fournisseur, et pour YandexGPT depuis le catalogue Yandex Cloud AI Studio) ou par abonnement (Claude Code) ;
+- Sur l'ordinateur — gratuits, sans Internet, rien ne sort : modèle intégré (llama.cpp), Ollama et Strata.
 
-DeepSeek se connecte avec une clé obtenue sur platform.deepseek.com. YandexGPT se connecte avec la clé API d'un compte de service Yandex Cloud AI Studio (rôle ai.languageModels.user) et l'ID du catalogue dans lequel il a été créé : la fenêtre de connexion comporte deux champs. Modèles YandexGPT : Alice AI LLM, YandexGPT Pro 5.1, YandexGPT Pro 5, Alice AI LLM Flash, ainsi que DeepSeek V4.1 Flash et Qwen3.6 35B du même catalogue. Strata est un programme gratuit à part pour les grands modèles (Qwen, DeepSeek) sur ta propre carte graphique (github.com/Niko1221/Strata) : installe-le, lance un modèle avec la commande strata launch — Mnemai détecte d'elle-même une instance de Strata en cours d'exécution sur 127.0.0.1:8080 au démarrage ; pour une autre adresse, utilise la fenêtre de connexion de Strata.
+Lors de la connexion et via « Vérifier », Mnemai interroge chaque modèle de la liste ChatGPT, Gemini, DeepSeek et YandexGPT avec une courte requête et ne conserve que ceux qui répondent dans le chat : les modèles abandonnés (par exemple o4-mini, gpt-4, o1), les modèles pour l'audio, les images et la voix, ainsi que les modèles réservés à une autre API dans le catalogue OpenAI standard (pro, codex) ne figurent pas dans la liste. Si un fournisseur retire un modèle ultérieurement, dès le premier échec il disparaît de la liste et le chat indique d'en choisir un autre. DeepSeek se connecte avec une clé depuis platform.deepseek.com. YandexGPT se connecte avec la clé API d'un compte de service Yandex Cloud AI Studio (rôle ai.languageModels.user) et l'ID du catalogue dans lequel il a été créé : la fenêtre de connexion comporte deux champs. Modèles YandexGPT : Alice AI LLM, YandexGPT Pro 5.1, YandexGPT Pro 5, Alice AI LLM Flash, ainsi que DeepSeek V4.1 Flash et Qwen3.6 35B issus du même catalogue. Strata est un programme gratuit distinct pour les grands modèles (Qwen, DeepSeek) sur ta propre carte graphique (github.com/Niko1221/Strata) : installe-le, lance un modèle avec la commande strata launch — Mnemai détecte automatiquement Strata en cours d'exécution sur 127.0.0.1:8080 au démarrage ; pour une autre adresse, renseigne-la dans la fenêtre de connexion Strata.
 
-Les mêmes deux groupes se trouvent dans "Paramètres → IA et modèles". La limite de longueur des réponses ("Paramètres → Moteur") est la même pour tous les modèles, y compris pour Claude avec abonnement.
+Ces deux mêmes groupes se retrouvent dans Paramètres → IA et modèles. La limite de longueur de réponse (Paramètres → Moteur) est commune à tous les modèles, y compris Claude par abonnement.
 
-La mémoire et tes règles s'appliquent à chaque message, et chaque modèle ne reçoit que ce qu'il est autorisé à voir. Chaque conversation a un titre de 1 à 3 mots. Tu peux le modifier avec le crayon à côté du titre, par double-clic sur le titre ou dans le menu de la conversation dans la liste (Enter pour enregistrer, Escape pour annuler). Dans une nouvelle conversation, tu peux définir le titre avant le premier message : il sera enregistré avec lui. Un titre renommé à la main, Mnemai n'y touche plus. La liste affiche aussi la date de dernière modification et les tokens consommés. Elle se trie par date ou par tokens, et le filtre "IA" affiche les conversations avec un seul modèle.
+La mémoire et tes règles s'appliquent à chaque message, chaque modèle ne reçoit que ce qu'il est autorisé à voir. Chaque conversation a un titre de 1 à 3 mots. Tu peux le modifier via le crayon à côté du titre, par double-clic sur le titre ou depuis le menu de la conversation dans la liste (Entrée pour valider, Échap pour annuler). Dans une nouvelle conversation, tu peux définir le titre avant le premier message ; il sera enregistré avec celui-ci. Un titre modifié manuellement ne sera plus touché par Mnemai, qui affiche l'heure de la dernière modification et les tokens consommés. La liste se trie par date ou par tokens ; le filtre « IA » affiche les conversations avec un seul modèle.
 
-Le bouton "Mnemai commence elle-même" dans une conversation vide : le modèle te salue et te propose par où commencer, en s'appuyant sur la mémoire. Il ne qualifie un événement de récent que si sa date le confirme, et il te suggère de revérifier les décisions vieilles de plus d'un mois.
+Le bouton « Laisser Mnemai commencer » dans une conversation vide : le modèle dit bonjour et propose par où commencer, en s'appuyant sur la mémoire. Il qualifie les événements de récents uniquement si leur date le justifie, et suggère de vérifier les décisions vieilles de plus d'un mois.
 
 ## Sessions
 
@@ -295,21 +296,37 @@ La roue dentée sur le bouton « Consortium » ouvre les mêmes réglages :
 
 En bas de la fenêtre se trouve un schéma : la table avec les participants dans l'ordre d'intervention, le camp de chacun dans les débats, une coupe pour celui qui fait la synthèse, et le plan des tours pour le format choisi. Le format, la longueur et les rôles sont mémorisés pour le prochain conseil.
 
-## Actions sur les fichiers
+## Actions sur l'ordinateur
 
-Dans le chat, le modèle peut travailler avec des fichiers : lire un fichier (y compris PDF, Word, Excel, PowerPoint ; les scans et les images sont reconnus sur ton ordinateur), parcourir un dossier, chercher des fichiers par mots-clés, créer ou réécrire un fichier texte (.md, .txt, .csv, .json, .html), modifier un passage d'un fichier, créer un document PDF, Word ou Excel à partir d'un texte avec titres, listes et tableaux, ajouter une ligne dans la mémoire. Cela fonctionne avec n'importe quel modèle, dans le cloud ou sur ton ordinateur.
+Le modèle dans le chat peut travailler avec des fichiers : lire un fichier (y compris PDF, Word, Excel, PowerPoint ; les scans et images sont reconnus sur l'ordinateur), parcourir un dossier, rechercher des fichiers par mots-clés, créer ou réécrire un fichier texte (.md, .txt, .csv, .json, .html), modifier une portion de fichier, générer un document PDF, Word ou Excel à partir d'un texte avec titres, listes et tableaux, enregistrer une ligne en mémoire. Fonctionne avec n'importe quel modèle, cloud ou local.
 
 Documents prêts à l'emploi :
 
 | Quoi | Comment |
 |---|---|
-| Word (.docx) | remplacement de texte en conservant la mise en forme : la phrase est retrouvée même si elle contient un mot en gras ou si elle est découpée en plusieurs morceaux dans le fichier ; le nouveau texte reprend la mise en forme de l'endroit où commençait l'ancienne phrase. Les en-têtes, pieds de page et notes de bas de page sont aussi pris en charge |
-| Excel (.xlsx, .xlsm) | valeurs et formules dans les cellules ("Feuil1!B3 = 1500", "C7 = =SUM(C1:C6)"), remplacement de texte dans les cellules ; les autres feuilles, les formats et les formules sont conservés. Mnemai ne modifie pas un classeur contenant des graphiques, des images ou des tableaux croisés dynamiques : ils seraient perdus à l'enregistrement |
-| PDF | assembler plusieurs fichiers, garder les pages voulues dans l'ordre voulu (et aussi en extraire, en supprimer, les réorganiser), faire pivoter les pages de 90, 180 ou 270 degrés, découper en plusieurs parties. Le fichier d'origine n'est pas modifié, et le nouveau ne remplace pas un fichier existant |
+| Word (.docx) | remplacement de texte avec conservation de la mise en forme : la phrase est retrouvée même si elle contient un mot en gras ou est découpée en fragments dans le fichier ; le nouveau texte reçoit la mise en forme de l'endroit où commençait l'ancienne phrase. Les en-têtes, pieds de page et notes de bas de page aussi |
+| Excel (.xlsx, .xlsm) | valeurs et formules dans les cellules (« Feuil1!B3 = 1500 », « C7 = =SUM(C1:C6) »), remplacement de texte dans les cellules ; les autres feuilles, formats et formules sont conservés. Mnemai ne modifie pas les classeurs contenant des graphiques, des images ou des tableaux croisés dynamiques — ils disparaîtraient à l'enregistrement |
+| PDF | fusionner plusieurs fichiers, conserver les pages souhaitées dans l'ordre voulu (ainsi que couper, supprimer, réordonner), faire pivoter les pages de 90, 180 ou 270 degrés, diviser en parties. Le fichier source n'est pas modifié, le nouveau fichier n'écrase pas un fichier existant |
 
-Par défaut, Mnemai effectue l'action immédiatement. Si tu actives « Demander l'autorisation pour chaque action » dans Réglages → Application → « Actions sur les fichiers », une carte « Mnemai souhaite » apparaît sous la réponse : elle indique l'action prévue et le fichier concerné, avec les boutons « Oui », « Oui pour cette conversation » (les actions du même type ne seront plus demandées dans cette conversation) et « Non ». Une fois l'action effectuée, la ligne « Fichier créé … » avec le bouton « Afficher dans le dossier » reste dans la conversation, et le modèle poursuit sa réponse. Aucun programme n'est lancé, rien n'est envoyé sur Internet.
+### Commandes rapides, sans modèle
 
-Où ça fonctionne : le dossier de la mémoire et les dossiers de travail que tu as ajoutés dans Réglages → Application → « Actions sur les fichiers » ; c'est aussi là que tu peux désactiver entièrement les actions. Le dossier système .mnema est inaccessible. Le modèle lit une note de la mémoire selon ses propres droits : les sujets masqués restent masqués. Un document n'en écrase jamais un autre : le nouveau reçoit un nom du type « rapport (2).pdf ». Toute écriture peut être annulée : « Mémoire » → « Historique », aussi bien dans la mémoire que dans les dossiers de travail. Le PDF est généré via le navigateur Edge, Chrome ou Chromium, sans afficher sa fenêtre : Edge est présent sur tous les Windows 10 et 11 ; sur macOS et Linux, l'un de ces navigateurs est nécessaire.
+Les commandes sans ambiguïté s'exécutent immédiatement, sans appel à l'IA, de façon identique quel que soit le modèle : « ouvre le terminal/chrome/firefox/lien », « ouvre wikipedia avec le mot … », « ouvre sur youtube … », « ouvre google », « ouvre yandex », « ouvre habr », « ouvre le fichier … », « lis le fichier … », « que contient le dossier … » (y compris « que contient les téléchargements »), « trouve … dans les fichiers », « trouve … dans la mémoire », « montre la mémoire », « exécute … » (ou `!commande`), « mémorise … », « crée le fichier … avec le texte : … », « fais un pdf/word/excel … à partir de : … », « quelle heure est-il », « combien de mémoire/cœurs/espace disque ». Les sites connus (Wikipédia, Google, Яндекс, YouTube, GitHub, Хабр, Stack Overflow, Кинопоиск) s'ouvrent directement, avec une recherche sur la requête prononcée. Tout le reste et toutes les formulations ambiguës passent comme avant par le modèle sélectionné.
+
+### Uniquement les outils de Mnemai
+
+Les modèles n'ont pas leurs propres outils : Claude Code, DeepSeek Harness et les modèles cloud ne lancent rien par eux-mêmes. Toute action — lecture et écriture de fichiers, documents, terminal, ouverture de programmes, mémoire — passe par la couche MCP de Mnemai (la même que celle visible par Claude Desktop, Claude Code et Cursor via MCP). Tous les modèles ont donc les mêmes droits, le même journal et les mêmes restrictions.
+
+### Terminal et contrôle de l'ordinateur
+
+Si l'accès à l'ordinateur est activé (par défaut — oui), le modèle peut exécuter une commande dans le terminal : consulter les processus, le matériel, le réseau et le disque, lancer un programme, installer un paquet, travailler avec git, lire ou modifier un fichier en dehors des dossiers mémoire — tout ce que sait faire le terminal. Une commande à la fois, avec un délai d'expiration (120 secondes par défaut, 300 au maximum), la sortie et le code de retour sont renvoyés dans le chat, et l'exécution reste dans le journal « Mémoire » → « Historique ». Ouvrir un programme ou un lien se fait en une seule action `open_app name="chrome"` (ou `name="https://…"`) : Mnemai trouve elle-même le programme installé et indique s'il est absent. Le modèle est au courant de cet accès et l'utilise quand la tâche ne peut pas être résolue par des fichiers. Les mots de passe, clés et tokens ne sont pas affichés dans les réponses ; les commandes destructrices ne sont pas exécutées sans demande explicite. sudo est autorisé : Mnemai demandera le mot de passe administrateur directement dans le chat, une seule fois, et il ne figurera ni dans la conversation ni auprès du modèle.
+
+Par défaut, Mnemai effectue l'action immédiatement. Si dans Paramètres → Application → « Actions sur l'ordinateur » tu actives « Demander la permission pour chaque action », une carte « Mnemai souhaite » apparaît sous la réponse — indiquant ce qu'elle veut faire et avec quel fichier ou quelle commande, avec les boutons « Oui », « Oui pour cette conversation » (les mêmes actions dans cette conversation ne seront plus demandées) et « Non ». Après l'action, une ligne « Fichier créé … » apparaît dans la conversation avec un bouton « Afficher dans le dossier », et le modèle poursuit sa réponse. Rien n'est envoyé sur internet.
+
+Où c'est possible : les fichiers — le dossier mémoire et les dossiers de travail que tu as ajoutés dans Paramètres → Application → « Actions sur l'ordinateur » ; le terminal — sur tout l'ordinateur. Au même endroit, les actions peuvent être désactivées entièrement, et le bouton « Terminal et contrôle de l'ordinateur » désactive uniquement les commandes. Le dossier système .mnema est verrouillé. Le modèle lit une note de la mémoire selon ses propres droits : les sujets masqués restent masqués. Un document n'écrase jamais un fichier existant — le nouveau reçoit le nom « rapport (2).pdf ». Toute écriture peut être annulée : « Mémoire » → « Historique » — aussi bien dans la mémoire que dans les dossiers de travail. Le PDF est généré via le navigateur Edge, Chrome ou Chromium sans afficher sa fenêtre : Edge est présent sur tout Windows 10 et 11, sur macOS et Linux il faut l'un d'eux.
+
+## Mot de passe administrateur
+
+Si une commande ou une installation de paquet nécessite des droits d'administrateur, Mnemai demande le mot de passe directement dans le chat — via une carte affichant la commande et un champ masqué, une seule fois. Le mot de passe est vérifié par sudo lui-même ; il n'est transmis ni à la conversation, ni au journal, ni au modèle, et est mémorisé pour les commandes suivantes. Pour sudo et l'installation de paquets, aucune fenêtre de terminal ne s'ouvre : la commande s'exécute sans fenêtre, la progression et le résultat sont visibles dans le chat, et l'installation dispose par défaut de 300 secondes. Une fenêtre de terminal visible est réservée aux programmes interactifs qui ont besoin d'un écran. Sur Windows, sudo n'existe pas — la carte n'apparaît pas.
 
 ## Conversation sans apprentissage
 
@@ -384,12 +401,12 @@ Chaque ajout à la mémoire est consigné dans un journal : qui l'a écrit, quoi
 
 Si une règle est formulée avec d'autres mots (« Fais-moi des résumés de conversation courts » et « Rends les résumés courts »), Mnemai n'ajoute pas une seconde ligne : elle réécrit l'ancienne avec les nouveaux mots.
 
-## Connecter d'autres IA
+## Connexion d'autres IA
 
-- Claude Code, Claude Desktop, Cursor : Paramètres → "IA et modèles" → "Mémoire dans les autres IA" → "Connecter" sur la vignette. La connexion se fait via MCP : memory_context, memory_search, memory_remember, memory_stale, memory_journal, memory_undo. Le contexte est découpé en morceaux de 9 000 caractères maximum. Cursor reçoit uniquement les règles et les projets, et n'écrit rien. La vignette indique si la connexion est déjà active.
-- ChatGPT et Gemini : dans le chat de Mnemai, avec ta propre clé (Paramètres → "IA et modèles" → vignette OpenAI ou Gemini → "Saisir la clé"). Il n'y a pas d'extension de navigateur : tout ce que les IA ne savent pas faire elles-mêmes, Mnemai le fait en local, sur ton ordinateur.
-- Via MCP, chaque IA ne voit dans le journal que les entrées qu'elle a le droit de lire, et n'annule que ses propres entrées. Après une mise à jour depuis la version portable, la connexion dans Claude et Cursor bascule automatiquement vers la nouvelle application.
-- Modèles : Paramètres → "IA et modèles". En haut, "Répond actuellement" : la médaille du modèle par défaut et son choix. Dessous, "Modèles" en deux sections : "Payants" (sous-section "Par abonnement" — Claude par abonnement ; sous-section "Par clé API" — ChatGPT, Claude · clé API, DeepSeek, Gemini, OpenRouter, YandexGPT, facturation à l'usage, séparée de l'abonnement) et "Gratuits" (modèle intégré, Ollama et Strata, sur cet ordinateur). Le menu des modèles en haut à gauche et l'étape "Avec quelle IA veux-tu discuter ?" du premier lancement sont organisés de la même façon. Les vignettes sont des médailles égales, aux couleurs du fournisseur : modèle intégré, Claude par abonnement, Claude · clé API (Anthropic), ChatGPT (clé API OpenAI), Gemini, OpenRouter, Ollama. ChatGPT et Gemini se connectent uniquement avec une clé API : les abonnements ChatGPT Plus et Gemini Advanced ne donnent pas de clé, et l'API est facturée séparément chez OpenAI et Google, à l'usage. Une vignette connectée est en couleur, avec le statut "connecté" ; une vignette non connectée est grise. Chaque vignette a un seul bouton : "Saisir la clé" → le champ de la clé s'ouvre directement dans la vignette → "Enregistrer et trouver les modèles" ou "Annuler" ; pour Ollama, l'adresse ; pour le modèle intégré, "Choisir et télécharger". Claude par abonnement apparaît tout seul si Claude Code est présent sur l'ordinateur : Mnemai le cherche non seulement dans les chemins de recherche des programmes, mais aussi là où les installateurs le placent (officiel, npm, WinGet, Volta, bun, Homebrew), et à l'intérieur de l'application Claude Desktop. Si Claude Code est trouvé mais que tu n'es pas connecté à ton compte, la vignette affiche un bouton "Se connecter" : une fenêtre Claude Code s'ouvre, tu te connectes avec ton abonnement, puis "Vérifier à nouveau". S'il n'est pas trouvé, le bouton est "Comment l'installer". Chaque IA connectée a un bouton "Désactiver" : elle disparaît de toutes les listes de modèles (chat, consortium, "Avec et sans mémoire"), la clé et les réglages sont conservés, et "Activer" la remet en place. Si une IA est connectée mais ne répond pas à cause du compte — limite atteinte ou abonnement Claude épuisé, plus d'argent sur le compte, connexion à Claude Code expirée, clé refusée —, la vignette affiche "ne fonctionne pas" avec la raison, l'IA disparaît des listes, et c'est la suivante qui fonctionne qui répond. Le bouton "Vérifier à nouveau" envoie une petite vraie requête. Le menu des modèles en haut à gauche fonctionne de la même façon pour toutes les IA : pour chaque IA connectée, les trois meilleurs modèles (les plus récents en taille standard, puis les légers mini et flash) et un lien "Tous les modèles" avec un compteur. Dans "Tous les modèles", les modèles opérationnels viennent d'abord, puis, sous un séparateur, "Anciens et techniques" : générations précédentes (gpt-3.5, gpt-4, Claude 3), copies datées, modèles pour les images, la voix et la recherche. Le modèle sélectionné reste visible dans le menu, même s'il ne fait pas partie des trois meilleurs. La clé et la vérification sont repliées sous la liste. Quand une limite est atteinte, Mnemai réessaie d'elle-même au bout d'une demi-heure. La clé est vérifiée dès l'enregistrement : une clé incorrecte n'est pas considérée comme connectée. Dans "Mémoire dans les autres IA", sur la vignette d'une IA connectée, un point circule le long de la ligne Mnemai → programme.
+- Claude Code, Claude Desktop, Cursor : Paramètres → "IA et modèles" → "Mémoire dans d'autres IA" → "Connecter" sur la tuile. Connexion via MCP : memory_context, memory_search, memory_remember, memory_stale, memory_journal, memory_undo. Le contexte est divisé en parties de 9 000 caractères maximum. Cursor reçoit uniquement les règles et les projets et n'écrit rien. La tuile indique si la connexion est déjà établie.
+- ChatGPT : via une clé OpenAI par la tuile OpenAI, ou via un abonnement ChatGPT par un Sign in with ChatGPT dédié ; les réponses nécessitent Codex CLI App Server installé. Gemini se connecte avec sa propre clé Google AI Studio. Il n'y a pas d'extension navigateur : tout ce que les IA ne savent pas faire elles-mêmes, Mnemai le fait sur ton ordinateur.
+- Via MCP, chaque IA ne voit dans le journal que les entrées qu'elle est autorisée à lire, et n'annule que ses propres entrées. Après une mise à jour depuis la version portable, la connexion dans Claude et Cursor bascule automatiquement vers le nouveau programme.
+- Modèles : Paramètres → "IA et modèles". En haut — "Répond actuellement" : la médaille du modèle par défaut et son sélecteur. En dessous — "Modèles" en deux sections : "Payants" (sous-section "Par abonnement" — Claude et ChatGPT par abonnement ; sous-section "Par clé API" — Claude · clé API, ChatGPT · clé API, DeepSeek, Gemini, OpenRouter, OpenCode Go, YandexGPT ; l'API est facturée séparément, OpenCode Go — par clé d'abonnement) et "Gratuits" (modèle intégré, Ollama et Strata, sur cet ordinateur). Le menu des modèles en haut à gauche et l'étape "Avec quelle IA parler ?" au premier lancement sont organisés de la même façon. Les tuiles sont des médailles égales aux couleurs du fournisseur : intégrée, Claude par abonnement, Claude · clé API (Anthropic), ChatGPT par abonnement (Sign in with ChatGPT officiel + Codex App Server), ChatGPT · clé API, OpenCode Go, Gemini, OpenRouter, Ollama. ChatGPT peut être connecté de deux façons : la clé API OpenAI est facturée séparément à l'usage, tandis que l'abonnement ChatGPT se connecte via la fenêtre officielle Sign in with ChatGPT et un consentement distinct à l'utilisation du quota du plan. Mnemai stocke ses propres tokens OAuth dans le trousseau système et ne lit pas la session Codex CLI ; la génération nécessite Codex App Server installé. L'abonnement Gemini Advanced ne donne pas de clé Google AI Studio : l'API est facturée séparément. Une tuile connectée est colorée, avec le statut "connecté" ; une tuile non connectée est grise. La tuile a un seul bouton : "Saisir la clé" → le champ de clé s'ouvre directement dans la tuile → "Enregistrer et rechercher des modèles" ou "Annuler" ; pour Ollama — l'adresse, pour le modèle intégré — "Choisir et télécharger". Claude par abonnement apparaît automatiquement si Claude Code est présent sur l'ordinateur : Mnemai le recherche non seulement dans les chemins de recherche de programmes, mais aussi aux emplacements d'installation des installeurs (officiel, npm, WinGet, Volta, bun, Homebrew), ainsi qu'à l'intérieur de l'application Claude Desktop. Si Claude Code est trouvé mais que la connexion au compte n'est pas effectuée, la tuile affiche un bouton "Se connecter" : la fenêtre Claude Code s'ouvre, on s'y connecte avec son abonnement, puis "Vérifier à nouveau". S'il n'est pas trouvé — "Comment installer". Chaque IA connectée dispose d'un bouton "Désactiver" : elle disparaît de toutes les listes de modèles (chat, consortium, "Avec et sans mémoire"), la clé et les paramètres sont conservés, "Activer" la remet en place. Si une IA est connectée mais ne répond pas en raison d'un problème de compte — quota ou abonnement Claude épuisé, solde insuffisant, session Claude Code expirée, clé refusée — la tuile affiche "ne fonctionne pas" et la raison, l'IA est retirée des listes, et c'est la suivante disponible qui répond. Le bouton "Vérifier à nouveau" envoie une petite requête réelle. Le menu des modèles en haut à gauche est organisé de la même façon pour toutes les IA : pour chaque IA connectée — les trois meilleurs modèles (les plus récents full-size, puis les légers mini et flash) et un lien "Tous les modèles" avec un compteur. Dans "Tous les modèles", les modèles actifs apparaissent en premier, puis sous la ligne de séparation "Anciens et utilitaires" : les générations précédentes (gpt-3.5, gpt-4, Claude 3), les copies datées, les modèles pour les images, la voix et la recherche. Le modèle sélectionné est visible dans le menu, même s'il ne fait pas partie des trois meilleurs. La clé et la vérification y sont réduites sous la liste. Lorsqu'un quota est épuisé, Mnemai réessaie automatiquement dans une demi-heure. La clé est vérifiée immédiatement à l'enregistrement : une clé incorrecte n'est pas considérée comme connectée. Dans "Mémoire dans d'autres IA", une tuile connectée affiche un point animé sur la ligne Mnemai → programme.
 - Modèle intégré : Paramètres → "IA et modèles" → "Modèle local".
 
 ## Proxy et VPN

@@ -155,6 +155,8 @@
  "more": "Et encore plus",
  "more_text": [
   "**Fonctionne avec tes fichiers.** Lit les scans, écrit des notes, crée des PDF, Word et Excel, fusionne et découpe des PDF. Chaque écriture peut être annulée dans Mémoire → Historique.",
+  "**Des commandes sans modèle.** « Ouvre Wikipédia avec le mot … », « ouvre YouTube », « ouvre ce site » et d'autres demandes ponctuelles s'exécutent aussitôt, sans interroger une IA — de la même façon sur tous les modèles.",
+  "**Le mot de passe administrateur reste dans le chat.** sudo et l'installation n'ont pas besoin de fenêtre de terminal : Mnemai demande le mot de passe dans la conversation, une fois, et ni le fichier du chat ni un modèle ne le voit.",
   "**Neuf langues.** L'interface et les réponses de l'IA suivent celle que tu choisis, même quand tu écris dans une autre."
  ],
  "fold": [
@@ -165,5 +167,6 @@
  ],
  "lic": "Licence",
  "foot": "Si Mnemai retient quelque chose d'utile pour toi, une ⭐ aide les autres à le trouver.",
- "qr": "Scanne pour ouvrir le dépôt"
+ "qr": "Scanne pour ouvrir le dépôt",
+ "works_note": "La fenêtre officielle Sign in with ChatGPT connecte l'abonnement ChatGPT, avec un consentement distinct pour l'utilisation de la limite du forfait ; la génération passe par le Codex App Server. OpenCode Go se connecte avec la clé de son abonnement."
 }

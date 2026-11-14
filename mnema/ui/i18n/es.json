@@ -1179,7 +1179,7 @@
 "Оформление": "Apariencia",
 "Не учиться на темах и словах": "No aprender de estos temas y palabras",
 "Для окна Mnemai нужен компонент Microsoft WebView2. Сейчас он установится — это один раз": "La ventana de Mnemai necesita el componente Microsoft WebView2. Se instalará ahora; solo hace falta una vez",
-"около минуты, нужен интернет.\\n\\nMnema needs the Microsoft WebView2 component.": "alrededor de un minuto, necesita internet.\\n\\nMnema needs the Microsoft WebView2 component.",
+"около минуты, нужен интернет.\\n\\nMnemai needs the Microsoft WebView2 component.": "alrededor de un minuto, necesita internet.\\n\\nMnemai needs the Microsoft WebView2 component.",
 "Не получилось поставить Microsoft WebView2. Проверь интернет или поставь его вручную:": "No pude instalar Microsoft WebView2. Revisa tu conexión a internet o instálalo manualmente:",
 "Твои поправки в разговорах с ИИ": "Tus correcciones en las conversaciones con la IA",
 "Папка с документами Word, текстами и заметками. Читаю только новые и изменённые.": "Carpeta con documentos de Word, textos y notas. Solo leo los nuevos y los modificados.",
@@ -3438,7 +3438,12 @@
 "больше не работает в чате (снята с поддержки или сделана не для разговора) — я убрала её из списка. Выбери другую слева вверху.": "ya no funciona en el chat (se ha retirado o no está pensado para conversar): la quité de la lista. Elige otro modelo arriba a la izquierda.",
 "Модель «": "El modelo «",
 "больше не работает в чате (снята с поддержки или сделана не для разговора)": "ya no funciona en el chat (se ha retirado o no está pensado para conversar)",
-"Для окна Mnemai нужен компонент Microsoft WebView2. Сейчас он установится — это один раз, около минуты, нужен интернет. Mnema needs the Microsoft WebView2 component. It will be installed now, once.": "Para la ventana de Mnemai necesito el componente Microsoft WebView2. Se instalará ahora: es solo una vez, tarda alrededor de un minuto y hace falta conexión a internet. Mnema needs the Microsoft WebView2 component. It will be installed now, once."
+"Для окна Mnemai нужен компонент Microsoft WebView2. Сейчас он установится — это один раз, около минуты, нужен интернет. Mnemai needs the Microsoft WebView2 component. It will be installed now, once.": "Para la ventana de Mnemai necesito el componente Microsoft WebView2. Se instalará ahora: es solo una vez, tarda alrededor de un minuto y hace falta conexión a internet. Mnemai needs the Microsoft WebView2 component. It will be installed now, once.",
+"Нужен пароль администратора": "Hace falta la contraseña de administrador",
+"Пароль не подошёл — попробуй ещё раз.": "La contraseña no es correcta; inténtalo otra vez.",
+"пароль администратора": "contraseña de administrador",
+"Пароль останется на этом компьютере и не попадёт ни в переписку, ни к модели.": "La contraseña se queda en este equipo y no entra en la conversación ni en el prompt de ningún modelo.",
+"Проверяю пароль…": "Comprobando la contraseña…"
 },
 "patterns": {
 "{}Новый разговор": "{}Nueva conversación",

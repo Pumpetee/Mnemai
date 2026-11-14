@@ -1114,7 +1114,7 @@ def ensure_webview2() -> bool:
         setup = Path(__file__).resolve().parents[1] / "vendor" / "webview2" / "MicrosoftEdgeWebview2Setup.exe"
     OS.message(
         "Для окна Mnemai нужен компонент Microsoft WebView2. Сейчас он установится — это один раз, "
-        "около минуты, нужен интернет.\n\nMnema needs the Microsoft WebView2 component. "
+        "около минуты, нужен интернет.\n\nMnemai needs the Microsoft WebView2 component. "
         "It will be installed now, once."
     )
     try:

@@ -276,7 +276,10 @@ TOOLS = [
                 "priority": {"type": "string", "enum": ["low", "normal", "high"]},
                 "depends_on": {"type": "string"},
                 "auto": {"type": "boolean", "description": "Выполнять автоматически фоновым worker'ом."},
-                "model": {"type": "string", "description": "provider:model для выполнения; по умолчанию модель Mnema."},
+                "model": {
+                    "type": "string",
+                    "description": "provider:model для выполнения; по умолчанию модель Mnemai.",
+                },
             },
             "required": ["text"],
         },
@@ -315,13 +318,13 @@ TOOLS = [
     },
     {
         "name": "task_run",
-        "description": "Выполнить задачу из реестра сейчас (моделью Mnema) и отметить результат.",
+        "description": "Выполнить задачу из реестра сейчас (моделью Mnemai) и отметить результат.",
         "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
     },
     {
         "name": "subagent_run",
         "description": "Поручить отдельный вопрос другому ИИ (model: провайдер:модель, по умолчанию — текущая модель "
-        "Mnema). Субагент отвечает текстом, без инструментов.",
+        "Mnemai). Субагент отвечает текстом, без инструментов.",
         "inputSchema": {
             "type": "object",
             "properties": {"prompt": {"type": "string"}, "model": {"type": "string"}},
@@ -373,7 +376,7 @@ TOOLS = [
     },
     {
         "name": "journal_tail",
-        "description": "Последние действия в журнале Mnema (кто что сделал), с учётом прав этого ассистента.",
+        "description": "Последние действия в журнале Mnemai (кто что сделал), с учётом прав этого ассистента.",
         "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 30}}},
     },
     {

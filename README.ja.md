@@ -6,7 +6,7 @@
 
 <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=700&size=26&duration=2600&pause=900&color=A78BFA&center=true&vCenter=true&width=720&height=46&lines=%E3%81%99%E3%81%B9%E3%81%A6%E3%81%AEAI%E3%81%AB%E3%80%81%E3%81%B2%E3%81%A8%E3%81%A4%E3%81%AE%E8%A8%98%E6%86%B6%E3%82%92;%E7%84%A1%E6%96%99%E3%80%81%E3%81%82%E3%81%AA%E3%81%9F%E3%81%AEPC%E5%86%85%E3%80%81%E3%82%A2%E3%82%AB%E3%82%A6%E3%83%B3%E3%83%88%E4%B8%8D%E8%A6%81" alt="すべてのAIに、ひとつの記憶を">
 
-<a href="https://github.com/Pumpetee/Mnemai/releases/latest"><img src="https://img.shields.io/github/v/release/Pumpetee/Mnemai?style=flat-square&color=8b5cf6&label=release" alt="release"></a> <a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
+<a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
 
 <img src="https://img.shields.io/badge/MCP-Claude%20%C2%B7%20Cursor-7c3aed?style=flat-square&logo=modelcontextprotocol&logoColor=white" alt="MCP: Claude · Cursor"> <img src="https://img.shields.io/badge/Obsidian-%E8%AA%AD%E3%81%BF%E5%8F%96%E3%82%8A%E5%B0%82%E7%94%A8-7c3aed?style=flat-square&logo=obsidian&logoColor=white" alt="Obsidian: 読み取り専用"> <img src="https://img.shields.io/badge/Telegram-%E8%AA%AD%E3%81%BF%E5%8F%96%E3%82%8A%E5%B0%82%E7%94%A8-229ED9?style=flat-square&logo=telegram&logoColor=white" alt="Telegram: 読み取り専用"> <img src="https://img.shields.io/badge/AES--256-%E6%9A%97%E5%8F%B7%E5%8C%96-15803d?style=flat-square" alt="AES-256: 暗号化"> <img src="https://img.shields.io/badge/Markdown-%E3%81%82%E3%81%AA%E3%81%9F%E3%81%AE%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB-555555?style=flat-square&logo=markdown&logoColor=white" alt="Markdown: あなたのファイル"> <img src="https://img.shields.io/badge/Python-3.13-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python: 3.13">
 
@@ -116,17 +116,20 @@ Mnemaiは、あなたが誰で、何に取り組んでいて、何を決めて�
 
 <div align="center">
 <table><tr><td valign="middle" width="150"><b>クラウドAI</b><br><sub>キーまたはサブスクリプションで</sub></td><td align="center" width="92"><img src="docs/img/brand/claude.svg" width="40" alt="Claude"><br><sub><b>Claude</b></sub></td><td align="center" width="92"><img src="docs/img/brand/chatgpt.svg" width="40" alt="ChatGPT"><br><sub><b>ChatGPT</b></sub></td><td align="center" width="92"><img src="docs/img/brand/gemini.svg" width="40" alt="Gemini"><br><sub><b>Gemini</b></sub></td><td align="center" width="92"><img src="docs/img/brand/deepseek.svg" width="40" alt="DeepSeek"><br><sub><b>DeepSeek</b></sub></td><td align="center" width="92"><img src="docs/img/brand/yandex.svg" width="40" alt="YandexGPT"><br><sub><b>YandexGPT</b></sub></td><td align="center" width="92"><img src="docs/img/brand/openrouter.svg" width="40" alt="OpenRouter"><br><sub><b>OpenRouter</b></sub></td></tr><tr><td valign="middle" width="150"><b>あなたのPC上で</b><br><sub>無料、オフライン</sub></td><td align="center" width="92"><img src="docs/img/brand/local.svg" width="40" alt="内蔵"><br><sub><b>内蔵</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/ollama/ffffff" width="40" alt="Ollama"><br><sub><b>Ollama</b></sub></td><td align="center" width="92"><img src="docs/img/brand/strata.svg" width="40" alt="Strata"><br><sub><b>Strata</b></sub></td><td></td><td></td><td></td></tr><tr><td valign="middle" width="150"><b>あなたのツールで</b><br><sub>MCP経由</sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/claude/D97757" width="40" alt="Claude Code"><br><sub><b>Claude Code</b></sub></td><td align="center" width="92"><img src="docs/img/brand/cursor.svg" width="40" alt="Cursor"><br><sub><b>Cursor</b></sub></td><td></td><td></td><td></td><td></td></tr><tr><td valign="middle" width="150"><b>システム</b><br><sub>ひとつのアプリで</sub></td><td align="center" width="92"><img src="docs/img/brand/windows.svg" width="40" alt="Windows"><br><sub><b>Windows</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/apple/ffffff" width="40" alt="macOS"><br><sub><b>macOS</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/linux/FCC624" width="40" alt="Linux"><br><sub><b>Linux</b></sub></td><td></td><td></td><td></td></tr></table>
+<p>ChatGPTのサブスクリプションは、公式の Sign in with ChatGPT ウィンドウで接続します。プランの上限を使うことへの同意は別に取ります。生成は Codex App Server を通して動きます。OpenCode Go は自分のサブスクリプションのキーで接続します。</p>
 </div>
 
 ## ⚡ ほかにも
 
 - **あなたのファイルを扱えます。** スキャンを読み取り、ノートを書き、PDF、Word、Excelを作成し、PDFの結合と分割もできます。書き込みはすべて、Memory → Historyで元に戻せます。
+- **モデルなしで動くコマンド。**「ウィキペディアを…で開いて」「YouTubeを開いて」「このサイトを開いて」などの一度きりの依頼は、AIに聞かずその場で実行されます。どのモデルでも同じです。
+- **管理者パスワードはチャットの中だけ。**sudoやインストールにターミナル画面は要りません。Mnemaiは会話の中で一度だけパスワードを尋ね、そのパスワードがチャットのファイルやモデルに渡ることはありません。
 - **9つの言語。** インターフェースとAIの回答は、あなたが選んだ言語に合わせます。別の言語で書いても同じです。
 
 <details>
 <summary><b>インストール</b></summary>
 
-お使いのシステム用のファイルをダウンロードしてください（番号付きの全バージョンは [Releases](../../releases) にあります）:
+お使いのシステム用のファイルをダウンロードしてください（すべてのビルドは [Releases](../../releases) にあります）:
 
 | システム | ファイル | 方法 |
 |---|---|---|
@@ -154,7 +157,7 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python tools\fetch_vendor.py      # llama.cpp, Xray, WebView2 を公式リリースから取得し、検証します
 .venv\Scripts\python -m mnema.desktop           # プログラムを実行
-.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-<version>.exe とポータブル版 zip
+.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-*.exe とポータブル版 zip
 ```
 
 macOS と Linux:
@@ -164,8 +167,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python tools/fetch_vendor.py           # お使いのシステム向けの llama.cpp と Xray を取得し、sha256 で検証します
 .venv/bin/python -m mnema.desktop                # プログラムを実行
-.venv/bin/python tools/package.py                # macOS: dist/Mnemai-<version>-macos-arm64.dmg
-                                                 # Linux: dist/Mnemai-<version>-x86_64.AppImage と .tar.gz
+.venv/bin/python tools/package.py                # macOS: dist/Mnemai-*-macos-arm64.dmg
+                                                 # Linux: dist/Mnemai-*-x86_64.AppImage と .tar.gz
 ```
 
 プッシュのたびに Windows、macOS、Linux でテストが実行されます。3 つのパッケージがビルドされ、ウィンドウ付きで一度起動され、その実行結果のファイルとして保存されます (`.github/workflows`)。

@@ -6,7 +6,7 @@
 
 <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=700&size=26&duration=2600&pause=900&color=A78BFA&center=true&vCenter=true&width=720&height=46&lines=Uma%20mem%C3%B3ria%20para%20todas%20as%20IAs;Gr%C3%A1tis%2C%20no%20seu%20computador%2C%20sem%20conta" alt="Uma memória para todas as IAs">
 
-<a href="https://github.com/Pumpetee/Mnemai/releases/latest"><img src="https://img.shields.io/github/v/release/Pumpetee/Mnemai?style=flat-square&color=8b5cf6&label=release" alt="release"></a> <a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
+<a href="https://github.com/Pumpetee/Mnemai/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Pumpetee/Mnemai/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a> <a href="https://github.com/Pumpetee/Mnemai/commits/main"><img src="https://img.shields.io/github/last-commit/Pumpetee/Mnemai?style=flat-square&color=ec4899" alt="last commit"></a>
 
 <img src="https://img.shields.io/badge/MCP-Claude%20%C2%B7%20Cursor-7c3aed?style=flat-square&logo=modelcontextprotocol&logoColor=white" alt="MCP: Claude · Cursor"> <img src="https://img.shields.io/badge/Obsidian-somente%20leitura-7c3aed?style=flat-square&logo=obsidian&logoColor=white" alt="Obsidian: somente leitura"> <img src="https://img.shields.io/badge/Telegram-somente%20leitura-229ED9?style=flat-square&logo=telegram&logoColor=white" alt="Telegram: somente leitura"> <img src="https://img.shields.io/badge/AES--256-criptografia-15803d?style=flat-square" alt="AES-256: criptografia"> <img src="https://img.shields.io/badge/Markdown-seus%20arquivos-555555?style=flat-square&logo=markdown&logoColor=white" alt="Markdown: seus arquivos"> <img src="https://img.shields.io/badge/Python-3.13-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python: 3.13">
 
@@ -116,17 +116,20 @@ O Mnemai lembra quem você é, no que está trabalhando, o que decidiu e como vo
 
 <div align="center">
 <table><tr><td valign="middle" width="150"><b>IA na nuvem</b><br><sub>por chave ou assinatura</sub></td><td align="center" width="92"><img src="docs/img/brand/claude.svg" width="40" alt="Claude"><br><sub><b>Claude</b></sub></td><td align="center" width="92"><img src="docs/img/brand/chatgpt.svg" width="40" alt="ChatGPT"><br><sub><b>ChatGPT</b></sub></td><td align="center" width="92"><img src="docs/img/brand/gemini.svg" width="40" alt="Gemini"><br><sub><b>Gemini</b></sub></td><td align="center" width="92"><img src="docs/img/brand/deepseek.svg" width="40" alt="DeepSeek"><br><sub><b>DeepSeek</b></sub></td><td align="center" width="92"><img src="docs/img/brand/yandex.svg" width="40" alt="YandexGPT"><br><sub><b>YandexGPT</b></sub></td><td align="center" width="92"><img src="docs/img/brand/openrouter.svg" width="40" alt="OpenRouter"><br><sub><b>OpenRouter</b></sub></td></tr><tr><td valign="middle" width="150"><b>No seu computador</b><br><sub>grátis, offline</sub></td><td align="center" width="92"><img src="docs/img/brand/local.svg" width="40" alt="Integrado"><br><sub><b>Integrado</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/ollama/ffffff" width="40" alt="Ollama"><br><sub><b>Ollama</b></sub></td><td align="center" width="92"><img src="docs/img/brand/strata.svg" width="40" alt="Strata"><br><sub><b>Strata</b></sub></td><td></td><td></td><td></td></tr><tr><td valign="middle" width="150"><b>Nas suas ferramentas</b><br><sub>via MCP</sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/claude/D97757" width="40" alt="Claude Code"><br><sub><b>Claude Code</b></sub></td><td align="center" width="92"><img src="docs/img/brand/cursor.svg" width="40" alt="Cursor"><br><sub><b>Cursor</b></sub></td><td></td><td></td><td></td><td></td></tr><tr><td valign="middle" width="150"><b>Sistemas</b><br><sub>um só app</sub></td><td align="center" width="92"><img src="docs/img/brand/windows.svg" width="40" alt="Windows"><br><sub><b>Windows</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/apple/ffffff" width="40" alt="macOS"><br><sub><b>macOS</b></sub></td><td align="center" width="92"><img src="https://cdn.simpleicons.org/linux/FCC624" width="40" alt="Linux"><br><sub><b>Linux</b></sub></td><td></td><td></td><td></td></tr></table>
+<p>A janela oficial Sign in with ChatGPT conecta a subscrição do ChatGPT, com um consentimento separado para usar o limite do plano; a geração funciona através do Codex App Server. O OpenCode Go conecta-se com a chave da sua subscrição.</p>
 </div>
 
 ## ⚡ E mais
 
 - **Trabalha com os seus arquivos.** Lê digitalizações, escreve notas, cria PDF, Word e Excel, junta e divide PDF. Toda escrita pode ser desfeita em Memória → Histórico.
+- **Comandos sem modelo.** «Abre a Wikipédia com a palavra…», «abre o YouTube», «abre este site» e outros pedidos pontuais são executados na hora, sem perguntar a uma IA — igual em todos os modelos.
+- **A palavra-passe de administrador fica no chat.** O sudo e a instalação não precisam de janela de terminal: o Mnemai pede a palavra-passe na própria conversa, uma vez, e nem o ficheiro do chat nem um modelo a veem.
 - **Nove idiomas.** A interface e as respostas da IA seguem o idioma que você escolher, mesmo quando você escreve em outro.
 
 <details>
 <summary><b>Instalar</b></summary>
 
-Baixe o arquivo para o seu sistema (todas as versões, com seus números, estão em [Releases](../../releases)):
+Baixe o arquivo para o seu sistema (todas as compilações estão em [Releases](../../releases)):
 
 | Sistema | Arquivo | Como |
 |---|---|---|
@@ -154,7 +157,7 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python tools\fetch_vendor.py      # llama.cpp, Xray, WebView2 dos seus lançamentos oficiais, verificados
 .venv\Scripts\python -m mnema.desktop           # executa o programa
-.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-<version>.exe e o zip portátil
+.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-*.exe e o zip portátil
 ```
 
 macOS e Linux:
@@ -164,8 +167,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python tools/fetch_vendor.py           # llama.cpp e Xray para este sistema, verificados por sha256
 .venv/bin/python -m mnema.desktop                # executa o programa
-.venv/bin/python tools/package.py                # macOS: dist/Mnemai-<version>-macos-arm64.dmg
-                                                 # Linux: dist/Mnemai-<version>-x86_64.AppImage e .tar.gz
+.venv/bin/python tools/package.py                # macOS: dist/Mnemai-*-macos-arm64.dmg
+                                                 # Linux: dist/Mnemai-*-x86_64.AppImage e .tar.gz
 ```
 
 Cada push é testado no Windows, macOS e Linux; os três pacotes são compilados, iniciados uma vez com sua janela e mantidos como arquivos da execução (`.github/workflows`).

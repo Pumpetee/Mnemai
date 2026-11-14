@@ -1,4 +1,4 @@
-Lade die Datei für dein System herunter (alle Versionen mit ihrer Nummer findest du unter [Releases](../../releases)):
+Lade die Datei für dein System herunter (alle Builds findest du unter [Releases](../../releases)):
 
 | System | Datei | Vorgehen |
 |---|---|---|

@@ -156,6 +156,7 @@ L = {
             "**Every AI has its own access:** money, health and private topics are hidden from any of them in one click.",
         ],
         "works": "🤖 Works with",
+        "works_note": "The official Sign in with ChatGPT window connects the ChatGPT subscription, with a separate consent for using the plan's limit; generation runs through the Codex App Server. OpenCode Go connects with its subscription key.",
         "groups": [
             ("Cloud AI", "by key or subscription"),
             ("On your computer", "free, offline"),
@@ -166,6 +167,8 @@ L = {
         "more": "And more",
         "more_text": [
             "**Works with your files.** Reads scans, writes notes, makes PDF, Word and Excel, merges and splits PDF. Every write can be undone in Memory → History.",
+            "**Commands without a model.** «Open Wikipedia with the word …», «open YouTube», «open this site» and other one-off requests run at once, without asking an AI — the same on every model.",
+            "**The administrator password stays in the chat.** sudo and installing need no terminal window: Mnemai asks for the password right in the conversation, once, and neither the chat file nor a model ever sees it.",
             "**Nine languages.** The interface and the AI's answers follow the one you pick, even when you write in another.",
         ],
         "fold": ["Install", "Build from source", "How it is built", "Security"],
@@ -271,6 +274,7 @@ L = {
             "**У каждого ИИ свой доступ:** деньги, здоровье и личное скрываются от любого из них одним щелчком.",
         ],
         "works": "🤖 С чем работает",
+        "works_note": "Подписку ChatGPT подключает официальное окно Sign in with ChatGPT с отдельным согласием на использование лимита плана; генерация работает через Codex App Server. OpenCode Go подключается ключом своей подписки.",
         "groups": [
             ("Облачные ИИ", "по ключу или подписке"),
             ("На компьютере", "бесплатно, без интернета"),
@@ -281,6 +285,8 @@ L = {
         "more": "И ещё",
         "more_text": [
             "**Работает с файлами.** Читает сканы, пишет заметки, делает PDF, Word и Excel, склеивает и режет PDF. Любую запись можно откатить: Память → История.",
+            "**Команды без модели.** «Открой википедию со словом „сон“», «открой в ютубе …», «открой гугл» и другие однозначные просьбы выполняются сразу, без обращения к ИИ — одинаково на любой модели.",
+            "**Пароль администратора — в чате.** Для sudo и установки не нужно окно терминала: Mnemai спросит пароль прямо в разговоре, один раз, и он не попадёт ни в переписку, ни к модели.",
             "**Девять языков.** Интерфейс и ответы ИИ идут на выбранном, даже если пишешь на другом.",
         ],
         "fold": ["Установка", "Сборка из исходников", "Как устроено", "Безопасность"],
@@ -351,11 +357,9 @@ def build(lang: str) -> str:
     out.append('<img src="docs/img/brand/logo.svg" width="112" alt="Mnemai">\n')
     out.append("# Mnemai\n")
     out.append(f'<img src="{typing(c["typing"])}" alt="{c["typing"][0]}">\n')
-    rel = f"https://github.com/{REPO}/releases/latest"
     out.append(
         " ".join(
             [
-                f'<a href="{rel}"><img src="https://img.shields.io/github/v/release/{REPO}?style=flat-square&color=8b5cf6&label=release" alt="release"></a>',
                 f'<a href="https://github.com/{REPO}/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/{REPO}/tests.yml?branch=main&style=flat-square&label=tests" alt="tests"></a>',
                 '<a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-0ea5e9?style=flat-square" alt="license"></a>',
                 f'<a href="https://github.com/{REPO}/commits/main"><img src="https://img.shields.io/github/last-commit/{REPO}?style=flat-square&color=ec4899" alt="last commit"></a>',
@@ -464,7 +468,10 @@ def build(lang: str) -> str:
         return f'<tr><td valign="middle" width="150"><b>{g[i][0]}</b><br><sub>{g[i][1]}</sub></td>{cells}{pad}</tr>'
 
     out.append(f"## {c['works']}\n")
-    out.append('<div align="center">\n<table>' + "".join(row(i, cells) for i, cells in rows) + "</table>\n</div>\n")
+    note = f"<p>{c['works_note']}</p>\n" if c.get("works_note") else ""
+    out.append(
+        '<div align="center">\n<table>' + "".join(row(i, cells) for i, cells in rows) + "</table>\n" + note + "</div>\n"
+    )
 
     out.append(f"## ⚡ {c['more']}\n")
     out.append("\n".join(f"- {b}" for b in c["more_text"]) + "\n")

@@ -5,7 +5,7 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python tools\fetch_vendor.py      # llama.cpp, Xray, WebView2 dos seus lançamentos oficiais, verificados
 .venv\Scripts\python -m mnema.desktop           # executa o programa
-.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-<version>.exe e o zip portátil
+.venv\Scripts\python tools\package.py           # dist\Mnemai-Setup-*.exe e o zip portátil
 ```
 
 macOS e Linux:
@@ -15,8 +15,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python tools/fetch_vendor.py           # llama.cpp e Xray para este sistema, verificados por sha256
 .venv/bin/python -m mnema.desktop                # executa o programa
-.venv/bin/python tools/package.py                # macOS: dist/Mnemai-<version>-macos-arm64.dmg
-                                                 # Linux: dist/Mnemai-<version>-x86_64.AppImage e .tar.gz
+.venv/bin/python tools/package.py                # macOS: dist/Mnemai-*-macos-arm64.dmg
+                                                 # Linux: dist/Mnemai-*-x86_64.AppImage e .tar.gz
 ```
 
 Cada push é testado no Windows, macOS e Linux; os três pacotes são compilados, iniciados uma vez com sua janela e mantidos como arquivos da execução (`.github/workflows`).

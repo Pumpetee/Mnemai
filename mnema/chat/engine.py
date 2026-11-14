@@ -463,7 +463,9 @@ SECOND_PASS = """Ты — редактор ответов. Проверь чер
 # ---------------------------------------------------------------- send
 
 TOOL_MARKUP = re.compile(
-    r"<(function_calls|invoke|antml:invoke)\b.*?(</\1>|$)|</?(parameter|function_calls)\b[^>]*>", re.S
+    r"<(function_calls|invoke|antml:invoke)\b.*?(</\1>|$)|</?(parameter|function_calls)\b[^>]*>"
+    r"|<[^>]*DSML[^>]*>.*?</[^>]*DSML[^>]*>|<[^>]*DSML[^>]*>",
+    re.S,
 )
 
 
@@ -478,7 +480,7 @@ def strip_thinking(text: str) -> str:
 
 def strip_tool_markup(text: str) -> str:
     """A model without tools sometimes types a tool call as text. The owner never needs to see it."""
-    if "<" not in text:
+    if "<" not in text and "DSML" not in text:
         return text
     return re.sub(r"\n{3,}", "\n\n", TOOL_MARKUP.sub("", text)).strip()
 

@@ -1054,7 +1054,8 @@ CLAUDE_MCP_NOTE = """=== MCP Mnemai ===
 не ищи его и не говори «инструмент не найден».
 Все имена начинаются с «mcp__mnemai__». Без этого префикса инструментов нет: никаких bash_tool, Bash, Read,
 Write, Edit, Glob, Grep, WebSearch, WebFetch, ToolSearch, str_replace, view, create_file. Не вызывай их и не
-упоминай. Если вызов вернул ошибку — скажи честно, что шаг не удался; не выдумывай успех."""
+упоминай. Вызывай MCP-инструменты строго по одному, не параллельно. Если вызов вернул ошибку — скажи честно,
+что шаг не удался; не выдумывай успех."""
 
 
 def _claude_mcp_config(vault: Vault) -> Path:
@@ -1150,7 +1151,12 @@ def _stream_raw(
             "--allowedTools",
             "mcp__mnemai__*",
             "--disallowedTools",
-            "DeferredToolPlaceholder",  # never let the model call Claude Code's internal stub
+            # Claude Code still advertises these built-ins in its system prompt even with --tools "";
+            # a call to one of them becomes an unknown tool_use and the next API request dies with 400.
+            "Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Task,ToolSearch,Artifact,create_file,"
+            "str_replace,view,present_files,bash_tool,CronCreate,CronDelete,CronList,DesignSync,"
+            "EnterWorktree,ExitWorktree,ListMcpResourcesTool,Monitor,NotebookEdit,ReadMcpResourceDirTool,"
+            "ReadMcpResourceTool,SendMessage,TaskStop",
             "--setting-sources",
             "",
             "--strict-mcp-config",
@@ -1168,6 +1174,7 @@ def _stream_raw(
                     **claude_settings_env(),  # a proxy/subscription configured in Claude Code keeps working
                     "GIT_CEILING_DIRECTORIES": str(cwd.parent),
                     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",  # no notes of its own about the owner
+                    "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY": "1",  # Mnema's MCP stdio server is request/response; parallel calls poison the next request
                     # the same longest answer as every other model (Настройки → Движок)
                     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(_tuning.get(vault)["answer"]),
                 }

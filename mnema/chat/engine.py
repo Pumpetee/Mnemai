@@ -865,6 +865,13 @@ def send(
     quote = (quote or "").strip()[:3000]
     if web is None:
         web = bool(P.load(vault).get("web"))
+        if not web and re.search(
+            r"\b(?:в\s+интернете|в\s+сети|онлайн|погугли|загугли|"
+            r"посмотри\s+в\s+интернете|найди\s+в\s+интернете|search\s+the\s+web)\b",
+            text or "",
+            re.I,
+        ):
+            web = True  # an explicit internet request beats the composer switch
     if terms is None:
         terms = bool(P.load(vault).get("terms", True))
     msg = {

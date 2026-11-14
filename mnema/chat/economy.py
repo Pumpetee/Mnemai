@@ -111,6 +111,12 @@ def web_context(text: str, search: bool, budget: int = 7000) -> dict:
     red = Redactor()
     q = LABEL_RE.sub(" ", red.apply(URL_RE.sub(" ", text))).strip() or "?"  # a search engine never gets a secret
     found = web.gather(q, urls=urls or None, pages=3 if urls else 4, budget=budget, search_too=bool(urls and search))
+    # Some pages contain control bytes or lone surrogates; providers reject such a request with a generic 400.
+    context = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", found.get("context") or "")
+    context = context.encode("utf-8", "replace").decode("utf-8")
+    if len(context) > budget:
+        context = context[:budget].rsplit("\n", 1)[0]
+    found = {**found, "context": context}
     return {**found, "searched": bool(search), "query": q, "redacted": red.summary()}
 
 

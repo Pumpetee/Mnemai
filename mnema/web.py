@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import concurrent.futures as cf
 import html as htmlmod
+import json
 import re
 import urllib.parse
 import urllib.request
@@ -53,6 +54,17 @@ def public_url(url: str) -> bool:
 def _open(url: str, direct: bool, timeout: int, data: bytes | None = None, headers: dict | None = None):
     if not public_url(url):
         raise ValueError("этот адрес внутри компьютера или локальной сети — такие Mnemai не открывает")
+    # urllib refuses non-ASCII URLs; models and users pass Cyrillic Wikipedia links as-is
+    parts = urllib.parse.urlsplit(url)
+    url = urllib.parse.urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            urllib.parse.quote(parts.path, safe="/%"),
+            urllib.parse.quote(parts.query, safe="=&%+;"),
+            urllib.parse.quote(parts.fragment, safe="%"),
+        )
+    )
     req = urllib.request.Request(url, data=data, headers={**UA, **(headers or {})})
     if direct:
         return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=timeout)
@@ -444,12 +456,20 @@ ENGINES = [
 ]
 
 
+FACTUAL = re.compile(
+    r"\b(?:когда|кто|что такое|родил(?:ся|ась|ись)?|умер(?:ла)?|столиц|сколько|где находится|"
+    r"какой|какая|какое|дата|биограф|истори|изобрел|написал|основал)\b",
+    re.I,
+)
+
+
 def search(query: str, n: int = 6) -> list[dict]:
     """[{title, url, snippet, engine}] — first engine that gives relevant results wins. Cached for 30 minutes."""
     import time as _t
 
-    fresh = FRESH.search(query) and not re.search(r"\b20\d\d\b", query)
-    query = keywords(query)
+    original = (query or "").strip()
+    fresh = FRESH.search(original) and not re.search(r"\b20\d\d\b", original)
+    query = keywords(original)
     if fresh:  # "latest / today / news": engines rank old pages high otherwise
         import datetime as _dt
 
@@ -457,44 +477,100 @@ def search(query: str, n: int = 6) -> list[dict]:
     hit = _cache.get(query)
     if hit and _t.time() - hit[0] < 1800:
         return hit[1][:n]
-    for attempt in range(2):
-        res = _search_once(query, n)
-        if res:
-            _cache[query] = (_t.time(), res)
-            return res
-        _t.sleep(2.5)  # DuckDuckGo asks to slow down now and then
-    return []
+    if not fresh and FACTUAL.search(original):
+        # Encyclopedic questions have a fast, reliable answer; don't wait for several web engines.
+        subject = re.split(r"[.!?]\s*", original.strip())[0]
+        subject = re.sub(
+            r"^(?:когда|кто|что такое|сколько|где находится|какой|какая|какое|дата|биография|"
+            r"это|такой|такая|такое)\s+",
+            "",
+            subject,
+            flags=re.I,
+        )
+        subject = re.sub(r"\b(?:родился|родилась|родились|умер|умерла|появился|появилась)\b", "", subject, flags=re.I)
+        subject = " ".join(subject.split()).strip(" ?.,!") or query
+        wiki = [r for r in _wiki(subject) if trusted(r["url"])]
+        if wiki:
+            _cache[query] = (_t.time(), wiki)
+            return wiki[:n]
+    res = _search_once(query, n)
+    if res:
+        _cache[query] = (_t.time(), res)
+    return res
 
 
 def _search_once(query: str, n: int) -> list[dict]:
-    for name, fn in ENGINES:
+    import queue
+    import threading
+    import time as _t
+
+    def one(item):
+        name, fn = item
         try:
-            res = _relevant(query, fn(query))
+            return name, _relevant(query, fn(query))
         except Exception:
-            continue
-        res = [r for r in res if trusted(r["url"])]  # serious sources only
-        per, keep = {}, []
+            return name, []
+
+    def keep(name: str, res: list[dict]) -> list[dict]:
+        res = [r for r in res if trusted(r["url"])]
+        per, out = {}, []
         for r in res:
             host = (urllib.parse.urlparse(r["url"]).hostname or "").lower()
             if (host == "wikipedia.org" or host.endswith(".wikipedia.org")) and host.split(".")[0] not in WIKI_LANGS:
-                continue  # Wikipedia in the owner's languages only
+                continue
             site = ".".join(host.split(".")[-2:])
             per[site] = per.get(site, 0) + 1
-            if per[site] <= 2:  # not the same site three times
-                keep.append(r)
-        res = keep
-        if len(res) >= 1:
-            seen, uniq = set(), []
-            for r in res:
-                if r["url"] not in seen:
-                    seen.add(r["url"])
-                    uniq.append({**r, "engine": name})
-            return uniq[:n]
+            if per[site] <= 2:
+                out.append(r)
+        seen, uniq = set(), []
+        for r in out:
+            if r["url"] not in seen:
+                seen.add(r["url"])
+                uniq.append({**r, "engine": name})
+        return uniq[:n]
+
+    # Daemon threads: a blocked engine never delays the answer and never keeps Python alive at exit.
+    answers: queue.Queue = queue.Queue()
+    for item in ENGINES:
+        threading.Thread(target=lambda it=item: answers.put(one(it)), daemon=True, name="mnema-web").start()
+    deadline = _t.time() + 5.0
+    while _t.time() < deadline:
+        try:
+            name, res = answers.get(timeout=max(0.1, deadline - _t.time()))
+        except queue.Empty:
+            break
+        uniq = keep(name, res)
+        if uniq:
+            return uniq
     return []
 
 
 def fetch(url: str) -> dict:
     """{url, title, text} of a page, read and cleaned locally."""
+    # Wikipedia's full page is huge; the summary API answers encyclopedic facts in a fraction of a second.
+    parts = urllib.parse.urlsplit(url)
+    if parts.hostname and parts.hostname.endswith("wikipedia.org") and "/wiki/" in parts.path:
+        title = urllib.parse.unquote(parts.path.split("/wiki/", 1)[1]).replace("_", " ")
+        try:
+            api = f"https://{parts.hostname}/w/api.php?" + urllib.parse.urlencode(
+                {
+                    "action": "query",
+                    "prop": "extracts",
+                    "exintro": 1,
+                    "explaintext": 1,
+                    "redirects": 1,
+                    "titles": title,
+                    "format": "json",
+                }
+            )
+            raw, _ = _get(api, timeout=8)
+            pages = json.loads(raw).get("query", {}).get("pages", {})
+            page = next(iter(pages.values()), {})
+            text = str(page.get("extract") or "").strip()
+            if text:
+                return {"url": url, "title": page.get("title") or title, "text": text}
+        except Exception:
+            pass
     raw, ctype = _get(url)
     if "html" not in ctype and not raw.lstrip().startswith("<"):
         return {"url": url, "title": url, "text": raw[:200_000]}

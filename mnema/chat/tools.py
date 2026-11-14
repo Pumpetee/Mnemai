@@ -511,7 +511,10 @@ INSTALL_COMMAND = re.compile(
 
 
 def needs_sudo(command: str) -> bool:
-    """The command asks for root. The password is asked once, in the chat — never in a terminal window."""
+    """The command asks for root. The password is asked once, in the chat — never in a terminal window.
+    Windows has no sudo: a «sudo» in a model's command is just a wrong command to run and report."""
+    if os.name == "nt":
+        return False
     return bool(re.search(r"(?<![\w./-])sudo(?![\w.-])", str(command or "")))
 
 

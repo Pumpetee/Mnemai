@@ -64,6 +64,7 @@ class SudoOwner:
             time.sleep(0.05)
 
 
+@unittest.skipIf(os.name == "nt", "the administrator password card is POSIX-only; the fake sudo is a shell script")
 class Sudo(unittest.TestCase):
     def setUp(self):
         self.old_stream, self.old_terminal = PR.stream, TL._run_in_terminal

@@ -154,7 +154,8 @@ def _split_tags(name: str) -> tuple[str, list[str]]:
 def _append_section(body: str, heading: str, line: str) -> str:
     """Append a line under '## heading', creating the section at the end if needed."""
     lines = body.rstrip("\n").splitlines()
-    idx = next((i for i, l in enumerate(lines) if l.strip() == f"## {heading}"), None)
+    plain = lambda t: re.sub(r"\s*#[\w-]+\s*$", "", t).strip().lower()  # noqa: E731
+    idx = next((i for i, l in enumerate(lines) if plain(l) == plain(f"## {heading}")), None)
     if idx is None:
         return "\n".join(lines) + f"\n\n## {heading}\n\n{line}\n"
     end = next((j for j in range(idx + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
@@ -182,11 +183,14 @@ def _same_status(old: str, new: str) -> bool:
     if not status_dates(old):
         return False
     ko, kn = fact_key(old), fact_key(new)
-    if ko and kn and len(kn) >= 3 and ko == kn:
-        return True
+    if ko and kn:
+        if ko == kn:
+            return True
+        if not (set(ko.split()) & set(kn.split())):  # different subjects of the same shape are different facts
+            return False
     from .learn.ledger import similar
 
-    return similar(old, new) >= 0.6
+    return similar(old, new) >= 0.9
 
 
 @locked
@@ -211,6 +215,8 @@ def _put_fact(body: str, line: str, heading: str | None = None) -> tuple[str, li
     if status_dates(line):
         for i, old in enumerate(lines):
             if old.lstrip().startswith(("-", "*")) and _same_status(old, line):
+                if old.strip() == line.strip():  # the identical status again: nothing to change or archive
+                    return body, []
                 lines[i] = line
                 return "\n".join(lines) + "\n", [old]
     if heading:
@@ -226,8 +232,23 @@ def _event_text(vault: Vault, text: str, d: dt.date, label: str = "") -> tuple[s
     raw = vault.read_raw(rel) or f"# События — {d:%m.%Y}\n\nРешения, смены статусов и заметные события, новые сверху.\n"
     meta, body = parse_frontmatter(raw)
     lines = body.splitlines()
-    first = next((i for i, l in enumerate(lines) if l.startswith("- ")), len(lines))
-    lines.insert(first, f"- {ru_date(d)} · {label + ' — ' if label else ''}{text}")
+    new_line = f"- {ru_date(d)} · {label + ' — ' if label else ''}{text}"
+    pos = len(lines)
+    for i, l in enumerate(lines):
+        if not l.startswith("- "):
+            continue
+        m = re.match(r"-\s*(\d{1,2})\.(\d{1,2})\.(\d{4})", l)
+        if not m:
+            pos = i  # an undated bullet: dated events stay above it
+            break
+        try:
+            dd = dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            dd = None
+        if dd is not None and dd <= d:  # same day: the one written later stays above; older facts go below
+            pos = i
+            break
+    lines.insert(pos, new_line)
     return rel, dump_frontmatter(meta, "\n".join(lines) + "\n")
 
 
@@ -333,6 +354,19 @@ PLACES = {
 }
 
 
+def _same_fact_line(text: str, fact: str) -> bool:
+    """An identical fact already sits in Inbox/Thoughts: writing it again only piles up noise."""
+    needle = " ".join(fact.lower().split())
+    for l in (text or "").splitlines():
+        if not l.lstrip().startswith("- "):
+            continue
+        body = re.sub(r"^\s*[-*]\s+\d{1,2}\.\d{1,2}\.\d{4}\s*·\s*", "", l.strip(), count=1)
+        body = re.sub(r"\s*·\s*(выучено|[^·]*)$", "", body).strip().lower()
+        if " ".join(body.split()) == needle:
+            return True
+    return False
+
+
 @locked
 def remember(
     vault: Vault,
@@ -342,7 +376,7 @@ def remember(
     today: dt.date | None = None,
     said: dt.date | None = None,
 ) -> dict:
-    """Save a fact. where: inbox | decisions | rules | thought | world | card:<topic> | project:<name> | person:<name> |
+    """Save a fact. where: inbox | decisions | rules | thought | card:<topic> | project:<name> | person:<name> |
     profile:<heading>.
 
     said — the day the owner actually said it (learning from old chats): the line and its event carry that date,
@@ -364,7 +398,9 @@ def remember(
         raise PermissionDenied(f"{client.name} не может писать в {scope}")
     date = ru_date(said or today)
     src = {"owner": "", "learner": " · выучено"}.get(client_id, f" · {client.name if client else client_id}")
-    dated = fact if status_dates(fact) else f"{fact} ({date})"
+    dated = fact
+    if not re.search(r"\((?:статус|status)\s+[\d.-]+\s*\)\s*$", fact, re.I):
+        dated = f"{fact} ({date})"
     line = f"- {dated}{src}"
     replaced: list[str] = []
     event = ""
@@ -374,23 +410,27 @@ def remember(
             raise ValueError("нужен раздел: profile:<заголовок>")
         rel = PROFILE
         meta, body = parse_frontmatter(vault.read_raw(rel) or TEMPLATES[PROFILE].format(today=today_str(today)))
-        meta["updated"] = today_str(today)
+        meta["updated"] = today_str(said or today)
         body, replaced = _put_fact(body, line, name.strip())
         new = dump_frontmatter(meta, body)
     elif kind == "inbox":
         rel = INBOX
         text = vault.read_raw(rel) or TEMPLATES[INBOX]
+        if _same_fact_line(text, fact):
+            raise ValueError("этот факт уже есть во входящих")
         new = text.rstrip("\n") + f"\n- {date} · {fact}{src}\n"
     elif kind == "thought":
         rel = THOUGHTS
         text = vault.read_raw(rel) or TEMPLATES[THOUGHTS]
+        if _same_fact_line(text, fact):
+            raise ValueError("эта мысль уже записана")
         new = text.rstrip("\n") + f"\n- {date} · {fact}{src}\n"
     elif kind == "decisions":
         rel, new = _event_text(vault, fact + src, said or today or dt.date.today(), "решение")
     elif kind == "rules":
         rel = RULES
         meta, body = parse_frontmatter(vault.read_raw(rel) or TEMPLATES[RULES].format(today=today_str(today)))
-        meta["updated"] = today_str(today)
+        meta["updated"] = today_str(said or today)
         body, replaced = _put_fact(body, line)
         new = dump_frontmatter(meta, body)
     elif kind == "card":
@@ -398,20 +438,23 @@ def remember(
         if not topic:
             raise ValueError("нужна тема: card:<тема>")
         note = vault.find_note("cards", topic)
+        rel = f"{CARDS}/{_slug(topic)}.md"
         if note:
             rel, meta, body = note.rel, dict(note.meta), note.body
+        elif vault.read_raw(rel) is not None:  # the file exists under a slightly different title: never overwrite it
+            note = vault.read(rel)
+            rel, meta, body = note.rel, dict(note.meta), note.body
         else:
-            rel = f"{CARDS}/{_slug(topic)}.md"
             meta = {
                 "type": "card",
                 "title": topic,
                 "keywords": [w for w in re.findall(r"\w{3,}", topic.lower())][:6],
-                "updated": today_str(today),
+                "updated": today_str(said or today),
             }
             body = f"# {topic}\n"
         if tags:
             meta["tags"] = sorted(set(note.tags if note else []) | set(tags))
-        meta["updated"] = today_str(today)
+        meta["updated"] = today_str(said or today)
         body, replaced = _put_fact(body, line)
         new = dump_frontmatter(meta, body)
         if replaced:  # a status changed: worth a line in the event feed
@@ -420,21 +463,31 @@ def remember(
         if not name.strip():
             raise ValueError("нужно имя: project:<имя>")
         note = vault.find_note("projects", name)
+        rel = project_rel(name)
         if note:
             rel, meta, body = note.rel, dict(note.meta), note.body
+        elif vault.read_raw(rel) is not None:  # the hub exists under a slightly different name: keep its data
+            note = vault.read(rel)
+            rel, meta, body = note.rel, dict(note.meta), note.body
         else:
-            rel = project_rel(name)
-            meta, body = _new_project(name, today)
+            meta, body = _new_project(name, said or today)
             event = f"новый проект «{name.strip()}»"
-        meta["updated"] = today_str(today)
+        meta["updated"] = today_str(said or today)
         m = re.match(r"^(?:статус|status)\s*[:—-](.*)$", fact, re.I)
         word = m.group(1).strip().lower() if m else ""
-        if word and STATUS_WORDS.get(word):
-            st = STATUS_WORDS[word]
-            if st != meta.get("status"):
-                event = f"проект «{name.strip()}»: {meta.get('status', 'active')} → {st}"
-            meta.update(status=st, status_updated=today_str(today))
-        m = re.match(r"^(?:цель|goal)\b[^:—\n]*[:—]\s*(.+)$", fact, re.I)
+        st = None
+        if word:
+            st = STATUS_WORDS.get(word)
+            if st is None:
+                first2 = " ".join(word.split()[:2])  # «на паузе из-за отпуска» → paused, остальное не важно
+                st = STATUS_WORDS.get(first2)
+            if st is None and re.fullmatch(r"[\w-]{1,16}", word):
+                st = word  # «приостановлено», «on_hold» — незнакомое слово, но это статус: он живёт в frontmatter
+            if st is not None:
+                if st != meta.get("status"):
+                    event = f"проект «{name.strip()}»: {meta.get('status', 'active')} → {st}"
+                meta.update(status=st, status_updated=today_str(said or today))
+        m = re.match(r"^(?:(?:главная|основная)\s+)?(?:цель|goal)\b[^:—\n]*[:—]\s*(.+)$", fact, re.I)
         if m and m.group(1).strip():
             goal = m.group(1).strip()
             # the first goal stays until the owner says it changed: a goal guessed from the audience must not
@@ -445,7 +498,7 @@ def remember(
         dl = re.match(r"^(?:дедлайн|deadline|срок)\b[^:—\n]*[:—]\s*(.+)$", fact, re.I)
         if dl and dl.group(1).strip():
             meta["deadline"] = dl.group(1).strip()
-        if word and STATUS_WORDS.get(word):
+        if st is not None:
             # the status lives in the frontmatter; a "learned fact" line «Статус: active» in the journal is noise
             replaced = []
         else:
@@ -461,8 +514,8 @@ def remember(
             rel, meta, body = note.rel, dict(note.meta), note.body
         else:
             rel = f"{PEOPLE}/{_slug(name)}.md"
-            meta, body = {"type": "person", "updated": today_str(today)}, f"# {name.strip()}\n"
-        meta["updated"] = today_str(today)
+            meta, body = {"type": "person", "updated": today_str(said or today)}, f"# {name.strip()}\n"
+        meta["updated"] = today_str(said or today)
         body, replaced = _put_fact(body, line, "Заметки")
         new = dump_frontmatter(meta, body)
 
@@ -553,7 +606,13 @@ def resolve_stale(vault: Vault, item_id: str, action: str, text: str = "", today
         new = " ".join(text.split())
         if not new:
             raise ValueError("пустой факт")
-        lines[idx] = f"- {re.sub(r'[(]статус[^()]*[)]', '', new, flags=re.I).strip()} {stamp}"
+        stripped = re.sub(r"\((?:статус|status)[^()]*\)", "", new, flags=re.I).strip()
+        new_line = f"- {stripped} {stamp}"
+        m = re.match(r"^\s*[-*]\s+(.*)$", old)
+        head, sep, tail = (m.group(1) if m else old).partition(":")
+        if sep and tail.strip() and tail.strip().lower() not in stripped.lower():
+            new_line += f": {tail.strip()}"  # «бюджет 2 млн» остаётся при обновлении статуса
+        lines[idx] = new_line
         summary = f"обновлено: {new[:100]}"
     elif action == "gone":
         lines.pop(idx)
@@ -561,6 +620,15 @@ def resolve_stale(vault: Vault, item_id: str, action: str, text: str = "", today
     else:
         raise ValueError("неизвестное действие")
     ev = write_with_journal(vault, "owner", rel, "\n".join(lines) + "\n", summary)
+    if action == "still" and rel.endswith("/" + PROJECT_HUB):
+        try:
+            hub = vault.read(rel)
+            hub.meta["updated"] = today_str(today)
+            write_with_journal(
+                vault, "owner", rel, dump_frontmatter(hub.meta, hub.body), f"проект {hub.title}: всё ещё в силе"
+            )
+        except (OSError, ValueError):
+            pass
     if action != "still":
         _archive_lines(vault, rel, [old], "заменено" if action == "changed" else "неактуально", today)
         add_event(vault, f"{it['title']}: {summary}", today)
@@ -579,13 +647,19 @@ DATE_RE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
 
 
 def _line_date(line: str) -> dt.date | None:
-    m = DATE_RE.search(line)
-    if not m:
-        return None
+    """The date the fact itself is dated: the last one in the line (a deadline first, a status stamp last)."""
+    ddm = DATE_RE.findall(line)
+    iso = re.findall(r"(\d{4})-(\d{2})-(\d{2})", line)
     try:
-        return dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        if ddm:
+            d, m, y = ddm[-1]
+            return dt.date(int(y), int(m), int(d))
+        if iso:
+            y, m, d = iso[-1]
+            return dt.date(int(y), int(m), int(d))
     except ValueError:
         return None
+    return None
 
 
 def generate_now(vault: Vault, today: dt.date | None = None, client: Client | None = None) -> str:
@@ -615,9 +689,10 @@ def generate_now(vault: Vault, today: dt.date | None = None, client: Client | No
     if active and ok("projects"):
         out += ["## Проекты в работе", "", "| Проект | Статус | С | Цель |", "|---|---|---|---|"]
         for n in sorted(active, key=lambda n: str(n.meta.get("updated", "")), reverse=True):
-            out.append(
-                f"| {n.title} | {n.meta.get('status', 'active')} | {n.meta.get('started', '')} | {n.meta.get('goal', '')} |"
-            )
+            goal = str(n.meta.get("goal", "") or "")
+            if n.meta.get("deadline"):
+                goal = f"{goal} (до {n.meta['deadline']})" if goal else f"до {n.meta['deadline']}"
+            out.append(f"| {n.title} | {n.meta.get('status', 'active')} | {n.meta.get('started', '')} | {goal} |")
         out.append("")
     if ok("decisions"):
         titles = hidden_titles(vault, deny)
@@ -657,7 +732,7 @@ def generate_now(vault: Vault, today: dt.date | None = None, client: Client | No
         if n:
             out += [f"Во входящих {n} неразобранных фактов.", ""]
     text = "\n".join(out)
-    if client is None:
+    if client is None and text != vault.read_raw(NOW):
         vault.write_raw(NOW, text)
         generate_index(vault)
     return text
@@ -703,7 +778,8 @@ def generate_index(vault: Vault) -> str:
         out += [f"| {n.title} | {cnt(n)} | `{n.rel}` |" for n in people]
         out.append("")
     text = "\n".join(out)
-    vault.write_raw(INDEX, text)
+    if text != vault.read_raw(INDEX):
+        vault.write_raw(INDEX, text)
     return text
 
 
@@ -755,8 +831,10 @@ def build_context(vault: Vault, client: Client, today: dt.date | None = None) ->
                 keys = f" (ключи: {', '.join(map(str, n.keywords))})" if n.keywords else ""
                 chunks.append(f"### {n.title}{keys}\n" + "\n".join(_fact_lines(text)))
             elif scope == "projects":
-                head = f"### Проект {n.title} · {n.meta.get('status', 'active')}" + (
-                    f" · цель: {n.meta['goal']}" if n.meta.get("goal") else ""
+                head = (
+                    f"### Проект {n.title} · {n.meta.get('status', 'active')}"
+                    + (f" · цель: {n.meta['goal']}" if n.meta.get("goal") else "")
+                    + (f" · до {n.meta['deadline']}" if n.meta.get("deadline") else "")
                 )
                 chunks.append(head + "\n" + "\n".join(_fact_lines(text)[-15:]))
             else:  # the profile; its empty template line is not a fact

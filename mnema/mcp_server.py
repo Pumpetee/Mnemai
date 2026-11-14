@@ -568,7 +568,7 @@ class Server:
         if name == "memory_forget":
             if not c.can_write:
                 raise PermissionDenied(f"{c.name} не может удалять записи")
-            return self._forget(args, c)
+            return self._forget(args, c)["text"]
         if name == "memory_update":
             if not c.can_write:
                 raise PermissionDenied(f"{c.name} не может менять записи")
@@ -611,7 +611,7 @@ class Server:
                 raise PermissionDenied(f"{c.name} не может менять файлы")
             return run_action(self.vault, {"tool": name, **args}, self.client_id)[0]
         if name == "memory_context":
-            part = int(args.get("part", 0) or 0)
+            part = max(0, int(args.get("part", 0) or 0))
             text, total = context_for(self.vault, self.client_id, part=part)
             if not text:
                 return f"Частей всего {total}, части {part} нет."
@@ -630,7 +630,7 @@ class Server:
             )
             return f"Сохранено (id {ev['id']}, {ev['paths'][0]}). Откатить: memory_undo id={ev['id']}."
         if name == "memory_stale":
-            days = int(args.get("days", 30) or 30)
+            days = max(1, min(3650, int(args.get("days", 30) or 30)))
             items = [
                 s
                 for s in self.vault.stale(max_age_days=days)
@@ -824,7 +824,7 @@ class Server:
             return f"Записано: {p} (откат — «Память» → «История»)"
         raise KeyError(name)
 
-    def _forget(self, args: dict, c) -> str:
+    def _forget(self, args: dict, c) -> dict:
         from . import memory as MEM
         from .journal import events as evs
 
@@ -836,46 +836,72 @@ class Server:
             if ev.get("client") != self.client_id:
                 raise PermissionDenied(f"{c.name} может забывать только свои записи")
             done = undo(self.vault, eid, self.client_id)
-            return f"Забыто: {done['summary']}"
+            return {"text": f"Забыто: {done['summary']}", "deleted": 1, "skipped": []}
         query = str(args.get("query") or "").strip()
         if not query:
             raise ValueError("нужен id или query")
+        qwords = [w for w in re.findall(r"\w+", query.lower()) if len(w) > 2]
         hits = self.vault.search(query, scopes=set(c.scopes), deny_tags=set(c.deny_tags))
         if not hits:
-            return "Ничего не нашлось."
-        gone: list[str] = []
-        forbidden = False
-        for rel, line in hits:
-            target = line.strip()
-            if not target.startswith(("-", "*")):  # never remove headings or system prose by a word match
-                continue
-            try:
-                note = self.vault.read(rel)
-            except (OSError, ValueError):
-                continue
-            if not c.may_write(note.scope):  # a client with inbox write access must not forget rules/cards
-                forbidden = True
-                continue
-            raw = self.vault.read_raw(rel)
-            if not raw:
-                continue
-            lines = raw.splitlines()
-            if target not in [ln.strip() for ln in lines]:
-                continue
-            MEM._archive_lines(self.vault, rel, [line], "забыто по просьбе владельца")
-            rest = [ln for ln in lines if ln.strip() != target]
-            self.vault.write_raw(rel, "\n".join(rest) + "\n")
-            log_event(self.vault, self.client_id, "forget", f"забыто: {query}", [rel])
-            gone.append(f"- {line.strip().lstrip('-* ').strip()} ({rel})")
+            return {"text": "Ничего не нашлось.", "deleted": 0, "skipped": []}
+        gone: list[tuple[str, str]] = []
+        skipped: list[str] = []
+        with self.vault.lock():  # read → edit → write is one operation; learning writes the same files
+            for rel, line in hits:
+                target = line.strip()
+                if not target.startswith(("-", "*")):  # never remove headings or system prose by a word match
+                    continue
+                line_words = set(re.findall(r"\w+", target.lower()))
+                matched = [w for w in qwords if w in line_words]
+                if not (len(matched) >= 2 or any(len(w) >= 5 for w in matched)):
+                    continue  # one short word («не», «на») is not a reason to forget a line
+                try:
+                    note = self.vault.read(rel)
+                except (OSError, ValueError):
+                    continue
+                if not c.may_write(note.scope):  # a client with inbox write access must not forget rules/cards
+                    skipped.append(f"{rel}: {target[:80]}")
+                    continue
+                raw = self.vault.read_raw(rel)
+                if not raw:
+                    continue
+                lines = raw.splitlines()
+                if target not in [ln.strip() for ln in lines]:
+                    continue
+                MEM._archive_lines(self.vault, rel, [line], "забыто по просьбе владельца")
+                rest = [ln for ln in lines if ln.strip() != target]
+                self.vault.write_raw(rel, "\n".join(rest) + "\n")
+                log_event(self.vault, self.client_id, "forget", f"забыто: {query}", [rel])
+                gone.append((rel, target))
         if gone:
             try:
                 MEM.generate_now(self.vault)
                 MEM.generate_index(self.vault)
             except Exception:  # noqa: BLE001 — the files are already changed; the summary is best effort
                 pass
-        if not gone and forbidden:
-            raise PermissionDenied(f"{c.name} не может забывать записи вне своих разрешённых сфер")
-        return "Забыто:\n" + "\n".join(gone[:20]) if gone else "Ничего не нашлось."
+            from .learn import ledger as LD
+
+            try:  # the learner must not keep claiming a forgotten fact is still in memory
+                led = LD.Ledger(self.vault)
+                changed = False
+                for rel, line in gone:
+                    for it in led.items:
+                        if it.get("state") in LD.IN_MEMORY and LD.similar(it.get("text", ""), line) >= 0.85:
+                            it["state"] = "forgotten"
+                            it["decided_by"] = "owner"
+                            changed = True
+                if changed:
+                    led.save()
+            except Exception:  # noqa: BLE001 — a broken ledger must not break forgetting
+                pass
+        if not gone and skipped:
+            raise PermissionDenied(f"{c.name} не может забывать: {len(skipped)} строк вне разрешённых сфер")
+        text = "Забыто:\n" + "\n".join(f"- {line.lstrip('-* ').strip()} ({rel})" for rel, line in gone[:20])
+        if skipped:
+            text += "\n\nПропущено (нет прав): " + ", ".join(skipped[:10])
+        if not gone:
+            text = "Ничего не нашлось."
+        return {"text": text, "deleted": len(gone), "skipped": skipped}
 
     def _update_memory(self, args: dict, c) -> str:
         query = str(args.get("query") or "").strip()
@@ -889,10 +915,10 @@ class Server:
         if not scope or not c.may_write(scope):
             raise PermissionDenied(f"{c.name} не может писать в {where}")
         gone = self._forget({"query": query}, c)
-        if "Ничего" in gone:
-            return gone
+        if gone["deleted"] == 0:
+            return gone["text"]
         remember(self.vault, text, where, self.client_id)
-        return f"Заменено. {gone}\n\nЗаписано: {text[:200]} ({where})"
+        return f"Заменено. {gone['text']}\n\nЗаписано: {text[:200]} ({where})"
 
     def _web(self, name: str, args: dict) -> str:
         from . import outgoing as OG, web

@@ -1664,22 +1664,23 @@ def _learn_useful(vault: Vault, question: str, answer: str) -> None:
         return
     if not (6 <= len(rule) <= 200):
         return
-    led = Ledger(vault)
-    c = {
-        "text": rule,
-        "kind": "rule",
-        "where": "rules",
-        "key": "форма ответа",
-        "tags": [],
-        "confidence": 0.55,
-        "evidence": "отметка «Полезно»",
-        "ref": "useful",
-        "source": "mnema_chat",
-        "contradicts": "",
-        "correction": False,
-    }
-    learn.consider(vault, led, c, s, learn.new_report(), learn.memory_lines(vault))
-    led.save()
+    with learn._lock:  # the same race as review(): a learning pass must not overwrite this decision
+        led = Ledger(vault)
+        c = {
+            "text": rule,
+            "kind": "rule",
+            "where": "rules",
+            "key": "форма ответа",
+            "tags": [],
+            "confidence": 0.55,
+            "evidence": "отметка «Полезно»",
+            "ref": "useful",
+            "source": "mnema_chat",
+            "contradicts": "",
+            "correction": False,
+        }
+        learn.consider(vault, led, c, s, learn.new_report(), learn.memory_lines(vault))
+        led.save()
 
 
 TITLE = """Придумай название этого разговора: от одного до трёх слов, на языке: {lang}, по сути, без кавычек, точки и слова «разговор».

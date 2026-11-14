@@ -165,8 +165,17 @@ META_LINE = re.compile(r"^(updated|status_updated):")
 def _undo_lines(before: str | None, after: str | None, current: str | None) -> str | None:
     """What this write changed (lines added or replaced) put back in the current file, other later changes kept.
     None if it cannot be done safely: no record of the write, a line it added is gone, or it deleted lines."""
-    if before is None or after is None or current is None:
+    if after is None or current is None:
         return None
+    if before is None:
+        # the very first write into a new file: take back only the lines it added, later lines stay
+        added = [l for l in after.split("\n") if l.strip()]
+        cur = current.split("\n")
+        pos = next((k for k in range(len(cur) - len(added) + 1) if cur[k : k + len(added)] == added), -1)
+        if pos < 0:
+            return None
+        cur[pos : pos + len(added)] = []
+        return "\n".join(cur)
     b, a, cur = before.split("\n"), after.split("\n"), current.split("\n")
     for tag, i1, i2, j1, j2 in reversed(difflib.SequenceMatcher(None, b, a, autojunk=False).get_opcodes()):
         if tag == "equal":

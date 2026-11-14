@@ -187,11 +187,12 @@ def post(vault: Vault, path: str, b: dict):
 
 def on_undo(vault: Vault, event_id: str) -> None:
     """Undoing a learned write in the journal = "no" for that fact: it won't come back."""
-    led = Ledger(vault)
-    hit = False
-    for i in led.items:
-        if i.get("event_id") == event_id:
-            i.update(state="rejected", decided_by="owner")
-            hit = True
-    if hit:
-        led.save()
+    with engine._lock:  # owner decisions must never be lost to a learning pass writing the ledger in parallel
+        led = Ledger(vault)
+        hit = False
+        for i in led.items:
+            if i.get("event_id") == event_id:
+                i.update(state="rejected", decided_by="owner")
+                hit = True
+        if hit:
+            led.save()

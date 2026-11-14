@@ -213,6 +213,18 @@ class TestRemember(Base):
         body = self.v.read_raw("60 Events/2026-10.md")
         self.assertLess(body.index("второе"), body.index("первое"))
 
+    def test_events_ordered_by_said_date(self):
+        remember(self.v, "первое", "decisions", today=TODAY)
+        remember(self.v, "второе", "decisions", today=TODAY - dt.timedelta(days=5))
+        body = self.v.read_raw("60 Events/2026-10.md")
+        self.assertLess(body.index("первое"), body.index("второе"))
+
+    def test_unknown_status_word_goes_to_frontmatter(self):
+        remember(self.v, "Статус: приостановлено", "project:Бот", today=TODAY)
+        n = self.v.read("20 Projects/Бот/_Project.md")
+        self.assertEqual(n.meta["status"], "приостановлено")
+        self.assertNotIn("Статус: приостановлено", n.body)
+
     def test_project_existing_and_new(self):
         remember(self.v, "показал заказчику", "project:Сайт", today=TODAY)
         n = self.v.read("20 Projects/Сайт/_Project.md")

@@ -396,11 +396,14 @@ class Vault:
         return [n for n in self.notes() if n.scope == scope]
 
     def find_note(self, scope: str, name: str) -> Note | None:
-        key = name.strip().lower()
+        def flat(s: str) -> str:
+            return re.sub(r"\s+", " ", s).strip().lower()
+
+        key = flat(name)
         for n in self.by_scope(scope):
             parts = n.rel.split("/")
             stem = parts[-2] if parts[-1] == PROJECT_HUB else parts[-1][:-3]
-            if n.title.lower() == key or stem.lower() == key:
+            if n.title.lower() == key or stem.lower() == key or flat(n.title) == key or flat(stem) == key:
                 return n
         return None
 

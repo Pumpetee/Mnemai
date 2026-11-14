@@ -36,12 +36,12 @@ class TestMcp(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def session(self, client, messages):
+    def session(self, client, messages, env=None):
         p = subprocess.run(
             [sys.executable, "-m", "mnema", "--vault", str(self.dir), "mcp", "--client", client],
             input="\n".join(json.dumps(m, ensure_ascii=False) for m in messages).encode("utf-8") + b"\n",
             capture_output=True,
-            env=ENV,
+            env=env or ENV,
             cwd=str(REPO),
             timeout=60,
         )
@@ -400,8 +400,8 @@ class TestMcp(unittest.TestCase):
         self.assertEqual(rules.read_text(encoding="utf-8"), before)  # the rule stayed
 
     def test_secret_store_is_not_readable_over_mcp(self):
-        secret = Path(os.environ["MNEMA_HOME"]) / "secrets.json"
-        secret.parent.mkdir(parents=True, exist_ok=True)
+        home = Path(tempfile.mkdtemp())  # its own home: never pollute the shared test secrets.json
+        secret = home / "secrets.json"
         secret.write_text('{"secret": 1}', encoding="utf-8")
         r = self.session(
             "claude",
@@ -413,6 +413,7 @@ class TestMcp(unittest.TestCase):
                     "params": {"name": "pc_read_file", "arguments": {"path": str(secret)}},
                 }
             ],
+            env={**ENV, "MNEMA_HOME": str(home)},
         )
         self.assertTrue(r[0]["result"].get("isError"))
         self.assertIn("служебные", r[0]["result"]["content"][0]["text"])

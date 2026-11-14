@@ -76,6 +76,9 @@ def brain_deny(vault: Vault, brain) -> set:
     elif name == "api":
         ep = (getattr(brain, "endpoint", "") or "").lower()
         client = "openrouter" if "openrouter" in ep else "gemini" if "generativelanguage" in ep else "chatgpt"
+    elif name == "model" and getattr(brain, "cloud", False):  # the built-in "model" brain may be a cloud API
+        ep = (getattr(brain, "endpoint", "") or "").lower()
+        client = "openrouter" if "openrouter" in ep else "gemini" if "generativelanguage" in ep else "chatgpt"
     else:  # on this computer: nothing leaves it
         return set()
     return set(get_client(vault, client).deny_tags) or (set() if client == "claude" else {"money", "health", "private"})
@@ -128,7 +131,11 @@ def mode_for(it: dict, settings: dict) -> str:
 
 def never_hit(it: dict, settings: dict) -> bool:
     hay = (it["text"] + " " + it.get("key", "")).lower()
-    return any(p.strip().lower() in hay for p in settings.get("never", []) if p.strip())
+    for p in settings.get("never", []):
+        p = p.strip().lower()
+        if p and re.search(r"(?<![\w])" + re.escape(p) + r"(?![\w])", hay):
+            return True
+    return False
 
 
 TAG_RU = {"money": "деньги", "health": "здоровье", "private": "личное"}
@@ -187,7 +194,7 @@ def decide_why(it: dict, settings: dict, can_ask: bool = False) -> tuple[str, st
         if can_ask:
             return "ask", "режим «всё спрашивает»: уточню в разговоре"
         return "observed", "режим «всё спрашивает»: из других мест сама не записываю"
-    if it.get("contradicts") and mode != "quiet":
+    if it.get("contradicts"):
         explicit = bool(CHANGE_MARK.search(it["text"] + " " + " ".join(it.get("evidence") or [])))
         if can_ask and not explicit:
             return "ask", f"противоречит памяти («{it['contradicts'][:80]}») — уточню в разговоре"
@@ -232,8 +239,9 @@ def emit(vault: Vault, stage: str, text: str, **extra) -> dict:
 
         append_text(f, json.dumps(ev, ensure_ascii=False) + "\n")
         if f.stat().st_size > 400_000:  # keep the file small
-            keep = f.read_text(encoding="utf-8").splitlines()[-500:]
-            f.write_text("\n".join(keep) + "\n", encoding="utf-8")
+            with vault.lock():  # two emitters must not trim at once and lose each other's lines
+                keep = f.read_text(encoding="utf-8").splitlines()[-500:]
+                f.write_text("\n".join(keep) + "\n", encoding="utf-8")
     except OSError:
         pass
     return ev
@@ -401,8 +409,7 @@ def consider(
     it["last_source"] = c.get("source", "")
     report["new" if is_new else "reinforced"] += 1
     if (
-        it["state"]
-        in ("rejected", "forgotten", "confirmed", "written", "observed", "known", "skipped", "forget_pending", "asking")
+        it["state"] in ("rejected", "forgotten", "confirmed", "written", "known", "forget_pending", "asking")
         and not is_new
     ):
         if (
@@ -412,7 +419,10 @@ def consider(
         ):  # the same rule in newer words: the line is rewritten, not doubled
             try:
                 ev = _replace_line(
-                    vault, it["text"], f"- {c['text']} ({ru_date()}) · выучено", f"правило уточнено: {c['text'][:100]}"
+                    vault,
+                    it["text"],
+                    f"- {c['text']} ({ru_date(said_date(c.get('said_at')))}) · выучено",
+                    f"правило уточнено: {c['text'][:100]}",
                 )
                 if ev:
                     it["text"] = c["text"]
@@ -428,7 +438,7 @@ def consider(
                 source=c.get("source", ""),
             )
         return it  # the owner already decided, or it's in memory
-    if is_new and _in_memory_already(it, lines):
+    if _in_memory_already(it, lines):
         it["state"] = "known"
         emit(vault, "уже знаю", it["text"], why="это уже есть в памяти", item=it["id"], source=c.get("source", ""))
         return it
@@ -449,10 +459,16 @@ def consider(
     elif st == "replace":
         try:
             ev = resolve_conflict(vault, it, settings)
+            if not ev:  # the old line moved or the brain hallucinated it: look it up again before giving up
+                fresh = _counterpart_in_memory(vault, it)
+                if fresh and fresh != it.get("contradicts"):
+                    it["contradicts"] = fresh
+                    ev = resolve_conflict(vault, it, settings)
             if ev:
                 it.update(state="written", event_id=ev.get("id", ""), decided_by="auto", written_at=now())
-            else:
+            else:  # honest feed: the old line was not found, the fact is added, nothing is claimed replaced
                 _write(vault, it, "auto")
+                stage, why = "записала", f"старая строка не нашлась — записала рядом: {it['text'][:80]}"
             report["written"] += 1
         except Exception as e:
             it["state"] = "weak"
@@ -691,7 +707,7 @@ def resolve_conflict(vault: Vault, it: dict, settings: dict) -> dict | None:
     if not hit:
         return None
     _, old = hit
-    new_line = f"- {_bare_fact(it['text'])} ({ru_date()}) · выучено"
+    new_line = f"- {_bare_fact(it['text'])} ({ru_date(said_date(it.get('said_at')))}) · выучено"
     if similar(old, it["text"]) >= 0.5:
         return _replace_line(vault, old, new_line, f"обновлено: {it['text'][:100]}")
     brain = None if settings.get("demo") else make_brain(settings)
@@ -720,7 +736,12 @@ def resolve_conflict(vault: Vault, it: dict, settings: dict) -> dict | None:
             if line and len(line) <= max(400, len(old) * 2) and not line.startswith("{"):
                 if old.lstrip().startswith("- ") and not line.lstrip().startswith("- "):
                     line = "- " + line
-                return _replace_line(vault, old, line + f" ({ru_date()}) · выучено", f"обновлено: {it['text'][:100]}")
+                return _replace_line(
+                    vault,
+                    old,
+                    line + f" ({ru_date(said_date(it.get('said_at')))}) · выучено",
+                    f"обновлено: {it['text'][:100]}",
+                )
         except Exception:
             pass
     return _replace_line(vault, old, new_line, f"дополнено: {it['text'][:100]}", insert_after=True)
@@ -728,55 +749,59 @@ def resolve_conflict(vault: Vault, it: dict, settings: dict) -> dict | None:
 
 def review(vault: Vault, item_id: str, action: str, text: str = "", where: str = "") -> dict:
     """keep | edit | reject | never | forget | keep_old | keep_both"""
-    settings = S.load(vault)
-    led = Ledger(vault)
-    it = led.get(item_id)
-    if not it:
-        raise KeyError("нет такого пункта")
-    st = it["state"]
-    if action == "keep" and st in IN_MEMORY:
-        return it  # the same question answered again from an old card: the fact is already in memory
-    if action in ("keep", "edit"):
-        if action == "edit":
-            it["prev_text"] = it["text"]
-            it["text"] = " ".join((text or it["text"]).split())
-            it["where"] = where or it["where"]
-        if st == "forget_pending":
-            it.update(state="confirmed", decided_by="owner")
-        elif st in IN_MEMORY and action == "edit":
-            _replace_line(
-                vault,
-                it.get("prev_text") or it["text"],
-                f"- {it['text']} ({ru_date()}) · выучено",
-                f"исправлено: {it['text'][:100]}",
-            )
-            it.update(state="confirmed", decided_by="owner")
-        elif st in ("conflict", "asking") and it.get("contradicts"):
-            ev = resolve_conflict(vault, it, settings)
-            if ev:
-                it.update(state="confirmed", event_id=ev["id"], decided_by="owner")
+    with _lock:  # owner decisions must never be lost to a learning pass writing the ledger in parallel
+        settings = S.load(vault)
+        led = Ledger(vault)
+        it = led.get(item_id)
+        if not it:
+            raise KeyError("нет такого пункта")
+        st = it["state"]
+        if action == "keep" and st in IN_MEMORY:
+            return it  # the same question answered again from an old card: the fact is already in memory
+        if action in ("keep", "edit"):
+            if action == "edit":
+                it["prev_text"] = it["text"]
+                it["text"] = " ".join((text or it["text"]).split())
+                it["where"] = where or it["where"]
+            if st == "forget_pending":
+                it.update(state="confirmed", decided_by="owner")
+            elif st in IN_MEMORY and action == "edit":
+                _replace_line(
+                    vault,
+                    it.get("prev_text") or it["text"],
+                    f"- {it['text']} ({ru_date()}) · выучено",
+                    f"исправлено: {it['text'][:100]}",
+                )
+                it.update(state="confirmed", decided_by="owner")
+            elif st in ("conflict", "asking") and it.get("contradicts"):
+                fresh = _counterpart_in_memory(vault, it)
+                if fresh:  # memory changed while the question was waiting: replace the current competitor, not a ghost
+                    it["contradicts"] = fresh
+                ev = resolve_conflict(vault, it, settings)
+                if ev:
+                    it.update(state="confirmed", event_id=ev["id"], decided_by="owner")
+                else:
+                    _write(vault, it, "owner")
             else:
                 _write(vault, it, "owner")
-        else:
+        elif action == "keep_both":
             _write(vault, it, "owner")
-    elif action == "keep_both":
-        _write(vault, it, "owner")
-    elif action in ("reject", "keep_old"):
-        it.update(state="rejected", decided_by="owner")
-    elif action == "never":
-        it.update(state="rejected", decided_by="owner")
-        phrase = it.get("key") or it["text"][:40]
-        if phrase not in settings["never"]:
-            settings["never"].append(phrase)
-            S.save(vault, settings)
-    elif action == "forget":
-        _replace_line(vault, it["text"], None, f"забыто: {it['text'][:100]}")
-        it.update(state="forgotten", decided_by="owner")
-    else:
-        raise ValueError("неизвестное действие")
-    led.save()
-    generate_now(vault)
-    return it
+        elif action in ("reject", "keep_old"):
+            it.update(state="rejected", decided_by="owner")
+        elif action == "never":
+            it.update(state="rejected", decided_by="owner")
+            phrase = it.get("key") or it["text"][:40]
+            if phrase not in settings["never"]:
+                settings["never"].append(phrase)
+                S.save(vault, settings)
+        elif action == "forget":
+            _replace_line(vault, it["text"], None, f"забыто: {it['text'][:100]}")
+            it.update(state="forgotten", decided_by="owner")
+        else:
+            raise ValueError("неизвестное действие")
+        led.save()
+        generate_now(vault)
+        return it
 
 
 def review_all(vault: Vault, action: str, state: str = "pending") -> int:

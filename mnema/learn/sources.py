@@ -281,11 +281,20 @@ def read_mail(vault: Vault, opts: dict, cursor: dict, days: int | None, limit: i
             msg = email.message_from_bytes(raw, policy=email.policy.default)
             body = _plain(msg)
             if len(body) >= 20:
+                sent = ""
+                try:  # «Thu, 21 Sep 2026 13:16:01 +0300» → local ISO; otherwise the fact is dated «today»
+                    sent = (
+                        email.utils.parsedate_to_datetime(str(msg.get("Date") or ""))
+                        .astimezone()
+                        .isoformat(timespec="seconds")
+                    )
+                except (TypeError, ValueError):
+                    sent = str(msg.get("Date", "") or "")
                 out.append(
                     Episode(
                         "mail",
                         f"uid{uid}",
-                        str(msg.get("Date", "")),
+                        sent,
                         _clip(body, 3000),
                         title=str(msg.get("Subject", "")),
                         meta={"to": str(msg.get("To", ""))[:200]},
@@ -306,7 +315,7 @@ def read_mail(vault: Vault, opts: dict, cursor: dict, days: int | None, limit: i
 def _tg_text(t) -> str:
     if isinstance(t, str):
         return t
-    return "".join(x if isinstance(x, str) else x.get("text", "") for x in t or [])
+    return " ".join(x if isinstance(x, str) else x.get("text", "") for x in t or [])
 
 
 def read_telegram(vault: Vault, opts: dict, cursor: dict, days: int | None, limit: int) -> list[Episode]:

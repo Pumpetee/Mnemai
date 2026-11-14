@@ -38,10 +38,15 @@ def _ics_unfold(text: str) -> list[str]:
 
 
 def _ics_date(v: str) -> dt.datetime | None:
-    v = v.strip().rstrip("Z")
+    v = v.strip()
+    utc = v.endswith("Z")
+    v = v.rstrip("Z")
     for fmt in ("%Y%m%dT%H%M%S", "%Y%m%d"):
         try:
-            return dt.datetime.strptime(v[:15] if "T" in v else v[:8], fmt)
+            d = dt.datetime.strptime(v[:15] if "T" in v else v[:8], fmt)
+            if utc:
+                d = d.replace(tzinfo=dt.timezone.utc).astimezone().replace(tzinfo=None)
+            return d
         except ValueError:
             continue
     return None
@@ -260,7 +265,11 @@ def read_browser_history(
             title = (title or "").strip()
             if not title or SKIP_TITLES.match(title):
                 continue
-            day = (dt.datetime(1601, 1, 1) + dt.timedelta(microseconds=t)).strftime("%Y-%m-%d")
+            day = (
+                (dt.datetime(1601, 1, 1, tzinfo=dt.timezone.utc) + dt.timedelta(microseconds=t))
+                .astimezone()
+                .strftime("%Y-%m-%d")
+            )  # local day: a 23:30 UTC visit must not land on the previous day
             lst = by_day.setdefault(day, [])
             if title not in lst:
                 lst.append(title)

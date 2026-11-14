@@ -12,6 +12,7 @@ Every brain returns candidates in one format:
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import re
@@ -102,6 +103,8 @@ PROMPT = """{mark}
 }}]}}
 Пустой результат — {{"facts": []}}.
 
+Сегодня: {today}
+
 ИЗВЕСТНО СЕЙЧАС:
 {known}
 
@@ -150,6 +153,18 @@ def clean(raw: list, episodes: list[Episode], source_by_ref: dict | None = None)
             # A one-off instruction for the current task ("сначала собери вопросы, потом план") is not a rule for
             # every future conversation. Keep it as a decision that waits for a repeat instead of a standing rule.
             kind, where, conf = "decision", "decisions", min(conf, 0.7)
+        if ep and ep.ts:
+            # the model must not invent a status date: «вчера» belongs to the day the episode was said
+            from .ledger import said_date
+
+            said = said_date(ep.ts)
+            if said is not None:
+                text = re.sub(
+                    r"\((?:статус|status)\s+\d{1,2}\.\d{1,2}\.\d{4}\)",
+                    lambda m: f"(статус {said.strftime('%d.%m.%Y')})",
+                    text,
+                    flags=re.I,
+                )
         out.append(
             {
                 "text": text,
@@ -321,7 +336,12 @@ class _LLMBrain:
     def extract(self, episodes: list[Episode], known: str) -> list[dict]:
         out = []
         for b in batches(episodes):
-            prompt = PROMPT.format(mark=BRAIN_MARK, known=known[:6000] or "(пусто)", episodes=payload(b))
+            prompt = PROMPT.format(
+                mark=BRAIN_MARK,
+                known=known[:6000] or "(пусто)",
+                episodes=payload(b),
+                today=dt.date.today().strftime("%d.%m.%Y"),
+            )
             out += clean(parse_json(self._ask_safe(prompt)), b)
         # explicit "запомни" must never be lost, even if the model skipped it
         explicit = [c for c in NoModelBrain().extract(episodes, known) if c["confidence"] >= 0.9]

@@ -36,6 +36,11 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(CH._queued[self.cid][0]["text"], "поправка: сначала сделай Y")
         self.assertTrue(CH.load_chat(self.v, self.cid)["messages"][-1].get("queue"))
 
+    def test_stop_with_a_instruction_is_queued(self):
+        r = CH.send(self.v, "Стоп. Ответь одним словом: ок", cid=self.cid, sync=False)
+        self.assertTrue(r.get("queued"))
+        self.assertEqual(CH._queued[self.cid][0]["text"], "Стоп. Ответь одним словом: ок")
+
     def test_stop_does_not_create_a_queued_task(self):
         r = CH.send(self.v, "стоп", cid=self.cid, sync=False)
         self.assertTrue(r.get("stopped"))

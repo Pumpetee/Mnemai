@@ -803,7 +803,9 @@ def send(
             # for the old plan: stop the current work, remember the message, and start a new turn with the
             # amendment as soon as the old one winds down.
             running["stop"] = True
-            if STOP_RE.match(text):
+            stop = STOP_RE.match(text)
+            rest = text[stop.end() :].strip(" .,!?—–-\n\t") if stop else ""
+            if stop and not rest:  # a pure «стоп» is not a new task
                 _add_msg(
                     vault,
                     chat["id"],

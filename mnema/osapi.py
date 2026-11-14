@@ -460,7 +460,18 @@ def clipboard_set(text: str) -> bool:
             return subprocess.run(["clip"], input=data, text=True, timeout=10).returncode == 0
         for argv in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]):
             if shutil.which(argv[0]):
-                return subprocess.run(argv, input=data, text=True, timeout=10).returncode == 0
+                # wl-copy keeps a child serving the selection; DEVNULL stops it holding our pipe open
+                return (
+                    subprocess.run(
+                        argv,
+                        input=data,
+                        text=True,
+                        timeout=10,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    ).returncode
+                    == 0
+                )
     except Exception:
         return False
     return False

@@ -16,7 +16,7 @@ from pathlib import Path
 from .journal import log_event
 from .vault import Vault
 
-WORKER_EVERY = 20.0
+WORKER_EVERY = 5.0
 MAX_ATTEMPTS = 3
 _started: set[str] = set()
 _lock = threading.Lock()
@@ -151,6 +151,7 @@ def start_worker(vault: Vault) -> None:
 
     def loop() -> None:
         while True:
+            did = False
             try:
                 items = load(vault)
                 # a worker killed mid-task leaves running; give it back to the queue
@@ -167,6 +168,7 @@ def start_worker(vault: Vault) -> None:
                 )
                 for task in ordered:
                     if ready(vault, task, load(vault)):
+                        did = True
                         try:
                             run(vault, str(task["id"]), client="worker")
                         except Exception:  # noqa: BLE001
@@ -174,6 +176,7 @@ def start_worker(vault: Vault) -> None:
                         break
             except Exception:  # noqa: BLE001 — the worker must never kill the app
                 pass
-            time.sleep(WORKER_EVERY)
+            if not did:  # ready tasks are drained back-to-back; only an idle queue sleeps
+                time.sleep(WORKER_EVERY)
 
     threading.Thread(target=loop, daemon=True, name="mnema-tasks").start()

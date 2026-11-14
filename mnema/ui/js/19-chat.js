@@ -70,6 +70,12 @@ async function pingNet() {
 }
 
 function startNet() {
+  if (NET.frozen) {
+    const bar = $("#netfreeze");
+    if (bar) bar.hidden = false;
+    const b = $("#send");
+    if (b) b.disabled = true;
+  }
   if (NET.timer) return;
   pingNet();
   NET.timer = setInterval(pingNet, 4000);

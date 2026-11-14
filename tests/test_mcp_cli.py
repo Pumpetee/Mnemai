@@ -302,20 +302,25 @@ class TestMcp(unittest.TestCase):
         )
         text = r[0]["result"]["content"][0]["text"]
         jid = text.split("id ")[1].split(" ")[0]
-        time.sleep(0.8)
-        out = self.session(
-            "claude",
-            [
-                {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "tools/call",
-                    "params": {"name": "pc_job_output", "arguments": {"id": jid}},
-                },
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "pc_job_list"}},
-            ],
-        )
-        self.assertIn("job-ok", out[0]["result"]["content"][0]["text"])
+        output = ""
+        for _ in range(50):
+            out = self.session(
+                "claude",
+                [
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": "pc_job_output", "arguments": {"id": jid}},
+                    },
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "pc_job_list"}},
+                ],
+            )
+            output = out[0]["result"]["content"][0]["text"]
+            if "job-ok" in output:
+                break
+            time.sleep(0.1)
+        self.assertIn("job-ok", output)
         self.assertIn(jid, out[1]["result"]["content"][0]["text"])
 
     def test_glob_grep_and_todo(self):

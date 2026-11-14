@@ -114,6 +114,10 @@ class Sudo(unittest.TestCase):
         self.owners.append(o)
         return o
 
+    def sudo_command(self, tail: str) -> str:
+        """The command with the fake `sudo` put back on PATH: a login shell on macOS rebuilds PATH (path_helper)."""
+        return f"PATH='{self.bindir}':$PATH sudo {tail}"
+
     def _send(self, v, text, script, owner):
         PR.stream = script
         r = CH.send(v, text, model="openai:m1", learn=False, sync=True)
@@ -121,10 +125,11 @@ class Sudo(unittest.TestCase):
 
     def test_password_is_asked_in_the_chat_and_the_command_runs_without_a_terminal(self):
         v = _vault()
-        script = Script('```mnema run_command command="sudo echo mnema-sudo-ok"\n```', "Готово, поставила.")
+        command = self.sudo_command("echo mnema-sudo-ok")
+        script = Script(f'```mnema run_command command="{command}"\n```', "Готово, поставила.")
         owner = self.owner(["secret-123"])
         r, _ = self._send(v, "Установи nmap", script, owner)
-        self.assertEqual([a for a, _ in owner.asked], ["sudo echo mnema-sudo-ok"])
+        self.assertIn("sudo echo mnema-sudo-ok", owner.asked[0][0])
         self.assertEqual(owner.asked[0][1], False)  # the first card is not the «wrong password» one
         self.assertTrue(self.marker.exists(), "the command must run with the password, not wait for a prompt")
         self.assertIn("force", self.marker.read_text(encoding="utf-8"))
@@ -140,7 +145,8 @@ class Sudo(unittest.TestCase):
 
     def test_a_wrong_password_is_asked_again_and_nothing_runs_with_it(self):
         v = _vault()
-        script = Script('```mnema run_command command="sudo echo second-try"\n```', "Готово.")
+        command = self.sudo_command("echo second-try")
+        script = Script(f'```mnema run_command command="{command}"\n```', "Готово.")
         owner = self.owner(["not-it", "secret-123"])
         self._send(v, "Поставь пакет", script, owner)
         self.assertEqual([wrong for _, wrong in owner.asked], [False, True])
@@ -149,7 +155,8 @@ class Sudo(unittest.TestCase):
 
     def test_cancel_means_the_command_is_not_run_and_the_model_is_told(self):
         v = _vault()
-        script = Script('```mnema run_command command="sudo echo never"\n```', "Хорошо, не выполняю.")
+        command = self.sudo_command("echo never")
+        script = Script(f'```mnema run_command command="{command}"\n```', "Хорошо, не выполняю.")
         owner = self.owner([], choice="no")
         r, _ = self._send(v, "Поставь пакет", script, owner)
         self.assertEqual(len(owner.asked), 1)
@@ -161,8 +168,8 @@ class Sudo(unittest.TestCase):
     def test_the_password_is_typed_once_even_with_two_sudo_commands(self):
         v = _vault()
         script = Script(
-            '```mnema run_command command="sudo echo first"\n```',
-            '```mnema run_command command="sudo echo second"\n```',
+            f'```mnema run_command command="{self.sudo_command("echo first")}"\n```',
+            f'```mnema run_command command="{self.sudo_command("echo second")}"\n```',
             "Оба готовы.",
         )
         owner = self.owner(["secret-123"])

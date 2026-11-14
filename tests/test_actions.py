@@ -270,7 +270,9 @@ class ActionsTest(unittest.TestCase):
         os.environ["PATH"] = str(bindir) + os.pathsep + old_path
         os.environ["MNEMA_SUDO_MARK"] = str(marker)
         try:
-            text, _, _ = TL.run(v, {"tool": "run_command", "command": "sudo -n true"})
+            # a login shell on macOS rebuilds PATH (path_helper): the fake sudo goes back on PATH inside the command
+            command = f"PATH='{bindir}':$PATH sudo -n true"
+            text, _, _ = TL.run(v, {"tool": "run_command", "command": command})
         finally:
             os.environ["PATH"] = old_path
             if old_mark is None:

@@ -36,7 +36,7 @@ jobs:
       - name: Format
         run: ruff format --check mnema tests tools packaging
       - name: Unit tests
-        run: python -m unittest discover -s tests -v
+        run: python tools/qa/ci_tests.py
 
   interface:
     runs-on: ubuntu-latest

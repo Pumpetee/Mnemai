@@ -198,29 +198,74 @@ POSITIONAL = {
 }
 
 
+DSML_INVOKE = re.compile(r'invoke\s+name=["\'](?:exec_command|command|bash|shell|run)["\'][^>]*>(.*?)(?:</|$)', re.S)
+DSML_ARG = re.compile(r'parameter\s+name=["\'](?:cmd|command)["\'][^>]*>(.*?)(?:</|$)', re.S)
+COMMAND_LINE = re.compile(r"(?m)^\s*command:\s*(.+?)\s*$")
+
+
+def _foreign_action(text: str) -> dict | None:
+    """Some models still write their old tool syntaxes instead of ```mnema. Understand them as run_command."""
+    raw = text or ""
+    m = DSML_INVOKE.search(raw)
+    if m:
+        arg = DSML_ARG.search(m.group(1))
+        command = (arg.group(1) if arg else "").strip()
+        if command:
+            import html
+
+            return {
+                "tool": "run_command",
+                "command": html.unescape(command).strip(),
+                "body": "",
+                "start": m.start(),
+                "end": m.end(),
+            }
+    m = COMMAND_LINE.search(raw)
+    if m:
+        command = m.group(1).strip().strip("`").strip()
+        if command:
+            return {"tool": "run_command", "command": command, "body": "", "start": m.start(), "end": m.end()}
+    return None
+
+
 def parse(text: str) -> dict | None:
     """The first action block in a model's answer: {"tool", args…, "body", "start"} or None."""
     m = BLOCK_RE.search(text or "")
-    if not m:
-        return None
-    raw_tool = m.group(1)
-    tool = ALIASES.get(raw_tool, raw_tool)
-    if tool not in TOOLS:
-        return None
-    rest = m.group(2) or ""
-    call = {k: v for k, v in ARG_RE.findall(rest)}
-    if not call:  # «read "путь"» — the model may pass the only argument without key=value
-        value = rest.strip().strip().strip('"').strip("«»").strip()
-        key = POSITIONAL.get(tool)
-        if value and key:
-            call[key] = value
-    call.update(tool=tool, body=(m.group(3) or "").rstrip("\n"), start=m.start())
-    return call
+    if m:
+        raw_tool = m.group(1)
+        tool = ALIASES.get(raw_tool, raw_tool)
+        rest = m.group(2) or ""
+        if tool not in TOOLS:
+            # «```mnema cat /etc/os-release```» — a bare command after the marker
+            command = " ".join((raw_tool + rest).split())
+            body = (m.group(3) or "").strip()
+            if body:
+                command += "\n" + body
+            if command:
+                return {
+                    "tool": "run_command",
+                    "command": command,
+                    "body": "",
+                    "start": m.start(),
+                    "end": m.end(),
+                }
+            return None
+        call = {k: v for k, v in ARG_RE.findall(rest)}
+        if not call:  # «read "путь"» — the model may pass the only argument without key=value
+            value = rest.strip().strip().strip('"').strip("«»").strip()
+            key = POSITIONAL.get(tool)
+            if value and key:
+                call[key] = value
+        call.update(tool=tool, body=(m.group(3) or "").rstrip("\n"), start=m.start(), end=m.end())
+        return call
+    return _foreign_action(text)
 
 
 def before(text: str, call: dict) -> str:
-    """What the model said before its action block — shown to the owner, the block itself is not."""
-    return text[: call["start"]].rstrip()
+    """What the model said outside its action — shown to the owner, the action itself is not."""
+    end = call.get("end")
+    rest = text[end:] if isinstance(end, int) else ""
+    return (text[: call["start"]] + rest).strip()
 
 
 # ---------------------------------------------------------------- where it may act
@@ -417,6 +462,10 @@ def _command(call: dict) -> str:
     return " ".join(str(call.get("command") or call.get("body") or "").split())
 
 
+INSTALL_COMMAND = re.compile(
+    r"\b(?:apt(?:-get)?|dnf|yum|zypper|pacman|apk|snap|flatpak)\b[^\n]*\b(?:install|add|-S)\b", re.I
+)
+
 ASKPASS = """#!/bin/sh
 # sudo has no terminal here: ask for the administrator password in a small desktop window, never store it.
 if command -v kdialog >/dev/null 2>&1; then
@@ -448,6 +497,85 @@ def _sudo_askpass() -> Path | None:
     return p
 
 
+def _terminal_argv(script: Path) -> list[str] | None:
+    """A visible terminal that stays open after the command, so the owner sees the password prompt and the output."""
+    if shutil.which("konsole"):
+        return ["konsole", "--hold", "-e", "bash", str(script)]
+    if shutil.which("gnome-terminal"):
+        return ["gnome-terminal", "--", "bash", str(script)]
+    if shutil.which("xterm"):
+        return ["xterm", "-hold", "-e", "bash", str(script)]
+    if shutil.which("xfce4-terminal"):
+        return ["xfce4-terminal", "--hold", "-x", "bash", str(script)]
+    if shutil.which("kgx"):
+        return ["kgx", "--", "bash", str(script)]
+    if shutil.which("x-terminal-emulator"):
+        return ["x-terminal-emulator", "-e", "bash", str(script)]
+    return None
+
+
+def _run_in_terminal(vault: Vault, command: str, work: Path, timeout: int, client: str) -> tuple[str, str, str]:
+    """Run a command in a real terminal window, but still wait for its exit code and capture its output."""
+    import shlex
+
+    from ..journal import log_event
+
+    home = Path(os.environ.get("MNEMA_HOME") or (Path.home() / ".mnema"))
+    run_dir = home / "run"
+    try:
+        run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as e:
+        raise Refused(f"не смогла создать папку для терминала: {e}") from e
+    slot = Path(tempfile.mkdtemp(prefix="term-", dir=run_dir))
+    log, code_file, script = slot / "output.log", slot / "exit-code", slot / "run.sh"
+    script.write_text(
+        "#!/bin/bash\n"
+        f"exec > >(tee -a {shlex.quote(str(log))}) 2>&1\n"
+        "(\n" + command + "\n)\n"
+        "status=$?\n"
+        "printf '%s\\n' \"$status\" > " + shlex.quote(str(code_file)) + "\n"
+        "echo\n"
+        "echo \"[Mnemai] команда завершена, код $status\"\n"
+        "read -r -p \"Mnemai: нажми Enter, чтобы закрыть окно… \" _\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o700)
+    argv = _terminal_argv(script)
+    if not argv:
+        shutil.rmtree(slot, ignore_errors=True)
+        raise Refused("не нашла терминальное окно (konsole/gnome-terminal/xterm), запускаю без окна")
+    try:
+        subprocess.Popen(
+            argv, cwd=str(work), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
+    except OSError as e:
+        shutil.rmtree(slot, ignore_errors=True)
+        raise Refused(f"не получилось открыть терминал: {e}") from e
+    started = time.time()
+    code: int | None = None
+    while time.time() - started < timeout + 10:
+        try:
+            code = int(code_file.read_text(encoding="utf-8").strip())
+            break
+        except (OSError, ValueError):
+            time.sleep(0.2)
+    seconds = time.time() - started
+    try:
+        out = log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        out = ""
+    shutil.rmtree(slot, ignore_errors=True)  # the terminal keeps the text on screen; the temp log is not needed
+    log_event(vault, client, "exec", f"терминал с окном: {command[:160]}")
+    if code is None:
+        text = f"[терминал открыт · ждёт завершения · {work}]\n[вывод]\n{out.strip()[:MAX_OUTPUT]}"
+        return text, f"Открыла терминал: {command[:120]} (команда ещё выполняется)", str(work)
+    text = f"[код {code} · {seconds:.1f} с · {work}]\n[вывод]\n{out.strip() or '(пусто)'}"
+    if len(text) > MAX_OUTPUT:
+        text = text[: MAX_OUTPUT - 200].rstrip() + "\n…[вывод обрезан]"
+    snippet = (" · ".join(out.strip().splitlines()[:3]) or f"код {code}")[:300]
+    return text, f"Выполнила в терминале: {command[:120]} → {snippet}", str(work)
+
+
 def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
     """Run one command in the owner's shell and turn its stdout/stderr/exit code into a short answer for the model.
 
@@ -467,6 +595,11 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     except ValueError:
         timeout = DEFAULT_COMMAND_SECONDS
     timeout = max(1, min(MAX_COMMAND_SECONDS, timeout))
+    visible = bool(call.get("terminal") or call.get("visible"))
+    if "terminal" not in call and "visible" not in call and INSTALL_COMMAND.search(command):
+        visible = True  # installing is shown in a real terminal: the owner sees sudo and the progress
+    if os.name != "nt" and visible:
+        return _run_in_terminal(vault, command, work, timeout, client)
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1", "TERM": "dumb"}
     if re.search(r"(?<![\w./-])sudo(?![\w.-])", command):
         askpass = _sudo_askpass()

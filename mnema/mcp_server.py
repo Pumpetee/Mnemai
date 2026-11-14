@@ -76,6 +76,10 @@ TOOLS = [
                 "command": {"type": "string"},
                 "cwd": {"type": "string"},
                 "timeout": {"type": "integer", "minimum": 1, "maximum": 300, "default": 120},
+                "terminal": {
+                    "type": "boolean",
+                    "description": "Показать команду в видимом терминале (для установки и sudo).",
+                },
             },
             "required": ["command"],
         },

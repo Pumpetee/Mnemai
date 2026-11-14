@@ -1047,7 +1047,9 @@ def _remember_problem(vault: Vault, pid: str, e: BaseException) -> None:
 CLAUDE_MCP_NOTE = """=== MCP Mnemai ===
 К тебе подключён MCP-сервер Mnemai (56 инструментов: memory_*, pc_*, web_*, task_*, todo_*, subagent_run и файловые
 действия). Вызывай их штатным способом — не пиши блоки ```mnema и не говори, что инструментов нет. Память уже
-загружена в системный промпт; для свежих фактов используй memory_search/memory_context."""
+загружена в системный промпт; для свежих фактов используй memory_search/memory_context.
+ОТВЕТ ВЛАДЕЛЬЦУ: максимум две короткие фразы. Не пересказывай проверки, не составляй таблиц и списков
+инструментов, не пиши «проверил ещё…». Если проверил много — «Всё работает» и только найденные проблемы."""
 
 
 def _claude_mcp_config(vault: Vault) -> Path:
@@ -1141,6 +1143,8 @@ def _stream_raw(
             str(_claude_mcp_config(vault)),
             "--allowedTools",
             "mcp__mnemai__*",
+            "--disallowedTools",
+            "DeferredToolPlaceholder",  # never let the model call Claude Code's internal stub
             "--setting-sources",
             "",
             "--strict-mcp-config",
@@ -1206,6 +1210,13 @@ def _stream_raw(
                     )
                     res = str(d.get("result") or "")
                     if d.get("is_error"):
+                        try:
+                            logfile = Path.home() / ".mnema" / "claude-error.jsonl"
+                            logfile.parent.mkdir(parents=True, exist_ok=True)
+                            with logfile.open("a", encoding="utf-8") as fh:
+                                fh.write(json.dumps({"res": res, "event": d}, ensure_ascii=False) + "\n")
+                        except OSError:
+                            pass
                         raise claude_problem(res)
                     if not got and res:
                         e2 = claude_problem(res) if len(res) < 300 else None

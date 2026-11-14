@@ -17033,6 +17033,19 @@ body.wlc-on .tour {
 .actline.bad {
   color: var(--bad);
 }
+.actline.pending,
+.actline.progress {
+  opacity: 0.78;
+}
+.actline.pending .i,
+.actline.progress .i {
+  animation: act-spin 1.6s linear infinite;
+}
+@keyframes act-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .acttip {
   display: none;
   position: absolute;

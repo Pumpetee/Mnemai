@@ -331,6 +331,12 @@ LANG_NAMES = {
 }
 
 
+ACK_RULE = """=== Поручения ===
+Если владелец даёт задачу, начни одной короткой фразой: «Принял.» или «Принял, делаю.». Сразу реши, важно сделать это
+сейчас или можно отложить; если откладываешь — «Принял, отложил: …» одной фразой и не делай. Дальше — результат или
+вопрос, без пересказа плана и без списка шагов."""
+
+
 def system_prompt(
     vault: Vault, pid: str, log: bool = True, query: str = "", stats: dict | None = None, model: str = ""
 ) -> str:
@@ -368,6 +374,8 @@ def system_prompt(
         self_knowledge(vault, compact=pid == "local"),
         "=== Как работать со мной ===\n" + (P.rules_text(prof)[:900] if pid == "local" else P.rules_text(prof)),
     ]
+    if pid != "local":
+        parts.append(ACK_RULE)
     liked = "" if pid == "local" else liked_examples(vault)
     if liked:
         parts.append(liked)
@@ -538,6 +546,20 @@ def _add_msg(vault: Vault, cid: str, msg: dict) -> None:
         pass
 
 
+def _update_msg(vault: Vault, cid: str, mid: str, fields: dict) -> None:
+    def upd(c):
+        for m in c.get("messages", []):
+            if m.get("id") == mid:
+                m.update(fields)
+                break
+        c["updated"] = _now()
+
+    try:
+        modify_chat(vault, cid, upd)
+    except KeyError:
+        pass
+
+
 _answers: dict[str, dict] = {}
 
 
@@ -649,29 +671,45 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
             modify_chat(
                 vault, cid, lambda c: c.__setitem__("tools_ok", sorted(set(c.get("tools_ok") or []) | {call["tool"]}))
             )
+    mid = secrets.token_hex(4)
+    pending_text = (
+        ("Выполняю: " + str(call.get("command") or "")[:90]) if call.get("tool") == "run_command" else "Делаю: " + desc
+    )
+    _add_msg(
+        vault,
+        cid,
+        {
+            "role": "assistant",
+            "kind": "action",
+            "id": mid,
+            "ts": _now(),
+            "text": pending_text[:120],
+            "tool": call.get("tool", ""),
+            "command": str(call.get("command") or ""),
+            "pending": True,
+        },
+    )
     g["phase"] = "делаю: " + desc
     try:
         from .. import mcp_server as MC
 
         result, line, path = MC.run_action(vault, call, client)
     except Exception as e:
-        _add_msg(
+        _update_msg(
             vault,
             cid,
+            mid,
             {
-                "role": "assistant",
-                "kind": "action",
-                "ts": _now(),
                 "text": f"Не получилось: {str(e)[:120]}",
                 "detail": f"{desc}: {e}",
                 "command": str(call.get("command") or ""),
-                "tool": call.get("tool", ""),
                 "failed": True,
+                "pending": False,
             },
         )
         return f"Не получилось: {e}"
     view = _action_view(call, line, path, result)
-    _add_msg(vault, cid, {"role": "assistant", "kind": "action", "ts": _now(), **view})
+    _update_msg(vault, cid, mid, {**view, "pending": False})
     from .. import achievements as ACH
 
     ACH.event(vault, "action", tool=call["tool"])
@@ -834,6 +872,17 @@ def send(
             ACH.event(vault, "action", tool="open_app")
             _gen[chat["id"]] = {"text": say, "done": True, "error": "", "phase": "", "stop": False}
             return {"chat": chat["id"], "title": chat["title"], "model": model}
+    if not opener and not sync:
+        _add_msg(
+            vault,
+            chat["id"],
+            {
+                "role": "assistant",
+                "kind": "progress",
+                "ts": _now(),
+                "text": "Принял. Собираю совет…" if chat.get("consortium") else "Принял. Делаю…",
+            },
+        )
     if chat.get("consortium"):
         return CO.start(vault, chat, text, sync, web, terms)
     from . import prompts as PRM

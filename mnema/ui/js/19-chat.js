@@ -1316,9 +1316,14 @@ function quoteLine(s) {
 }
 function msgHtml(m, last, i, lastAi) {
   if (m.hidden) return "";
+  if (m.kind === "progress") {
+    if (!CHAT.polling) return "";
+    return `<div class="actline progress">${ic("clock")}<span class="actone"><span data-noi18n>${esc(m.text)}</span></span></div>`;
+  }
   if (m.kind === "action") {
     const showFolder = m.path && !m.failed && !["run_command", "open_app"].includes(m.tool);
-    return `<div class="actline ${m.refused || m.failed ? "bad" : ""}">${ic(m.refused || m.failed ? "x" : "check")}<span class="actone"><span data-noi18n>${actText(m)}</span>${showFolder ? `<a class="actlink" data-reveal="${esc(m.path)}">${tr("папка")}</a>` : ""}</span>${actTip(m)}</div>`;
+    const icon = m.pending ? "clock" : m.refused || m.failed ? "x" : "check";
+    return `<div class="actline ${m.refused || m.failed ? "bad" : ""} ${m.pending ? "pending" : ""}">${ic(icon)}<span class="actone"><span data-noi18n>${actText(m)}</span>${showFolder ? `<a class="actlink" data-reveal="${esc(m.path)}">${tr("папка")}</a>` : ""}</span>${actTip(m)}</div>`;
   }
   if (m.role === "user")
     return `<div class="msg user">${m.quote ? `<div class="uq">${ic("reply")}<span>${esc(quoteLine(m.quote))}</span></div>` : ""}${(m.files || []).length ? `<div class="fchips">${m.files.map((f) => `<span class="chipf" title="${f.kind === "text" ? "прочитан на этом компьютере" : ""}">${ic("file")}${esc(f.name)}${f.info && f.info.pages ? ` · ${f.info.pages} стр.` : f.info && f.info.sheets ? ` · листов ${f.info.sheets}` : f.info && f.info.slides ? ` · слайдов ${f.info.slides}` : ""}</span>`).join("")}</div>` : ""}<div class="b">${esc(m.text)}</div></div>`;

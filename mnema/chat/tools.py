@@ -201,6 +201,7 @@ POSITIONAL = {
 DSML_INVOKE = re.compile(r'invoke\s+name=["\'](?:exec_command|command|bash|shell|run)["\'][^>]*>(.*?)(?:</|$)', re.S)
 DSML_ARG = re.compile(r'parameter\s+name=["\'](?:cmd|command)["\'][^>]*>(.*?)(?:</|$)', re.S)
 COMMAND_LINE = re.compile(r"(?m)^\s*command:\s*(.+?)\s*$")
+BARE_RE = re.compile(r"```mnema\s+(.*?)(?:```|\Z)", re.S)
 
 
 def _foreign_action(text: str) -> dict | None:
@@ -238,6 +239,8 @@ def parse(text: str) -> dict | None:
         if tool not in TOOLS:
             # «```mnema cat /etc/os-release```» — a bare command after the marker
             command = " ".join((raw_tool + rest).split())
+            command = re.sub(r"^(?:command|cmd|shell|bash)\s*:\s*", "", command, flags=re.I)
+            command = re.sub(r"^:\s*", "", command)
             body = (m.group(3) or "").strip()
             if body:
                 command += "\n" + body
@@ -258,6 +261,13 @@ def parse(text: str) -> dict | None:
                 call[key] = value
         call.update(tool=tool, body=(m.group(3) or "").rstrip("\n"), start=m.start(), end=m.end())
         return call
+    m = BARE_RE.search(text or "")
+    if m:
+        command = m.group(1).strip()
+        command = re.sub(r"^(?:command|cmd|shell|bash)\s*:\s*", "", command, flags=re.I)
+        command = re.sub(r"^:\s*", "", command)
+        if command:
+            return {"tool": "run_command", "command": command, "body": "", "start": m.start(), "end": m.end()}
     return _foreign_action(text)
 
 

@@ -178,6 +178,114 @@ class TestMcp(unittest.TestCase):
         self.assertEqual(target.read_text(encoding="utf-8").strip(), "из MCP")
         self.assertIn("Profile.md", r[3]["result"]["content"][0]["text"])
 
+    def test_forget_and_update_memory(self):
+        r = self.session(
+            "claude",
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": "memory_remember", "arguments": {"fact": "Старый факт", "where": "decisions"}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_update",
+                        "arguments": {"query": "Старый факт", "text": "Новый факт", "where": "decisions"},
+                    },
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "memory_search", "arguments": {"query": "Новый факт"}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {"name": "memory_forget", "arguments": {"query": "Новый факт"}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {"name": "memory_search", "arguments": {"query": "Новый факт"}},
+                },
+            ],
+        )
+        self.assertIn("Заменено", r[1]["result"]["content"][0]["text"])
+        self.assertIn("Новый факт", r[2]["result"]["content"][0]["text"])
+        self.assertIn("Забыто", r[3]["result"]["content"][0]["text"])
+        self.assertEqual(r[4]["result"]["content"][0]["text"], "Ничего не нашлось.")
+
+    def test_file_lifecycle_tools(self):
+        root = Path(tempfile.mkdtemp())
+        src = root / "a.txt"
+        dst = root / "b.txt"
+        moved = root / "c.txt"
+        try:
+            r = self.session(
+                "claude",
+                [
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": "pc_make_dir", "arguments": {"path": str(root / "sub")}},
+                    },
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "tools/call",
+                        "params": {"name": "pc_write_file", "arguments": {"path": str(src), "text": "one"}},
+                    },
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "tools/call",
+                        "params": {"name": "pc_copy", "arguments": {"path": str(src), "destination": str(dst)}},
+                    },
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 4,
+                        "method": "tools/call",
+                        "params": {"name": "pc_move", "arguments": {"path": str(dst), "destination": str(moved)}},
+                    },
+                ],
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+        self.assertTrue(all(not x["result"]["isError"] for x in r))
+        self.assertTrue((root / "sub").is_dir() if root.exists() else True)
+        self.assertTrue(any("Скопировано" in x["result"]["content"][0]["text"] for x in r))
+        self.assertTrue(any("Перенесено" in x["result"]["content"][0]["text"] for x in r))
+
+    def test_resources_and_prompts(self):
+        r = self.session(
+            "claude",
+            [
+                {"jsonrpc": "2.0", "id": 1, "method": "resources/list"},
+                {"jsonrpc": "2.0", "id": 2, "method": "prompts/list"},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "prompts/get",
+                    "params": {"name": "memory_brief", "arguments": {}},
+                },
+            ],
+        )
+        resources = r[0]["result"]["resources"]
+        self.assertTrue(resources)
+        uri = resources[0]["uri"]
+        r2 = self.session("claude", [{"jsonrpc": "2.0", "id": 1, "method": "resources/read", "params": {"uri": uri}}])
+        self.assertTrue(r2[0]["result"]["contents"][0]["text"])
+        self.assertEqual({p["name"] for p in r[1]["result"]["prompts"]}, {"memory_brief", "remember_fact"})
+        self.assertIn("memory_context", r[2]["result"]["messages"][0]["content"]["text"])
+
     def test_pc_tools_respect_the_switch(self):
         P.save(Vault(self.dir), {"pc_access": False})
         r = self.session(

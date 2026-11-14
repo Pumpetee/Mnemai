@@ -7,7 +7,9 @@ Run: python -m mnema mcp --client claude [--vault PATH]
 from __future__ import annotations
 
 import json
+import shutil
 import sys
+import urllib.parse
 from pathlib import Path
 
 from . import __version__
@@ -24,7 +26,10 @@ INSTRUCTIONS = (
     "Когда в разговоре появилось что-то долговечное (решение, договорённость, новый факт о человеке или проекте), "
     "предложи сохранить и вызови memory_remember. Перед ответом на устаревший факт вызови memory_stale. "
     "У тебя также ЕСТЬ доступ к компьютеру владельца (если он не выключил его в настройках): терминал — pc_run, "
-    "файлы — pc_read_file и pc_write_file, папки — pc_list_dir. Это настоящий доступ, а не описание: когда просят "
+    "файлы — pc_read_file и pc_write_file, папки — pc_list_dir, перенос/копирование/удаление — pc_move/pc_copy/"
+    "pc_delete; поиск в интернете — web_search и web_fetch; уведомление — pc_notify, снимок экрана — pc_screenshot. "
+    "Это настоящий доступ, а не описание. Файлы памяти доступны и как ресурсы (mnema://memory/…), а промпты "
+    "memory_brief и remember_fact помогают начать. Когда просят "
     "что-то сделать на компьютере, выполни команду и покажи результат. Не выводи пароли и ключи."
 )
 
@@ -64,6 +69,96 @@ TOOLS = [
         "name": "memory_undo",
         "description": "Откатить запись по id из журнала. Только если владелец попросил.",
         "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "name": "memory_forget",
+        "description": "Забыть факт: по id записи журнала (id=…) или по словам (query=…). Факт уходит в архив, "
+        "ассистентам больше не показывается. Только если владелец попросил.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}, "query": {"type": "string"}},
+        },
+    },
+    {
+        "name": "memory_update",
+        "description": "Заменить факт: найти старое по словам (query=…) и записать новое (text=…). where — куда положить "
+        "новое: inbox (по умолчанию), decisions, rules, project:<имя>, person:<имя>, card:<тема>.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "text": {"type": "string"},
+                "where": {"type": "string", "default": "inbox"},
+            },
+            "required": ["query", "text"],
+        },
+    },
+    {
+        "name": "web_search",
+        "description": "Найти страницы в интернете без ключей: возвращает заголовки, ссылки и фрагменты. Поиск "
+        "записывается в «Что ушло наружу».",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 6},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "web_fetch",
+        "description": "Открыть страницу по ссылке и вернуть её текст (очищенный от разметки).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string"},
+                "max_chars": {"type": "integer", "minimum": 1000, "maximum": 120000},
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "pc_make_dir",
+        "description": "Создать папку на компьютере (вместе с родительскими).",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    },
+    {
+        "name": "pc_move",
+        "description": "Перенести/переименовать файл или папку на компьютере.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "destination": {"type": "string"}},
+            "required": ["path", "destination"],
+        },
+    },
+    {
+        "name": "pc_copy",
+        "description": "Скопировать файл или папку на компьютере.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "destination": {"type": "string"}},
+            "required": ["path", "destination"],
+        },
+    },
+    {
+        "name": "pc_delete",
+        "description": "Удалить файл или папку в корзину (обратимо). Только если владелец попросил.",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    },
+    {
+        "name": "pc_notify",
+        "description": "Показать системное уведомление на компьютере владельца (например, «задача готова»).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"title": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["title"],
+        },
+    },
+    {
+        "name": "pc_screenshot",
+        "description": "Сделать снимок экрана и вернуть путь к файлу (по умолчанию в Изображения/Mnemai).",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
     },
     {
         "name": "pc_run",
@@ -188,6 +283,7 @@ ACTION_TOOLS = [
         "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     },
 ]
+PC_WRITE = {"pc_run", "pc_write_file", "pc_open_app", "pc_make_dir", "pc_move", "pc_copy", "pc_delete", "pc_screenshot"}
 ACTION_NAMES = {t["name"] for t in ACTION_TOOLS}
 WRITE_ACTIONS = {"write_file", "edit_file", "make_document", "edit_pdf"}
 
@@ -199,6 +295,20 @@ def run_action(vault: Vault, call: dict, client: str = "owner") -> tuple[str, st
     from .chat import tools as TL
 
     return TL.run(vault, call, client)
+
+
+PROMPTS = [
+    {
+        "name": "memory_brief",
+        "description": "Кратко собрать контекст владельца из памяти.",
+        "arguments": [],
+    },
+    {
+        "name": "remember_fact",
+        "description": "Проверить и сохранить долговечный факт в память.",
+        "arguments": [{"name": "fact", "description": "Что запомнить", "required": True}],
+    },
+]
 
 
 class Server:
@@ -220,6 +330,16 @@ class Server:
 
         if name.startswith("memory_") and not P.memory_on(self.vault):
             return P.MEMORY_OFF
+        if name == "memory_forget":
+            if not c.can_write:
+                raise PermissionDenied(f"{c.name} не может удалять записи")
+            return self._forget(args, c)
+        if name == "memory_update":
+            if not c.can_write:
+                raise PermissionDenied(f"{c.name} не может менять записи")
+            return self._update_memory(args, c)
+        if name in ("web_search", "web_fetch"):
+            return self._web(name, args)
         if name in ACTION_NAMES:
             if not P.load(self.vault).get("tools", True):
                 return "Действия выключены владельцем: Настройки → Программа → «Действия на компьютере»."
@@ -283,7 +403,7 @@ class Server:
         from .chat import tools as TL
         from .journal import log_event
 
-        if name in ("pc_run", "pc_write_file", "pc_open_app") and not c.can_write:
+        if name in PC_WRITE and not c.can_write:
             raise PermissionDenied(f"{c.name} не может менять файлы, запускать команды и программы")
         if name == "pc_run":
             cmd = str(args.get("command") or "").strip()
@@ -316,6 +436,52 @@ class Server:
                 )
                 or "(пусто)"
             )
+        if name == "pc_make_dir":
+            p = Path(str(args.get("path") or "")).expanduser()
+            p.mkdir(parents=True, exist_ok=True)
+            log_event(self.vault, self.client_id, "exec", f"создана папка {p}")
+            return f"Папка создана: {p}"
+        if name in ("pc_move", "pc_copy"):
+            src = Path(str(args.get("path") or "")).expanduser()
+            dst = Path(str(args.get("destination") or "")).expanduser()
+            if not src.exists():
+                raise ValueError("такого файла или папки нет")
+            if dst.exists():
+                raise ValueError("место назначения уже существует")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if name == "pc_move":
+                shutil.move(str(src), str(dst))
+                log_event(self.vault, self.client_id, "exec", f"перенесено {src} → {dst}")
+                return f"Перенесено: {src} → {dst}"
+            if src.is_dir():
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+            log_event(self.vault, self.client_id, "exec", f"скопировано {src} → {dst}")
+            return f"Скопировано: {src} → {dst}"
+        if name == "pc_delete":
+            from . import osapi as OS
+
+            p = Path(str(args.get("path") or "")).expanduser()
+            if not p.exists():
+                raise ValueError("такого файла или папки нет")
+            if not OS.to_trash(p):
+                raise ValueError("не получилось отправить в корзину")
+            log_event(self.vault, self.client_id, "exec", f"в корзину: {p}")
+            return f"В корзине: {p}"
+        if name == "pc_notify":
+            from . import osapi as OS
+
+            ok = OS.notify(str(args.get("title") or "Mnemai"), str(args.get("text") or ""))
+            return "Уведомление показано." if ok else "На этом компьютере нет системных уведомлений."
+        if name == "pc_screenshot":
+            from . import osapi as OS
+
+            shot = OS.screenshot(args.get("path") or None)
+            if not shot:
+                raise ValueError("не получилось сделать снимок экрана")
+            log_event(self.vault, self.client_id, "read", f"снимок экрана {shot}")
+            return f"Снимок экрана: {shot}"
         if name == "pc_write_file":
             p = Path(str(args.get("path") or "")).expanduser()
             if not p.parent.is_dir():
@@ -325,6 +491,131 @@ class Server:
             TL._write_bytes(self.vault, self.client_id, p, text.encode("utf-8"), f"записан файл {p.name}")
             return f"Записано: {p} (откат — «Память» → «История»)"
         raise KeyError(name)
+
+    def _forget(self, args: dict, c) -> str:
+        from . import memory as MEM
+        from .journal import events as evs
+
+        eid = str(args.get("id") or "").strip()
+        if eid:
+            ev = next((e for e in evs(self.vault, 100000) if e["id"] == eid), None)
+            if not ev:
+                raise ValueError("такой записи нет")
+            if ev.get("client") != self.client_id:
+                raise PermissionDenied(f"{c.name} может забывать только свои записи")
+            done = undo(self.vault, eid, self.client_id)
+            return f"Забыто: {done['summary']}"
+        query = str(args.get("query") or "").strip()
+        if not query:
+            raise ValueError("нужен id или query")
+        hits = self.vault.search(query, scopes=set(c.scopes), deny_tags=set(c.deny_tags))
+        if not hits:
+            return "Ничего не нашлось."
+        gone: list[str] = []
+        for rel, line in hits:
+            raw = self.vault.read_raw(rel)
+            if not raw:
+                continue
+            target = line.strip()
+            lines = raw.splitlines()
+            if target not in [ln.strip() for ln in lines]:
+                continue
+            MEM._archive_lines(self.vault, rel, [line], "забыто по просьбе владельца")
+            rest = [ln for ln in lines if ln.strip() != target]
+            self.vault.write_raw(rel, "\n".join(rest) + "\n")
+            log_event(self.vault, self.client_id, "forget", f"забыто: {query}", [rel])
+            gone.append(f"- {line.strip()} ({rel})")
+        return "Забыто:\n" + "\n".join(gone[:20]) if gone else "Ничего не нашлось."
+
+    def _update_memory(self, args: dict, c) -> str:
+        query = str(args.get("query") or "").strip()
+        text = str(args.get("text") or "").strip()
+        where = str(args.get("where") or "inbox")
+        if not query or not text:
+            raise ValueError("нужны query и text")
+        gone = self._forget({"query": query}, c)
+        if "Ничего" in gone:
+            return gone
+        remember(self.vault, text, where, self.client_id)
+        return f"Заменено. {gone}\n\nЗаписано: {text[:200]} ({where})"
+
+    def _web(self, name: str, args: dict) -> str:
+        from . import outgoing as OG, web
+
+        if name == "web_search":
+            query = str(args.get("query") or "").strip()
+            if not query:
+                raise ValueError("нужен query")
+            limit = max(1, min(10, int(args.get("limit") or 6)))
+            hits = web.search(query, limit)
+            OG.log(self.vault, "web", "", len(query), {}, {"purpose": "MCP web_search", "client": self.client_id})
+            if not hits:
+                return "Ничего не нашлось."
+            return "\n".join(
+                f"{k + 1}. {h['title']}\n   {h['url']}\n   {h.get('snippet', '')[:300]}" for k, h in enumerate(hits)
+            )
+        url = str(args.get("url") or "").strip()
+        if not web.public_url(url):
+            raise ValueError("эта ссылка не годится")
+        doc = web.fetch(url)
+        OG.log(self.vault, "web", "", len(url), {}, {"purpose": "MCP web_fetch", "client": self.client_id})
+        cap = max(1000, min(120000, int(args.get("max_chars") or 60000)))
+        return f"{doc.get('title') or url}\n{doc.get('url') or url}\n\n{(doc.get('text') or '')[:cap]}"
+
+    def _resources(self) -> list[dict]:
+        c = get_client(self.vault, self.client_id)
+        out: list[dict] = []
+        try:
+            files = sorted(self.vault.root.rglob("*.md"))
+        except OSError:
+            return out
+        for p in files[:400]:
+            rel = p.relative_to(self.vault.root).as_posix()
+            if rel.startswith((".", "90 System/")) or "Fact archive" in rel:
+                continue
+            try:
+                note = self.vault.read(rel)
+            except (OSError, ValueError):
+                continue
+            if not c.allows(note.scope) or (note.tags & set(c.deny_tags)):
+                continue
+            out.append(
+                {
+                    "uri": "mnema://memory/" + urllib.parse.quote(rel),
+                    "name": rel,
+                    "title": rel,
+                    "mimeType": "text/markdown",
+                }
+            )
+        return out
+
+    def _resource_read(self, uri: str) -> dict:
+        if not uri.startswith("mnema://memory/"):
+            raise ValueError("неизвестный ресурс")
+        rel = urllib.parse.unquote(uri[len("mnema://memory/") :])
+        if not rel or ".." in rel:
+            raise ValueError("плохой путь")
+        c = get_client(self.vault, self.client_id)
+        note = self.vault.read(rel)
+        if not c.allows(note.scope) or (note.tags & set(c.deny_tags)):
+            raise PermissionDenied(f"{c.name} не может читать этот файл")
+        text = self.vault.read_raw(rel) or ""
+        log_event(self.vault, self.client_id, "read", f"ресурс {rel}", [rel])
+        return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": text}]}
+
+    def _prompt_get(self, p: dict) -> dict:
+        name = str(p.get("name") or "")
+        args = p.get("arguments") or {}
+        if name == "memory_brief":
+            text = "Вызови memory_context и кратко перескажи, что важно знать о владельце и его проектах."
+        elif name == "remember_fact":
+            fact = str(args.get("fact") or "").strip()
+            if not fact:
+                raise ValueError("нужен аргумент fact")
+            text = f"Сохрани в память этот факт, если он долговечен: {fact}"
+        else:
+            raise ValueError(f"неизвестный промпт: {name}")
+        return {"description": name, "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}
 
     def _may_see(self, ev: dict, c) -> bool:
         """A journal line only about what this assistant may read: no hidden tags, no hidden notes, allowed scopes."""
@@ -352,7 +643,11 @@ class Server:
                 asked = (msg.get("params") or {}).get("protocolVersion")
                 result = {
                     "protocolVersion": asked if asked in PROTOCOLS else PROTOCOLS[0],
-                    "capabilities": {"tools": {"listChanged": False}},
+                    "capabilities": {
+                        "tools": {"listChanged": False},
+                        "resources": {"subscribe": False, "listChanged": False},
+                        "prompts": {"listChanged": False},
+                    },
                     "serverInfo": {"name": "mnemai", "version": __version__},
                     "instructions": INSTRUCTIONS,
                 }
@@ -370,6 +665,14 @@ class Server:
                 except (PermissionDenied, UndoError, ValueError) as e:
                     text, is_error = f"Ошибка: {e}", True
                 result = {"content": [{"type": "text", "text": text}], "isError": is_error}
+            elif method == "resources/list":
+                result = {"resources": self._resources()}
+            elif method == "resources/read":
+                result = self._resource_read(str((msg.get("params") or {}).get("uri") or ""))
+            elif method == "prompts/list":
+                result = {"prompts": PROMPTS}
+            elif method == "prompts/get":
+                result = self._prompt_get(msg.get("params") or {})
             else:
                 return {
                     "jsonrpc": "2.0",

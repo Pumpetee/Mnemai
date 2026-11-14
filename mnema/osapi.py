@@ -346,3 +346,81 @@ def os_words(text: str) -> str:
     if IS_WIN:
         return text
     return _WORD.sub("macOS" if IS_MAC else "Linux", text)
+
+
+def notify(title: str, text: str = "") -> bool:
+    """A desktop notification; False when this system has no notifier (the model can still just answer)."""
+    title, text = str(title)[:120], str(text)[:500]
+    try:
+        if IS_MAC:
+            script = 'display notification ' + _applescript(text) + " with title " + _applescript(title)
+            return subprocess.run(["osascript", "-e", script], capture_output=True, timeout=15).returncode == 0
+        if IS_WIN:
+            # PowerShell toast; works on Windows 10/11 without extra modules
+            safe_t = title.replace("'", "''")
+            safe_m = text.replace("'", "''")
+            ps = (
+                "[reflection.assembly]::LoadWithPartialName('System.Windows.Forms')|Out-Null;"
+                "$n=New-Object System.Windows.Forms.NotifyIcon;"
+                "$n.Icon=[System.Drawing.SystemIcons]::Information;"
+                f"$n.Visible=$true;$n.ShowBalloonTip(5000,'{safe_t}','{safe_m}',"
+                "[System.Windows.Forms.ToolTipIcon]::Info)"
+            )
+            return (
+                subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=20).returncode
+                == 0
+            )
+        for argv in (["notify-send", title, text], ["kdialog", "--passivepopup", text or title, "8", "--title", title]):
+            if shutil.which(argv[0]):
+                return subprocess.run(argv, capture_output=True, timeout=15).returncode == 0
+    except Exception:
+        return False
+    return False
+
+
+def _applescript(s: str) -> str:
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def screenshot(dest: Path | str | None = None) -> Path | None:
+    """Take a screenshot of the whole screen, save it under Pictures/Mnemai unless asked otherwise."""
+    if dest is None:
+        pictures = Path.home() / ("Pictures" if IS_WIN or IS_MAC else "Изображения")
+        base = pictures if pictures.is_dir() else Path.home()
+        dest = base / "Mnemai" / f"screenshot-{__import__('datetime').datetime.now():%Y%m%d-%H%M%S}.png"
+    p = Path(dest).expanduser()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if IS_WIN:
+            ps = (
+                "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+                "$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;"
+                f"$i=New-Object System.Drawing.Bitmap $b.Width,$b.Height;"
+                "$g=[System.Drawing.Graphics]::FromImage($i);"
+                "$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size);"
+                f"$i.Save('{str(p).replace(chr(39), chr(39) * 2)}')"
+            )
+            if (
+                subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=30).returncode
+                == 0
+            ):
+                return p
+        elif IS_MAC:
+            if (
+                shutil.which("screencapture")
+                and subprocess.run(["screencapture", "-x", str(p)], capture_output=True, timeout=30).returncode == 0
+            ):
+                return p
+        else:
+            for argv in (
+                ["grim", str(p)],
+                ["spectacle", "-b", "-n", "-o", str(p)],
+                ["gnome-screenshot", "-f", str(p)],
+                ["scrot", "-o", str(p)],
+                ["import", "-window", "root", str(p)],
+            ):
+                if shutil.which(argv[0]) and subprocess.run(argv, capture_output=True, timeout=30).returncode == 0:
+                    return p
+    except Exception:
+        return None
+    return None

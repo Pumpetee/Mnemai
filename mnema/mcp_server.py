@@ -866,7 +866,7 @@ class Server:
             rest = [ln for ln in lines if ln.strip() != target]
             self.vault.write_raw(rel, "\n".join(rest) + "\n")
             log_event(self.vault, self.client_id, "forget", f"забыто: {query}", [rel])
-            gone.append(f"- {line.strip()} ({rel})")
+            gone.append(f"- {line.strip().lstrip('-* ').strip()} ({rel})")
         if gone:
             try:
                 MEM.generate_now(self.vault)

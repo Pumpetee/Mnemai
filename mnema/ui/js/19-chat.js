@@ -1318,8 +1318,14 @@ function msgHtml(m, last, i, lastAi) {
   if (m.hidden) return "";
   if (m.kind === "progress") {
     const all = (CHAT.chat && CHAT.chat.messages) || [];
-    // the model's own «Принял, делаю.» or any later step replaces the temporary acknowledgement
-    if (!CHAT.polling || all.slice(i + 1).some((x) => x.role === "assistant" && x.kind !== "progress")) return "";
+    if (!CHAT.polling) return "";
+    const after = all.slice(i + 1);
+    if (m.queue) {
+      // a message accepted during the turn stays visible until its own user message starts the next turn
+      if (after.some((x) => x.role === "user")) return "";
+    } else if (after.some((x) => x.role === "assistant" && x.kind !== "progress")) {
+      return ""; // the model's own «Принял, делаю.» or an action replaced the temporary line
+    }
     return `<div class="actline progress">${ic("clock")}<span class="actone"><span data-noi18n>${esc(m.text)}</span></span></div>`;
   }
   if (m.kind === "action") {
@@ -1870,15 +1876,25 @@ async function sendMsg() {
   if (!text && !files.length) return;
   if (CHAT.polling) {
     if (!CHAT.cons) {
-      // the answer is still being written: hold the message and send it when the answer is done, never swallow it
-      CHAT.queue = CHAT.queue || [];
-      CHAT.queue.push({ text, files, quote: CHAT.quote || "" });
+      // The answer is still being written: accept the message now, stop the old plan and let the new turn
+      // start with the correction instead of silently holding it until the answer is over.
+      const quote0 = CHAT.quote || "";
+      const files0 = files.map((f) => ({ name: f.name, data: f.data }));
       inp.value = "";
       inp.style.height = "auto";
       CHAT.files = [];
       drawFiles();
       setQuote("");
-      toast(tr("Ответ ещё пишется — это сообщение уйдёт сразу после него"), 4000);
+      post("/api/chat/send", {
+        chat: CHAT.id,
+        model: CHAT.model,
+        text: text || "Посмотри прикреплённое.",
+        quote: quote0,
+        web: !!LS.get("web", true),
+        terms: !!LS.get("terms", true),
+        files: files0,
+      }).catch((err) => toast(err.message));
+      toast(tr("Принял. Учту в текущей работе"), 4000);
       return;
     }
     clearInterval(CHAT.polling);

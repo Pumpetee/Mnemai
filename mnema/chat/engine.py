@@ -31,6 +31,8 @@ HOWTO_RE = re.compile(
     re.I,
 )
 _gen: dict[str, dict] = {}
+_queued: dict[str, list[dict]] = {}
+STOP_RE = re.compile(r"^\s*(?:стоп|останов(?:ись|и)?|хватит|отмена|прекрати|не\s+надо|stop|cancel)\b", re.I)
 
 ASK_RULE = """Вопросы владельцу:
 Встречный вопрос задавай только тогда, когда без ответа задачу нельзя выполнить или понять её можно по-разному так,
@@ -791,12 +793,40 @@ def send(
             chat["private"] = True
     running = _gen.get(chat["id"], {})
     if running.get("done") is False:
-        if not (chat.get("consortium") and running.get("consortium")):
-            raise ValueError("дождись ответа на прошлое сообщение")
-        CO.wait_stopped(running)  # the owner steps into the discussion
-        from .. import achievements as ACH
+        if chat.get("consortium") and running.get("consortium"):
+            CO.wait_stopped(running)  # the owner steps into the discussion
+            from .. import achievements as ACH
 
-        ACH.event(vault, "cons_interrupt")
+            ACH.event(vault, "cons_interrupt")
+        elif not sync:
+            # The owner writes while the answer is being written. Don't lose it and don't make him wait
+            # for the old plan: stop the current work, remember the message, and start a new turn with the
+            # amendment as soon as the old one winds down.
+            running["stop"] = True
+            if STOP_RE.match(text):
+                _add_msg(
+                    vault,
+                    chat["id"],
+                    {"role": "assistant", "kind": "progress", "queue": True, "ts": _now(), "text": "Останавливаю…"},
+                )
+                return {"chat": chat["id"], "title": chat["title"], "model": model, "stopped": True}
+            _queued.setdefault(chat["id"], []).append(
+                {"text": text, "files": files, "quote": quote, "web": web, "terms": terms}
+            )
+            _add_msg(
+                vault,
+                chat["id"],
+                {
+                    "role": "assistant",
+                    "kind": "progress",
+                    "queue": True,
+                    "ts": _now(),
+                    "text": f"Принял. Учту: {text[:80]}",
+                },
+            )
+            return {"chat": chat["id"], "title": chat["title"], "model": model, "queued": True}
+        else:
+            raise ValueError("дождись ответа на прошлое сообщение")
     model = "consortium" if chat.get("consortium") else (model or chat.get("model") or default_model(vault))
     from .. import tuning
 
@@ -1050,6 +1080,39 @@ WEB_NOTE = (
     "там, где берёшь из него факт. Не рассказывай, как и где искал, и не упоминай эти выдержки — просто ответь. "
     "Если в выдержках нет ответа, отвечай из своих знаний и прямо скажи, что не уверен]"
 )
+
+
+def _drain_queue(vault: Vault, cid: str) -> None:
+    """After a turn finishes (or crashes), take the next message the owner wrote during it and start it."""
+    q = _queued.get(cid) or []
+    if not q:
+        return
+    item = q.pop(0)
+    if not q:
+        _queued.pop(cid, None)
+    try:
+        send(
+            vault,
+            item["text"],
+            cid=cid,
+            sync=False,
+            files=item.get("files"),
+            quote=item.get("quote") or "",
+            web=item.get("web"),
+            terms=item.get("terms"),
+        )
+    except Exception as e:  # a queued message must never stop the rest of the queue
+        _add_msg(
+            vault,
+            cid,
+            {
+                "role": "assistant",
+                "text": "",
+                "error": f"Не получилось запустить следующую задачу: {str(e)[:300]}",
+                "ts": _now(),
+            },
+        )
+        _drain_queue(vault, cid)
 
 
 def _generate(
@@ -1355,6 +1418,8 @@ def _generate(
             g["done"] = True
             if not chat.get("title_manual") and not chat.get("title_auto") and g["text"].strip():
                 threading.Thread(target=_auto_title, args=(vault, chat["id"], pid, mname), daemon=True).start()
+            if not sync and not g.get("abandoned"):
+                _drain_queue(vault, chat["id"])
 
     if sync:
         work()

@@ -16989,6 +16989,7 @@ body.wlc-on .tour {
   font-size: 12px;
 }
 .actline {
+  position: relative;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -16999,15 +17000,31 @@ body.wlc-on .tour {
   font-size: 13px;
   color: var(--ink2);
 }
-.actline > span {
+.actline > .actone {
+  display: flex;
   flex: 1;
   min-width: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  align-items: center;
+  gap: 6px;
   overflow: hidden;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  white-space: nowrap;
+}
+.actline > .actone > span[data-noi18n] {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.actline .actlink {
+  flex: none;
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.actline .actlink:hover {
+  text-decoration: none;
 }
 .actline .btn {
   flex: none;
@@ -17015,6 +17032,54 @@ body.wlc-on .tour {
 }
 .actline.bad {
   color: var(--bad);
+}
+.acttip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: calc(28px * var(--den));
+  z-index: 70;
+  min-width: 300px;
+  max-width: min(680px, 82vw);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: calc(10px * var(--rad));
+  background: var(--paper);
+  box-shadow: var(--sh2, 0 10px 30px rgba(0, 0, 0, 0.25));
+  color: var(--ink2);
+  font-size: 12.5px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+.actline:hover .acttip {
+  display: block;
+}
+.acttip table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.acttip th {
+  width: 1%;
+  padding: 3px 12px 3px 0;
+  color: var(--ink3);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.acttip td {
+  padding: 3px 0;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.acttip code {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  color: var(--ink);
 }
 .actfolders {
   display: flex;

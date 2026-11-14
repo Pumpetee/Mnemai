@@ -541,6 +541,77 @@ def _add_msg(vault: Vault, cid: str, msg: dict) -> None:
 _answers: dict[str, dict] = {}
 
 
+FILE_SUMMARY = {
+    "read_file": "Прочитала файл",
+    "list_files": "Показала папку",
+    "find_files": "Нашла файлы",
+    "write_file": "Создала файл",
+    "edit_file": "Изменила файл",
+    "make_document": "Сделала документ",
+    "edit_pdf": "Изменила PDF",
+    "remember": "Запомнила",
+    "open_app": "Открыла",
+}
+
+
+def _packages(command: str) -> str:
+    tail = re.split(r"\b(?:install|add|-S)\b", command, maxsplit=1, flags=re.I)[-1]
+    words = [w.strip("'\"") for w in tail.split() if not w.startswith("-")]
+    return ", ".join(words[:3]) or "программу"
+
+
+def _command_summary(command: str) -> str:
+    low = command.lower()
+    if re.search(r"\b(?:command -v|which|type -a)\b", low):
+        return "Проверила программу"
+    if any(w in low for w in ("/etc/os-release", "uname", "hostnamectl", "lsb_release", "neofetch")):
+        return "Проверила систему"
+    if re.search(r"\b(?:nmap|ping|ss|netstat|curl|wget|ip addr|dig|traceroute)\b", low):
+        return "Проверила сеть"
+    if re.search(r"\b(?:ps|top|htop|pgrep|systemctl status)\b", low):
+        return "Проверила процессы"
+    if re.search(r"\b(?:df|free|nproc|lscpu|lsblk)\b", low):
+        return "Проверила компьютер"
+    return "Выполнила команду"
+
+
+def _action_view(call: dict, line: str, path: str, result: str, failed: bool = False) -> dict:
+    """One readable line for the chat; the command and details go to the hover table, not the line."""
+    tool = str(call.get("tool") or "")
+    command = str(call.get("command") or call.get("body") or "").strip()
+    view: dict = {"tool": tool, "detail": line, "command": command}
+    if path:
+        view["path"] = path
+    if failed:
+        view["text"] = "Не получилось: " + line[:120]
+        view["failed"] = True
+        return view
+    if tool == "run_command":
+        code = 0
+        m = re.match(r"\[код (-?\d+)", result)
+        if m:
+            code = int(m.group(1))
+        if code:
+            view["text"] = "Не получилось: " + _command_summary(command).lower()
+            view["failed"] = True
+            return view
+        if "ещё выполняется" in line:
+            view["text"] = "Устанавливаю " + _packages(command) if "install" in command.lower() else "Выполняю"
+        elif re.search(
+            r"\b(?:apt(?:-get)?|dnf|yum|zypper|pacman|apk|snap|flatpak)\b[^\n]*\b(?:install|add|-S)\b", command, re.I
+        ):
+            view["text"] = "Установила " + _packages(command)
+        else:
+            view["text"] = _command_summary(command)
+        return view
+    if tool in FILE_SUMMARY:
+        name = Path(path).name if path else ""
+        view["text"] = f"{FILE_SUMMARY[tool]} {name}".strip() if name else FILE_SUMMARY[tool]
+        return view
+    view["text"] = line[:100]
+    return view
+
+
 def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -> str | None:
     """One action the model asked for: the owner's word (unless already given for this conversation), then the deed.
     Returns what the model is told; None if the owner stopped the answer meanwhile."""
@@ -587,14 +658,20 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
         _add_msg(
             vault,
             cid,
-            {"role": "assistant", "kind": "action", "ts": _now(), "text": f"Не получилось {desc}: {e}", "failed": True},
+            {
+                "role": "assistant",
+                "kind": "action",
+                "ts": _now(),
+                "text": f"Не получилось: {str(e)[:120]}",
+                "detail": f"{desc}: {e}",
+                "command": str(call.get("command") or ""),
+                "tool": call.get("tool", ""),
+                "failed": True,
+            },
         )
         return f"Не получилось: {e}"
-    _add_msg(
-        vault,
-        cid,
-        {"role": "assistant", "kind": "action", "ts": _now(), "text": line, **({"path": path} if path else {})},
-    )
+    view = _action_view(call, line, path, result)
+    _add_msg(vault, cid, {"role": "assistant", "kind": "action", "ts": _now(), **view})
     from .. import achievements as ACH
 
     ACH.event(vault, "action", tool=call["tool"])

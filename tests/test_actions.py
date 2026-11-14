@@ -250,7 +250,9 @@ class ActionsTest(unittest.TestCase):
         self.assertTrue(any("терминал" in w or "команд" in w for w in owner.asked))
         self.assertIn("mnema-pc-ok", str(s.seen[-1][1]))  # the result came back to the model
         msgs = CH.load_chat(v, r["chat"])["messages"]
-        self.assertTrue(any(m.get("kind") == "action" and "mnema-pc-ok" in (m.get("text") or "") for m in msgs))
+        action = next(m for m in msgs if m.get("kind") == "action")
+        self.assertIn("mnema-pc-ok", action.get("detail") or "")  # the full command/result lives in the hover table
+        self.assertEqual(action.get("text"), "Выполнила команду")  # but the chat line is short
         self.assertTrue(any(e["action"] == "exec" for e in events(v, 30)))  # and it is in the journal
 
     @unittest.skipIf(os.name == "nt", "the fake sudo helper is a POSIX shell script")

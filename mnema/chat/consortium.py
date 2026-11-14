@@ -541,7 +541,7 @@ def run(
                 g["phase"] = "делаю: " + call["tool"]
                 g["text"] = head_text
                 try:
-                    result, line, _ = MC.run_action(vault, call, PR.PROVIDERS[pid]["client"])
+                    result, line, path = MC.run_action(vault, call, PR.PROVIDERS[pid]["client"])
                 except Exception as e:  # a failed action must not kill the speaker
                     result, line = f"Не получилось: {str(e)[:300]}", ""
                 if line:
@@ -549,7 +549,7 @@ def run(
                         "role": "assistant",
                         "kind": "action",
                         "ts": CH._now(),
-                        "text": line,
+                        **CH._action_view(call, line, path, result),
                         "model": ref,
                         "speaker": me,
                         "round": r + 1,

@@ -542,10 +542,17 @@ function locale() {
 }
 // the line of an action: its words in the owner's language, the path exactly as it is on disk
 function actText(m) {
-  const t = m.text || "";
-  if (m.path && t.endsWith(m.path) && t.length > m.path.length)
-    return esc(tr(t.slice(0, -m.path.length) + "@@")).replace("@@", esc(m.path));
-  return esc(tr(t));
+  return esc(tr(m.text || ""));
+}
+function actTip(m) {
+  const rows = [];
+  if (m.command) rows.push([tr("Команда"), `<code>${esc(m.command)}</code>`]);
+  if (m.detail && m.detail !== m.text) rows.push([tr("Что сделала"), esc(m.detail)]);
+  if (m.path) rows.push([tr("Папка"), esc(m.path)]);
+  if (!rows.length) return "";
+  return `<div class="acttip" role="tooltip"><table>${rows
+    .map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`)
+    .join("")}</table></div>`;
 }
 function fmtDate(ts) {
   if (!ts) return "";
@@ -1309,8 +1316,10 @@ function quoteLine(s) {
 }
 function msgHtml(m, last, i, lastAi) {
   if (m.hidden) return "";
-  if (m.kind === "action")
-    return `<div class="actline ${m.refused || m.failed ? "bad" : ""}">${ic(m.refused || m.failed ? "x" : "check")}<span data-noi18n>${actText(m)}</span>${m.path && !m.failed && OPENABLE.test(m.path) ? `<button class="btn sm" data-fopen="${esc(m.path)}">${ic("file")}${tr("Открыть")}</button>` : ""}${m.path ? `<button class="btn g sm" data-reveal="${esc(m.path)}">${tr("Показать в папке")}</button>` : ""}</div>`;
+  if (m.kind === "action") {
+    const showFolder = m.path && !m.failed && !["run_command", "open_app"].includes(m.tool);
+    return `<div class="actline ${m.refused || m.failed ? "bad" : ""}">${ic(m.refused || m.failed ? "x" : "check")}<span class="actone"><span data-noi18n>${actText(m)}</span>${showFolder ? `<a class="actlink" data-reveal="${esc(m.path)}">${tr("папка")}</a>` : ""}</span>${actTip(m)}</div>`;
+  }
   if (m.role === "user")
     return `<div class="msg user">${m.quote ? `<div class="uq">${ic("reply")}<span>${esc(quoteLine(m.quote))}</span></div>` : ""}${(m.files || []).length ? `<div class="fchips">${m.files.map((f) => `<span class="chipf" title="${f.kind === "text" ? "прочитан на этом компьютере" : ""}">${ic("file")}${esc(f.name)}${f.info && f.info.pages ? ` · ${f.info.pages} стр.` : f.info && f.info.sheets ? ` · листов ${f.info.sheets}` : f.info && f.info.slides ? ` · слайдов ${f.info.slides}` : ""}</span>`).join("")}</div>` : ""}<div class="b">${esc(m.text)}</div></div>`;
   const srcs = (m.sources || []).length

@@ -275,6 +275,8 @@ TOOLS = [
                 "text": {"type": "string"},
                 "priority": {"type": "string", "enum": ["low", "normal", "high"]},
                 "depends_on": {"type": "string"},
+                "auto": {"type": "boolean", "description": "Выполнять автоматически фоновым worker'ом."},
+                "model": {"type": "string", "description": "provider:model для выполнения; по умолчанию модель Mnema."},
             },
             "required": ["text"],
         },
@@ -309,6 +311,11 @@ TOOLS = [
     {
         "name": "task_remove",
         "description": "Удалить задачу из долговечного списка.",
+        "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "name": "task_run",
+        "description": "Выполнить задачу из реестра сейчас (моделью Mnema) и отметить результат.",
         "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
     },
     {
@@ -510,7 +517,7 @@ PC_WRITE = {
     "pc_scroll",
 }
 TODO_WRITE = {"todo_add", "todo_done", "todo_update", "todo_remove"}
-TASK_WRITE = {"task_add", "task_update", "task_done", "task_remove"}
+TASK_WRITE = {"task_add", "task_update", "task_done", "task_remove", "task_run"}
 ACTION_NAMES = {t["name"] for t in ACTION_TOOLS}
 WRITE_ACTIONS = {"write_file", "edit_file", "make_document", "edit_pdf"}
 
@@ -1146,6 +1153,10 @@ class Server:
                 )
                 or "Список дел пуст."
             )
+        if name == "task_run":
+            from . import tasks as T
+
+            return T.run(self.vault, str(args.get("id") or ""), self.client_id)
         found = next((x for x in items if x.get("id") == str(args.get("id") or "")), None)
         if not found:
             raise ValueError("такой задачи нет")
@@ -1191,6 +1202,8 @@ class Server:
                 "priority": args.get("priority") if args.get("priority") in ("low", "normal", "high") else "normal",
                 "status": "open",
                 "depends_on": depends,
+                "auto": bool(args.get("auto")),
+                "model": str(args.get("model") or ""),
                 "created": time.time(),
                 "updated": time.time(),
                 "attempts": 0,

@@ -304,6 +304,9 @@ def serve(vault: Vault, port: int = 7461, learn: bool = True) -> None:
         from .sync import Syncer
 
         Syncer(vault).start()
+        from . import tasks
+
+        tasks.start_worker(vault)
     print(f"Mnemai: http://127.0.0.1:{port}  (хранилище {vault.root})", flush=True)
     try:
         srv.serve_forever()

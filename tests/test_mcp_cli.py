@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import time
 import subprocess
 import sys
 import tempfile
@@ -285,6 +286,72 @@ class TestMcp(unittest.TestCase):
         self.assertTrue(r2[0]["result"]["contents"][0]["text"])
         self.assertEqual({p["name"] for p in r[1]["result"]["prompts"]}, {"memory_brief", "remember_fact"})
         self.assertIn("memory_context", r[2]["result"]["messages"][0]["content"]["text"])
+
+    def test_background_jobs(self):
+        cmd = f'"{sys.executable}" -c "import time; print(\'job-ok\'); time.sleep(0.2)"'
+        r = self.session(
+            "claude",
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": "pc_job_start", "arguments": {"command": cmd}},
+                },
+            ],
+        )
+        text = r[0]["result"]["content"][0]["text"]
+        jid = text.split("id ")[1].split(" ")[0]
+        time.sleep(0.8)
+        out = self.session(
+            "claude",
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": "pc_job_output", "arguments": {"id": jid}},
+                },
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "pc_job_list"}},
+            ],
+        )
+        self.assertIn("job-ok", out[0]["result"]["content"][0]["text"])
+        self.assertIn(jid, out[1]["result"]["content"][0]["text"])
+
+    def test_glob_grep_and_todo(self):
+        root = Path(tempfile.mkdtemp())
+        (root / "one.md").write_text("hello world\n", encoding="utf-8")
+        (root / "two.txt").write_text("nothing\n", encoding="utf-8")
+        try:
+            r = self.session(
+                "claude",
+                [
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": "pc_glob", "arguments": {"pattern": "**/*.md", "path": str(root)}},
+                    },
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "tools/call",
+                        "params": {"name": "pc_grep", "arguments": {"pattern": "hello \\w+", "path": str(root)}},
+                    },
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "tools/call",
+                        "params": {"name": "todo_add", "arguments": {"text": "Проверить MCP", "priority": "high"}},
+                    },
+                    {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "todo_list"}},
+                ],
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+        self.assertIn("one.md", r[0]["result"]["content"][0]["text"])
+        self.assertIn("one.md:1", r[1]["result"]["content"][0]["text"])
+        self.assertIn("Проверить MCP", r[3]["result"]["content"][0]["text"])
 
     def test_pc_tools_respect_the_switch(self):
         P.save(Vault(self.dir), {"pc_access": False})

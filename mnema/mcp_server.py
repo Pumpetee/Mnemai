@@ -7,8 +7,14 @@ Run: python -m mnema mcp --client claude [--vault PATH]
 from __future__ import annotations
 
 import json
+import os
+import re
+import secrets
+import shlex
 import shutil
+import subprocess
 import sys
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -27,7 +33,8 @@ INSTRUCTIONS = (
     "предложи сохранить и вызови memory_remember. Перед ответом на устаревший факт вызови memory_stale. "
     "У тебя также ЕСТЬ доступ к компьютеру владельца (если он не выключил его в настройках): терминал — pc_run, "
     "файлы — pc_read_file и pc_write_file, папки — pc_list_dir, перенос/копирование/удаление — pc_move/pc_copy/"
-    "pc_delete; поиск в интернете — web_search и web_fetch; уведомление — pc_notify, снимок экрана — pc_screenshot. "
+    "pc_delete; поиск в интернете — web_search и web_fetch; фоновые задачи — pc_job_start/output/kill/list; "
+    "список дел — todo_*; поиск файлов — pc_glob и pc_grep; уведомление — pc_notify, снимок экрана — pc_screenshot. "
     "Это настоящий доступ, а не описание. Файлы памяти доступны и как ресурсы (mnema://memory/…), а промпты "
     "memory_brief и remember_fact помогают начать. Когда просят "
     "что-то сделать на компьютере, выполни команду и покажи результат. Не выводи пароли и ключи."
@@ -161,6 +168,104 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
     },
     {
+        "name": "pc_job_start",
+        "description": "Запустить команду в фоне (не блокирует). Возвращает id для pc_job_output/pc_job_kill.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}, "cwd": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "pc_job_output",
+        "description": "Вывод фоновой задачи по id; если она завершилась — и код возврата.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}, "tail": {"type": "integer", "minimum": 200, "maximum": 50000}},
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "pc_job_kill",
+        "description": "Остановить фоновую задачу по id.",
+        "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "name": "pc_job_list",
+        "description": "Список фоновых задач: что ещё идёт и чем закончилось.",
+        "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}},
+    },
+    {
+        "name": "pc_glob",
+        "description": "Найти файлы по glob-шаблону (например **/*.py) на компьютере.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "path": {"type": "string"},
+                "limit": {"type": "integer", "default": 100},
+            },
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "pc_grep",
+        "description": "Найти регулярное выражение в текстовых файлах на компьютере (путь, строка, текст).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "path": {"type": "string"},
+                "glob": {"type": "string"},
+                "limit": {"type": "integer", "default": 50},
+            },
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "todo_add",
+        "description": "Добавить задачу в список дел (priority: normal | high | low).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "priority": {"type": "string", "enum": ["low", "normal", "high"]},
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "todo_list",
+        "description": "Показать список дел (status: open | done | all).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"status": {"type": "string", "enum": ["open", "done", "all"]}},
+        },
+    },
+    {
+        "name": "todo_done",
+        "description": "Отметить задачу выполненной по id.",
+        "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "name": "todo_update",
+        "description": "Изменить текст или приоритет задачи по id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "text": {"type": "string"},
+                "priority": {"type": "string", "enum": ["low", "normal", "high"]},
+            },
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "todo_remove",
+        "description": "Удалить задачу из списка по id.",
+        "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
         "name": "pc_run",
         "description": "Выполнить команду в терминале этого компьютера и вернуть вывод, код возврата и время. "
         "Это настоящий доступ к системе (процессы, железо, сеть, git, файлы вне папок памяти). "
@@ -283,7 +388,19 @@ ACTION_TOOLS = [
         "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     },
 ]
-PC_WRITE = {"pc_run", "pc_write_file", "pc_open_app", "pc_make_dir", "pc_move", "pc_copy", "pc_delete", "pc_screenshot"}
+PC_WRITE = {
+    "pc_run",
+    "pc_write_file",
+    "pc_open_app",
+    "pc_make_dir",
+    "pc_move",
+    "pc_copy",
+    "pc_delete",
+    "pc_screenshot",
+    "pc_job_start",
+    "pc_job_kill",
+}
+TODO_WRITE = {"todo_add", "todo_done", "todo_update", "todo_remove"}
 ACTION_NAMES = {t["name"] for t in ACTION_TOOLS}
 WRITE_ACTIONS = {"write_file", "edit_file", "make_document", "edit_pdf"}
 
@@ -340,6 +457,10 @@ class Server:
             return self._update_memory(args, c)
         if name in ("web_search", "web_fetch"):
             return self._web(name, args)
+        if name in TODO_WRITE and not c.can_write:
+            raise PermissionDenied(f"{c.name} не может менять список дел")
+        if name.startswith("todo_"):
+            return self._todo(name, args)
         if name in ACTION_NAMES:
             if not P.load(self.vault).get("tools", True):
                 return "Действия выключены владельцем: Настройки → Программа → «Действия на компьютере»."
@@ -436,6 +557,18 @@ class Server:
                 )
                 or "(пусто)"
             )
+        if name == "pc_job_start":
+            return self._job_start(args)
+        if name == "pc_job_output":
+            return self._job_output(args)
+        if name == "pc_job_kill":
+            return self._job_kill(args)
+        if name == "pc_job_list":
+            return self._job_list(args)
+        if name == "pc_glob":
+            return self._glob(args)
+        if name == "pc_grep":
+            return self._grep(args)
         if name == "pc_make_dir":
             p = Path(str(args.get("path") or "")).expanduser()
             p.mkdir(parents=True, exist_ok=True)
@@ -622,6 +755,239 @@ class Server:
         else:
             raise ValueError(f"неизвестный промпт: {name}")
         return {"description": name, "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}
+
+    def _jobs_root(self) -> Path:
+        home = Path(os.environ.get("MNEMA_HOME") or (Path.home() / ".mnema"))
+        p = home / "jobs"
+        p.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return p
+
+    def _job_meta(self, jid: str) -> tuple[Path, dict] | None:
+        jid = re.sub(r"[^0-9a-f]", "", str(jid))[:16]
+        if not jid:
+            return None
+        d = self._jobs_root() / jid
+        try:
+            meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return d, meta
+
+    def _job_start(self, args: dict) -> str:
+        command = str(args.get("command") or "").strip()
+        if not command:
+            raise ValueError("нужна команда")
+        work = Path(str(args.get("cwd") or "~")).expanduser()
+        if not work.is_dir():
+            raise ValueError("такой папки нет")
+        jid = secrets.token_hex(4)
+        d = self._jobs_root() / jid
+        d.mkdir(mode=0o700, parents=True, exist_ok=True)
+        log, code = d / "output.log", d / "exit-code"
+        script = d / ("run.cmd" if os.name == "nt" else "run.sh")
+        if os.name == "nt":
+            script.write_text(
+                "@echo off\r\n(" + command + ") > " + str(log) + " 2>&1\r\necho %ERRORLEVEL% > " + str(code) + "\r\n",
+                encoding="utf-8",
+            )
+            argv = ["cmd", "/c", str(script)]
+        else:
+            script.write_text(
+                "#!/bin/bash\n("
+                + command
+                + ") > "
+                + shlex.quote(str(log))
+                + " 2>&1\nprintf '%s\\n' $? > "
+                + shlex.quote(str(code))
+                + "\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o700)
+            argv = ["/bin/bash" if Path("/bin/bash").exists() else "/bin/sh", str(script)]
+        proc = subprocess.Popen(
+            argv,
+            cwd=str(work),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        meta = {
+            "id": jid,
+            "command": command,
+            "cwd": str(work),
+            "pid": proc.pid,
+            "started": time.time(),
+        }
+        (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        log_event(self.vault, self.client_id, "exec", f"фоновая задача {jid}: {command[:160]}")
+        return f"Запущено в фоне: id {jid} · {command[:120]}\nВывод: pc_job_output id={jid} · остановить: pc_job_kill id={jid}"
+
+    def _job_output(self, args: dict) -> str:
+        found = self._job_meta(str(args.get("id") or ""))
+        if not found:
+            raise ValueError("такой фоновой задачи нет")
+        d, meta = found
+        limit = max(200, min(50000, int(args.get("tail") or 4000)))
+        try:
+            raw = (d / "output.log").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            raw = ""
+        code = None
+        try:
+            code = int((d / "exit-code").read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            pass
+        head = f"[задача {meta['id']} · {'завершена, код ' + str(code) if code is not None else 'выполняется'}]"
+        return head + "\n" + (raw[-limit:].strip() or "(вывода пока нет)")
+
+    def _job_kill(self, args: dict) -> str:
+        found = self._job_meta(str(args.get("id") or ""))
+        if not found:
+            raise ValueError("такой фоновой задачи нет")
+        d, meta = found
+        pid = int(meta.get("pid") or 0)
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=15)
+            else:
+                os.killpg(pid, 15)
+        except (OSError, ProcessLookupError):
+            pass
+        (d / "exit-code").write_text("143\n", encoding="utf-8")
+        log_event(self.vault, self.client_id, "exec", f"остановлена фоновая задача {meta['id']}")
+        return f"Задача {meta['id']} остановлена."
+
+    def _job_list(self, args: dict) -> str:
+        limit = max(1, min(100, int(args.get("limit") or 20)))
+        rows = []
+        for d in sorted(self._jobs_root().iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if not d.is_dir():
+                continue
+            meta: dict = {}
+            try:
+                meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+                code = int((d / "exit-code").read_text(encoding="utf-8").strip())
+            except (OSError, ValueError):
+                code = None
+            rows.append(
+                f"{meta.get('id', d.name)} · {'готово' if code is not None else 'идёт'} · "
+                f"{meta.get('command', '')[:100]}"
+            )
+            if len(rows) >= limit:
+                break
+        return "\n".join(rows) or "Фоновых задач нет."
+
+    def _glob(self, args: dict) -> str:
+        pattern = str(args.get("pattern") or "").strip()
+        if not pattern:
+            raise ValueError("нужен pattern")
+        root = Path(str(args.get("path") or "~")).expanduser()
+        if not root.is_dir():
+            raise ValueError("такой папки нет")
+        limit = max(1, min(1000, int(args.get("limit") or 100)))
+        try:
+            hits = list(root.glob(pattern))
+        except (OSError, ValueError) as e:
+            raise ValueError(f"плохой шаблон: {e}") from e
+        log_event(self.vault, self.client_id, "read", f"glob {pattern} в {root}", [])
+        return "\n".join(str(p) for p in hits[:limit]) or "Ничего не нашлось."
+
+    def _grep(self, args: dict) -> str:
+        pattern = str(args.get("pattern") or "")
+        if not pattern:
+            raise ValueError("нужен pattern")
+        try:
+            rx = re.compile(pattern)
+        except re.error as e:
+            raise ValueError(f"плохая регулярка: {e}") from e
+        root = Path(str(args.get("path") or "~")).expanduser()
+        if not root.is_dir():
+            raise ValueError("такой папки нет")
+        globpat = str(args.get("glob") or "*")
+        limit = max(1, min(200, int(args.get("limit") or 50)))
+        skip = {".git", "node_modules", ".cache", ".venv", "target", "dist", "__pycache__"}
+        out: list[str] = []
+        started = time.time()
+        for p in root.rglob(globpat):
+            if time.time() - started > 15 or len(out) >= limit:
+                break
+            if not p.is_file() or any(part in skip for part in p.parts):
+                continue
+            try:
+                if p.stat().st_size > 2_000_000:
+                    continue
+                data = p.read_bytes()
+                if b"\x00" in data[:4096]:
+                    continue
+                text = data.decode("utf-8", "replace")
+            except OSError:
+                continue
+            for n, line in enumerate(text.splitlines(), 1):
+                if rx.search(line):
+                    out.append(f"{p}:{n}: {line[:300]}")
+                    if len(out) >= limit:
+                        break
+        log_event(self.vault, self.client_id, "read", f"grep {pattern} в {root}", [])
+        return "\n".join(out) or "Ничего не нашлось."
+
+    def _todo_path(self) -> Path:
+        self.vault.service.mkdir(parents=True, exist_ok=True)
+        return self.vault.service / "todo.json"
+
+    def _todo_read(self) -> list[dict]:
+        try:
+            data = json.loads(self._todo_path().read_text(encoding="utf-8"))
+            return [x for x in data if isinstance(x, dict)]
+        except (OSError, ValueError):
+            return []
+
+    def _todo_write(self, items: list[dict]) -> None:
+        self._todo_path().write_text(json.dumps(items[:500], ensure_ascii=False, indent=1), encoding="utf-8")
+
+    def _todo(self, name: str, args: dict) -> str:
+        items = self._todo_read()
+        if name == "todo_add":
+            text = " ".join(str(args.get("text") or "").split())
+            if not text:
+                raise ValueError("нужен текст задачи")
+            item = {
+                "id": secrets.token_hex(4),
+                "text": text,
+                "priority": args.get("priority") if args.get("priority") in ("low", "normal", "high") else "normal",
+                "done": False,
+                "created": time.time(),
+            }
+            items.append(item)
+            self._todo_write(items)
+            log_event(self.vault, self.client_id, "write", f"задача: {text[:160]}")
+            return f"Задача добавлена: id {item['id']} · {text}"
+        if name == "todo_list":
+            status = str(args.get("status") or "open")
+            show = items if status == "all" else [x for x in items if bool(x.get("done")) == (status == "done")]
+            show.sort(key=lambda x: (bool(x.get("done")), x.get("priority") != "high", -float(x.get("created") or 0)))
+            return (
+                "\n".join(
+                    f"{'[x]' if x.get('done') else '[ ]'} {x.get('id')} · {x.get('priority', 'normal')} · {x.get('text')}"
+                    for x in show[:100]
+                )
+                or "Список дел пуст."
+            )
+        found = next((x for x in items if x.get("id") == str(args.get("id") or "")), None)
+        if not found:
+            raise ValueError("такой задачи нет")
+        if name == "todo_done":
+            found["done"] = True
+        elif name == "todo_update":
+            if str(args.get("text") or "").strip():
+                found["text"] = " ".join(str(args["text"]).split())
+            if args.get("priority") in ("low", "normal", "high"):
+                found["priority"] = args["priority"]
+        elif name == "todo_remove":
+            items.remove(found)
+        self._todo_write(items)
+        log_event(self.vault, self.client_id, "write", f"список дел: {name} {found.get('id')}")
+        return f"Готово: {name} {found.get('id')}"
 
     def _may_see(self, ev: dict, c) -> bool:
         """A journal line only about what this assistant may read: no hidden tags, no hidden notes, allowed scopes."""

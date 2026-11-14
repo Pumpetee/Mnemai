@@ -34,7 +34,8 @@ INSTRUCTIONS = (
     "У тебя также ЕСТЬ доступ к компьютеру владельца (если он не выключил его в настройках): терминал — pc_run, "
     "файлы — pc_read_file и pc_write_file, папки — pc_list_dir, перенос/копирование/удаление — pc_move/pc_copy/"
     "pc_delete; поиск в интернете — web_search и web_fetch; фоновые задачи — pc_job_start/output/kill/list; "
-    "список дел — todo_*; поиск файлов — pc_glob и pc_grep; уведомление — pc_notify, снимок экрана — pc_screenshot. "
+    "список дел — todo_*; долговечные задачи — task_*; другой ИИ — subagent_run; поиск файлов — pc_glob и pc_grep; "
+    "уведомление — pc_notify, снимок экрана — pc_screenshot; управление — pc_clipboard_*/pc_click/pc_type/pc_key/pc_scroll. "
     "Это настоящий доступ, а не описание. Файлы памяти доступны и как ресурсы (mnema://memory/…), а промпты "
     "memory_brief и remember_fact помогают начать. Когда просят "
     "что-то сделать на компьютере, выполни команду и покажи результат. Не выводи пароли и ключи."
@@ -266,6 +267,109 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
     },
     {
+        "name": "task_add",
+        "description": "Добавить долговечную задачу (переживает перезапуск). priority: low | normal | high; depends_on — id задачи.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "priority": {"type": "string", "enum": ["low", "normal", "high"]},
+                "depends_on": {"type": "string"},
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "task_list",
+        "description": "Список долговечных задач (open | done | all).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"status": {"type": "string", "enum": ["open", "done", "all"]}},
+        },
+    },
+    {
+        "name": "task_update",
+        "description": "Изменить задачу: текст, приоритет или статус (open | done | cancelled).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "text": {"type": "string"},
+                "priority": {"type": "string", "enum": ["low", "normal", "high"]},
+                "status": {"type": "string", "enum": ["open", "done", "cancelled"]},
+            },
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "task_done",
+        "description": "Отметить долговечную задачу выполненной.",
+        "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "name": "task_remove",
+        "description": "Удалить задачу из долговечного списка.",
+        "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "name": "subagent_run",
+        "description": "Поручить отдельный вопрос другому ИИ (model: провайдер:модель, по умолчанию — текущая модель "
+        "Mnema). Субагент отвечает текстом, без инструментов.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"prompt": {"type": "string"}, "model": {"type": "string"}},
+            "required": ["prompt"],
+        },
+    },
+    {
+        "name": "pc_clipboard_get",
+        "description": "Прочитать системный буфер обмена.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "pc_clipboard_set",
+        "description": "Положить текст в системный буфер обмена.",
+        "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+    },
+    {
+        "name": "pc_click",
+        "description": "Клик мышью по координатам экрана (нужен ydotool/wtype/xdotool).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "x": {"type": "integer"},
+                "y": {"type": "integer"},
+                "button": {"type": "integer", "minimum": 1, "maximum": 3, "default": 1},
+            },
+            "required": ["x", "y"],
+        },
+    },
+    {
+        "name": "pc_type",
+        "description": "Напечатать текст в активное окно (нужен ydotool/wtype/xdotool).",
+        "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+    },
+    {
+        "name": "pc_key",
+        "description": "Нажать клавишу/комбинацию (например Return, ctrl+c) — нужен ydotool/wtype/xdotool.",
+        "inputSchema": {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
+    },
+    {
+        "name": "pc_scroll",
+        "description": "Прокрутить колесо: положительное — вверх, отрицательное — вниз.",
+        "inputSchema": {"type": "object", "properties": {"amount": {"type": "integer"}}, "required": ["amount"]},
+    },
+    {
+        "name": "clients_list",
+        "description": "Кто из ассистентов подключён и какие права у него есть.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "journal_tail",
+        "description": "Последние действия в журнале Mnema (кто что сделал), с учётом прав этого ассистента.",
+        "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 30}}},
+    },
+    {
         "name": "pc_run",
         "description": "Выполнить команду в терминале этого компьютера и вернуть вывод, код возврата и время. "
         "Это настоящий доступ к системе (процессы, железо, сеть, git, файлы вне папок памяти). "
@@ -399,8 +503,14 @@ PC_WRITE = {
     "pc_screenshot",
     "pc_job_start",
     "pc_job_kill",
+    "pc_clipboard_set",
+    "pc_click",
+    "pc_type",
+    "pc_key",
+    "pc_scroll",
 }
 TODO_WRITE = {"todo_add", "todo_done", "todo_update", "todo_remove"}
+TASK_WRITE = {"task_add", "task_update", "task_done", "task_remove"}
 ACTION_NAMES = {t["name"] for t in ACTION_TOOLS}
 WRITE_ACTIONS = {"write_file", "edit_file", "make_document", "edit_pdf"}
 
@@ -457,6 +567,31 @@ class Server:
             return self._update_memory(args, c)
         if name in ("web_search", "web_fetch"):
             return self._web(name, args)
+        if name in TASK_WRITE and not c.can_write:
+            raise PermissionDenied(f"{c.name} не может менять задачи")
+        if name.startswith("task_"):
+            return self._task(name, args)
+        if name == "subagent_run":
+            return self._subagent(args)
+        if name == "clients_list":
+            from .clients import load_clients
+
+            return "\n".join(
+                f"- {cl.id}: {cl.name} · {'вкл' if cl.enabled else 'выкл'} · {'пишет' if cl.can_write else 'только читает'} · "
+                f"сферы: {', '.join(cl.scopes)}"
+                for cl in load_clients(self.vault).values()
+            )
+        if name == "journal_tail":
+            c2 = get_client(self.vault, self.client_id)
+            limit = max(1, min(200, int(args.get("limit") or 30)))
+            rows = []
+            for e in events(self.vault, 500):
+                if not self._may_see(e, c2):
+                    continue
+                rows.append(f"{e['ts']} · {e['client']} · {e['action']} · {e['summary']}")
+                if len(rows) >= limit:
+                    break
+            return "\n".join(rows) or "Журнал пуст."
         if name in TODO_WRITE and not c.can_write:
             raise PermissionDenied(f"{c.name} не может менять список дел")
         if name.startswith("todo_"):
@@ -557,6 +692,44 @@ class Server:
                 )
                 or "(пусто)"
             )
+        if name == "pc_clipboard_get":
+            from . import osapi as OS
+
+            return OS.clipboard_get() or "(буфер пуст)"
+        if name == "pc_clipboard_set":
+            from . import osapi as OS
+
+            ok = OS.clipboard_set(str(args.get("text") or ""))
+            if ok:
+                log_event(self.vault, self.client_id, "write", "буфер обмена")
+            return "Записано в буфер." if ok else "Не получилось записать в буфер."
+        if name == "pc_click":
+            from . import osapi as OS
+
+            if not OS.click(int(args.get("x") or 0), int(args.get("y") or 0), int(args.get("button") or 1)):
+                raise ValueError("нет средства управления мышью: нужен ydotool/wtype (Wayland) или xdotool (X11)")
+            log_event(self.vault, self.client_id, "exec", "клик мышью")
+            return "Клик."
+        if name == "pc_type":
+            from . import osapi as OS
+
+            if not OS.type_text(str(args.get("text") or "")):
+                raise ValueError("нет средства ввода: нужен ydotool/wtype (Wayland) или xdotool (X11)")
+            log_event(self.vault, self.client_id, "exec", "ввод с клавиатуры")
+            return "Напечатано."
+        if name == "pc_key":
+            from . import osapi as OS
+
+            if not OS.key(str(args.get("key") or "")):
+                raise ValueError("нет средства ввода: нужен ydotool/wtype (Wayland) или xdotool (X11)")
+            log_event(self.vault, self.client_id, "exec", f"клавиша {args.get('key')}")
+            return "Нажато."
+        if name == "pc_scroll":
+            from . import osapi as OS
+
+            if not OS.scroll(int(args.get("amount") or 0)):
+                raise ValueError("нет средства управления мышью: нужен ydotool/wtype (Wayland) или xdotool (X11)")
+            return "Прокручено."
         if name == "pc_job_start":
             return self._job_start(args)
         if name == "pc_job_output":
@@ -988,6 +1161,103 @@ class Server:
         self._todo_write(items)
         log_event(self.vault, self.client_id, "write", f"список дел: {name} {found.get('id')}")
         return f"Готово: {name} {found.get('id')}"
+
+    def _tasks_path(self) -> Path:
+        self.vault.service.mkdir(parents=True, exist_ok=True)
+        return self.vault.service / "tasks.json"
+
+    def _tasks(self) -> list[dict]:
+        try:
+            data = json.loads(self._tasks_path().read_text(encoding="utf-8"))
+            return [x for x in data if isinstance(x, dict)]
+        except (OSError, ValueError):
+            return []
+
+    def _tasks_write(self, items: list[dict]) -> None:
+        self._tasks_path().write_text(json.dumps(items[:1000], ensure_ascii=False, indent=1), encoding="utf-8")
+
+    def _task(self, name: str, args: dict) -> str:
+        items = self._tasks()
+        if name == "task_add":
+            text = " ".join(str(args.get("text") or "").split())
+            if not text:
+                raise ValueError("нужен текст задачи")
+            depends = str(args.get("depends_on") or "").strip()
+            if depends and not any(x.get("id") == depends for x in items):
+                raise ValueError("зависимость не найдена")
+            item = {
+                "id": secrets.token_hex(4),
+                "text": text,
+                "priority": args.get("priority") if args.get("priority") in ("low", "normal", "high") else "normal",
+                "status": "open",
+                "depends_on": depends,
+                "created": time.time(),
+                "updated": time.time(),
+                "attempts": 0,
+                "error": "",
+            }
+            items.append(item)
+            self._tasks_write(items)
+            log_event(self.vault, self.client_id, "write", f"задача: {text[:160]}")
+            return f"Задача добавлена: id {item['id']} · {text}"
+        if name == "task_list":
+            status = str(args.get("status") or "open")
+            show = items if status == "all" else [x for x in items if x.get("status") == status]
+            show.sort(key=lambda x: (x.get("priority") != "high", -float(x.get("created") or 0)))
+            return (
+                "\n".join(
+                    f"[{x.get('status')}] {x.get('id')} · {x.get('priority')} · {x.get('text')}"
+                    + (f" (ждёт {x['depends_on']})" if x.get("depends_on") else "")
+                    for x in show[:200]
+                )
+                or "Задач нет."
+            )
+        found = next((x for x in items if x.get("id") == str(args.get("id") or "")), None)
+        if not found:
+            raise ValueError("такой задачи нет")
+        if name == "task_done":
+            found["status"] = "done"
+        elif name == "task_update":
+            if str(args.get("text") or "").strip():
+                found["text"] = " ".join(str(args["text"]).split())
+            if args.get("priority") in ("low", "normal", "high"):
+                found["priority"] = args["priority"]
+            if args.get("status") in ("open", "done", "cancelled"):
+                found["status"] = args["status"]
+        elif name == "task_remove":
+            items.remove(found)
+        found["updated"] = time.time()
+        self._tasks_write(items)
+        log_event(self.vault, self.client_id, "write", f"задача: {name} {found.get('id')}")
+        return f"Готово: {name} {found.get('id')}"
+
+    def _subagent(self, args: dict) -> str:
+        prompt = str(args.get("prompt") or "").strip()
+        if not prompt:
+            raise ValueError("нужен prompt")
+        from .agent import profile as P
+        from .chat import engine as CH, providers as PR
+
+        model = str(args.get("model") or "").strip() or CH.default_model(self.vault)
+        if not model:
+            raise ValueError("нет доступной модели: выбери модель в Настройки → ИИ и модели")
+        pid, mname = CH.split_model(model)
+        if not any(p["id"] == pid and p["ready"] for p in PR.status(self.vault)):
+            raise ValueError(f"{pid} не подключён")
+        system = CH.system_prompt(self.vault, pid, log=False, query=prompt, model=mname)
+        if not P.memory_on(self.vault):
+            system += "\n\nПамять выключена владельцем."
+        usage: dict = {}
+        text = PR.complete(
+            self.vault,
+            pid,
+            mname,
+            system,
+            [{"role": "user", "text": prompt}],
+            usage=usage,
+            meta={"purpose": "mcp subagent", "client": self.client_id},
+        )
+        return text.strip() or "(субагент ничего не ответил)"
 
     def _may_see(self, ev: dict, c) -> bool:
         """A journal line only about what this assistant may read: no hidden tags, no hidden notes, allowed scopes."""

@@ -424,3 +424,130 @@ def screenshot(dest: Path | str | None = None) -> Path | None:
     except Exception:
         return None
     return None
+
+
+def clipboard_get() -> str:
+    """The system clipboard as text; empty string when this system has no clipboard tool."""
+    try:
+        if IS_MAC:
+            return subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=10).stdout
+        if IS_WIN:
+            return subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout
+        for argv in (
+            ["wl-paste", "--no-newline"],
+            ["xclip", "-selection", "clipboard", "-o"],
+            ["xsel", "--clipboard", "--output"],
+        ):
+            if shutil.which(argv[0]):
+                return subprocess.run(argv, capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return ""
+    return ""
+
+
+def clipboard_set(text: str) -> bool:
+    """Put text into the system clipboard."""
+    try:
+        data = str(text)
+        if IS_MAC:
+            return subprocess.run(["pbcopy"], input=data, text=True, timeout=10).returncode == 0
+        if IS_WIN:
+            return subprocess.run(["clip"], input=data, text=True, timeout=10).returncode == 0
+        for argv in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]):
+            if shutil.which(argv[0]):
+                return subprocess.run(argv, input=data, text=True, timeout=10).returncode == 0
+    except Exception:
+        return False
+    return False
+
+
+def _input_tool() -> tuple[str, str] | None:
+    """(backend, kind) for clicking/typing on this display; Wayland needs wtype/ydotool, X11 xdotool."""
+    if IS_MAC:
+        return None
+    if IS_LINUX:
+        for name in ("ydotool", "wtype", "xdotool"):
+            if shutil.which(name):
+                return name, "wayland" if name in ("ydotool", "wtype") else "x11"
+    return None
+
+
+def click(x: int, y: int, button: int = 1) -> bool:
+    tool = _input_tool()
+    if not tool:
+        return False
+    name = tool[0]
+    try:
+        if name == "xdotool":
+            return (
+                subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", str(button)], timeout=15).returncode
+                == 0
+            )
+        if name == "ydotool":
+            return (
+                subprocess.run(
+                    ["ydotool", "mousemove", "--absolute", "-x", str(x), "-y", str(y)], timeout=15
+                ).returncode
+                == 0
+                and subprocess.run(["ydotool", "click", str(button - 1)], timeout=15).returncode == 0
+            )
+    except Exception:
+        return False
+    return False
+
+
+def type_text(text: str) -> bool:
+    tool = _input_tool()
+    if not tool:
+        return False
+    name = tool[0]
+    try:
+        if name == "xdotool":
+            return subprocess.run(["xdotool", "type", "--", str(text)], timeout=30).returncode == 0
+        if name == "wtype":
+            return subprocess.run(["wtype", "--", str(text)], timeout=30).returncode == 0
+        if name == "ydotool":
+            return subprocess.run(["ydotool", "type", str(text)], timeout=30).returncode == 0
+    except Exception:
+        return False
+    return False
+
+
+def key(name: str) -> bool:
+    tool = _input_tool()
+    if not tool:
+        return False
+    try:
+        if tool[0] == "xdotool":
+            return subprocess.run(["xdotool", "key", str(name)], timeout=15).returncode == 0
+        if tool[0] == "wtype":
+            return subprocess.run(["wtype", "-k", str(name)], timeout=15).returncode == 0
+        if tool[0] == "ydotool":
+            return subprocess.run(["ydotool", "key", str(name)], timeout=15).returncode == 0
+    except Exception:
+        return False
+    return False
+
+
+def scroll(amount: int) -> bool:
+    tool = _input_tool()
+    if not tool:
+        return False
+    try:
+        if tool[0] == "xdotool":
+            return (
+                subprocess.run(
+                    ["xdotool", "click", "4" if amount > 0 else "5", "--repeat", str(abs(amount))], timeout=15
+                ).returncode
+                == 0
+            )
+        if tool[0] == "ydotool":
+            return subprocess.run(["ydotool", "mousemove", "--wheel", "-y", str(-amount)], timeout=15).returncode == 0
+    except Exception:
+        return False
+    return False

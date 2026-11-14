@@ -358,6 +358,30 @@ class TestMcp(unittest.TestCase):
         self.assertIn("one.md:1", r[1]["result"]["content"][0]["text"])
         self.assertIn("Проверить MCP", r[3]["result"]["content"][0]["text"])
 
+    def test_durable_tasks_and_overview_tools(self):
+        r = self.session(
+            "claude",
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": "task_add", "arguments": {"text": "Сделать отчёт", "priority": "high"}},
+                },
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "task_list"}},
+                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "clients_list"}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {"name": "journal_tail", "arguments": {"limit": 10}},
+                },
+            ],
+        )
+        self.assertIn("Сделать отчёт", r[1]["result"]["content"][0]["text"])
+        self.assertIn("claude", r[2]["result"]["content"][0]["text"])
+        self.assertTrue(r[3]["result"]["content"][0]["text"])
+
     def test_pc_tools_respect_the_switch(self):
         P.save(Vault(self.dir), {"pc_access": False})
         r = self.session(

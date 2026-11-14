@@ -157,6 +157,24 @@ def roots(vault: Vault) -> list[tuple[str, Path]]:
     return out
 
 
+def _system_note() -> str:
+    """Tell every model which package manager this computer really has, so it doesn't try apt-get on Fedora."""
+    if os.name == "nt":
+        return "Система: Windows. Программы ставятся через winget."
+    if sys.platform == "darwin":
+        return "Система: macOS. Программы ставятся через brew."
+    pretty = ""
+    try:
+        for line in Path("/etc/os-release").read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith("PRETTY_NAME="):
+                pretty = line.split("=", 1)[1].strip().strip('"')
+                break
+    except OSError:
+        pass
+    manager = next((m for m in ("dnf", "apt-get", "zypper", "pacman", "apk") if shutil.which(m)), "")
+    return f"Система: {pretty or 'Linux'}. Пакетный менеджер: {manager or 'неизвестен'}; ставь пакеты через него."
+
+
 def rule(vault: Vault, small: bool = False) -> str:
     folders = "\n".join(f"- {name}: {path}" for name, path in roots(vault))
     if pc_enabled(vault):
@@ -168,6 +186,8 @@ def rule(vault: Vault, small: bool = False) -> str:
         )
     else:
         terminal = ""
+    if terminal:
+        terminal += "\n" + _system_note()
     return (SMALL_RULE if small else RULE).format(folders=folders, terminal=terminal)
 
 
@@ -472,6 +492,10 @@ def _command(call: dict) -> str:
     return " ".join(str(call.get("command") or call.get("body") or "").split())
 
 
+SECRET_ACCESS = re.compile(
+    r"secret-tool\b|secrets\.json|gnome-keyring|kwallet|keyring\.(?:get|list)|"
+    r"security\s+find-generic-password"
+)
 INSTALL_COMMAND = re.compile(
     r"\b(?:apt(?:-get)?|dnf|yum|zypper|pacman|apk|snap|flatpak)\b[^\n]*\b(?:install|add|-S)\b", re.I
 )
@@ -507,6 +531,73 @@ def _sudo_askpass() -> Path | None:
     return p
 
 
+SUDO_SLOT = "host.sudo"
+
+
+def _stored_sudo(vault: Vault) -> str:
+    try:
+        from ..learn import secrets_store
+
+        return secrets_store.get(secrets_store.vault_id(vault), SUDO_SLOT)
+    except Exception:  # noqa: BLE001 — a missing keyring must not break the command
+        return ""
+
+
+def _gui_password() -> str:
+    """Ask the owner for the administrator password once, in a small system window."""
+    for argv in (
+        ["kdialog", "--title", "Mnemai", "--password", "Пароль администратора — Mnemai запомнит его для sudo"],
+        ["zenity", "--password", "--title=Mnemai"],
+    ):
+        if shutil.which(argv[0]):
+            try:
+                r = subprocess.run(argv, capture_output=True, text=True, timeout=180)
+            except (OSError, subprocess.TimeoutExpired):
+                return ""
+            return r.stdout.rstrip("\r\n") if r.returncode == 0 else ""
+    return ""
+
+
+def _sudo_password(vault: Vault) -> str:
+    """The stored sudo password, or ask once and remember it in the system secret store (never in the prompt)."""
+    pw = _stored_sudo(vault)
+    if pw:
+        return pw
+    pw = _gui_password()
+    if not pw:
+        return ""
+    try:
+        check = subprocess.run(["sudo", "-S", "-k", "-v"], input=pw + "\n", text=True, capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if check.returncode != 0:
+        return ""
+    try:
+        from ..learn import secrets_store
+
+        secrets_store.put(secrets_store.vault_id(vault), SUDO_SLOT, pw)
+    except Exception:  # noqa: BLE001 — still use it for this run
+        pass
+    return pw
+
+
+def _password_askpass(pw: str) -> tuple[Path, Path] | None:
+    """A 0700 helper that prints the stored password; deleted as soon as the command is over."""
+    import shlex
+
+    home = Path(os.environ.get("MNEMA_HOME") or (Path.home() / ".mnema"))
+    run_dir = home / "run"
+    try:
+        run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        slot = Path(tempfile.mkdtemp(prefix="sudo-", dir=run_dir))
+        script = slot / "askpass.sh"
+        script.write_text("#!/bin/sh\nprintf '%s\\n' " + shlex.quote(pw) + "\n", encoding="utf-8")
+        script.chmod(0o700)
+        return slot, script
+    except OSError:
+        return None
+
+
 def _terminal_argv(script: Path) -> list[str] | None:
     """A visible terminal that stays open after the command, so the owner sees the password prompt and the output."""
     if shutil.which("konsole"):
@@ -524,7 +615,9 @@ def _terminal_argv(script: Path) -> list[str] | None:
     return None
 
 
-def _run_in_terminal(vault: Vault, command: str, work: Path, timeout: int, client: str) -> tuple[str, str, str]:
+def _run_in_terminal(
+    vault: Vault, command: str, work: Path, timeout: int, client: str, pw: str = ""
+) -> tuple[str, str, str]:
     """Run a command in a real terminal window, but still wait for its exit code and capture its output."""
     import shlex
 
@@ -538,9 +631,15 @@ def _run_in_terminal(vault: Vault, command: str, work: Path, timeout: int, clien
         raise Refused(f"не смогла создать папку для терминала: {e}") from e
     slot = Path(tempfile.mkdtemp(prefix="term-", dir=run_dir))
     log, code_file, script = slot / "output.log", slot / "exit-code", slot / "run.sh"
+    ask_dir: Path | None = None
+    ask_env = ""
+    if pw:
+        made = _password_askpass(pw)
+        if made:
+            ask_dir, ask = made
+            ask_env = f"export SUDO_ASKPASS={shlex.quote(str(ask))}\nexport SUDO_ASKPASS_REQUIRE=force\n"
     script.write_text(
-        "#!/bin/bash\n"
-        f"exec > >(tee -a {shlex.quote(str(log))}) 2>&1\n"
+        "#!/bin/bash\n" + ask_env + f"exec > >(tee -a {shlex.quote(str(log))}) 2>&1\n"
         "(\n" + command + "\n)\n"
         "status=$?\n"
         "printf '%s\\n' \"$status\" > " + shlex.quote(str(code_file)) + "\n"
@@ -553,6 +652,8 @@ def _run_in_terminal(vault: Vault, command: str, work: Path, timeout: int, clien
     argv = _terminal_argv(script)
     if not argv:
         shutil.rmtree(slot, ignore_errors=True)
+        if ask_dir:
+            shutil.rmtree(ask_dir, ignore_errors=True)
         raise Refused("не нашла терминальное окно (konsole/gnome-terminal/xterm), запускаю без окна")
     try:
         subprocess.Popen(
@@ -560,6 +661,8 @@ def _run_in_terminal(vault: Vault, command: str, work: Path, timeout: int, clien
         )
     except OSError as e:
         shutil.rmtree(slot, ignore_errors=True)
+        if ask_dir:
+            shutil.rmtree(ask_dir, ignore_errors=True)
         raise Refused(f"не получилось открыть терминал: {e}") from e
     started = time.time()
     code: int | None = None
@@ -575,11 +678,16 @@ def _run_in_terminal(vault: Vault, command: str, work: Path, timeout: int, clien
     except OSError:
         out = ""
     shutil.rmtree(slot, ignore_errors=True)  # the terminal keeps the text on screen; the temp log is not needed
+    if ask_dir:
+        shutil.rmtree(ask_dir, ignore_errors=True)
     log_event(vault, client, "exec", f"терминал с окном: {command[:160]}")
     if code is None:
         text = f"[терминал открыт · ждёт завершения · {work}]\n[вывод]\n{out.strip()[:MAX_OUTPUT]}"
         return text, f"Открыла терминал: {command[:120]} (команда ещё выполняется)", str(work)
     text = f"[код {code} · {seconds:.1f} с · {work}]\n[вывод]\n{out.strip() or '(пусто)'}"
+    if pw:
+        text = text.replace(pw, "•••")
+        out = out.replace(pw, "•••")
     if len(text) > MAX_OUTPUT:
         text = text[: MAX_OUTPUT - 200].rstrip() + "\n…[вывод обрезан]"
     snippet = (" · ".join(out.strip().splitlines()[:3]) or f"код {code}")[:300]
@@ -596,6 +704,11 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     command = str(call.get("command") or call.get("body") or "").strip()
     if not command:
         raise Refused("пустая команда: нужен command=\"…\"")
+    # a model sometimes appends its action options to a bare-command block: «sudo dnf install -y nmap terminal: true»
+    command = re.sub(r"\s+(?:terminal|visible)\s*:\s*(?:true|false)\s*$", "", command, flags=re.I)
+    command = re.sub(r"\s+(?:cwd|timeout)\s*:\s*(?:\"[^\"]*\"|'[^']*'|\S+)\s*$", "", command, flags=re.I)
+    if SECRET_ACCESS.search(command):
+        raise Refused("пароли и ключи не читаю — они лежат вне памяти и не отдаются ни одной модели")
     where = str(call.get("cwd") or "").strip()
     work = Path(where).expanduser().resolve() if where else Path.home()
     if not work.is_dir():
@@ -605,14 +718,23 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     except ValueError:
         timeout = DEFAULT_COMMAND_SECONDS
     timeout = max(1, min(MAX_COMMAND_SECONDS, timeout))
+    needs_sudo = bool(re.search(r"(?<![\w./-])sudo(?![\w.-])", command))
     visible = bool(call.get("terminal") or call.get("visible"))
     if "terminal" not in call and "visible" not in call and INSTALL_COMMAND.search(command):
         visible = True  # installing is shown in a real terminal: the owner sees sudo and the progress
+    pw = _stored_sudo(vault) if needs_sudo else ""
+    if needs_sudo and visible and not pw:
+        pw = _sudo_password(vault)  # ask once, remember in the system keychain, never show to a model
     if os.name != "nt" and visible:
-        return _run_in_terminal(vault, command, work, timeout, client)
+        return _run_in_terminal(vault, command, work, timeout, client, pw)
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1", "TERM": "dumb"}
-    if re.search(r"(?<![\w./-])sudo(?![\w.-])", command):
-        askpass = _sudo_askpass()
+    ask_dir: Path | None = None
+    if needs_sudo:
+        made = _password_askpass(pw) if pw else None
+        if made:
+            ask_dir, askpass = made
+        else:
+            askpass = _sudo_askpass()
         if askpass:
             env["SUDO_ASKPASS"] = str(askpass)
             env["SUDO_ASKPASS_REQUIRE"] = "force"  # also for sudo versions that need it without -A
@@ -659,6 +781,8 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
             out, err = proc.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             out, err = "", ""
+    if ask_dir:
+        shutil.rmtree(ask_dir, ignore_errors=True)
     seconds = time.time() - started
     log_event(vault, client, "exec", f"терминал ({timeout} с): {command[:160]}")
     code = proc.returncode
@@ -676,10 +800,14 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
         text = text[:keep].rstrip() + f"\n…[вывод обрезан: всего {len(text)} знаков]"
     if not out.strip() and not err.strip():
         text += "\n(команда ничего не вывела)"
+    if pw:
+        text = text.replace(pw, "•••")
     # the owner sees a short result right in the conversation, the model gets the whole (bounded) output
     shown = (out.strip() or err.strip()).splitlines()[:3]
     snippet = " · ".join(x.strip() for x in shown)[:300] if shown else ("код " + str(code))
     line = f"Выполнила команду: {command[:120]} → {snippet}"
+    if pw:
+        line = line.replace(pw, "•••")
     return text, line, str(work)
 
 

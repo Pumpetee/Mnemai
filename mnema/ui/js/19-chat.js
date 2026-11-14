@@ -462,7 +462,7 @@ document.addEventListener("mousedown", (e) => {
   if (!d || d.hidden || e.target.closest("#panel,#gearbtn,.menu,.pop,.modal,.hqpop,#toast")) return;
   toggleDrawer(false);
 });
-// Escape closes overlays, never the answer: pressing it while the answer is being written must do nothing.
+// Escape closes overlays; with no overlay open it stops the answer, like the white stop button.
 document.addEventListener(
   "keydown",
   (e) => {
@@ -473,6 +473,9 @@ document.addEventListener(
     if (overlay) return; // let the overlay's own Escape handler close it
     e.preventDefault();
     e.stopImmediatePropagation();
+    if (CHAT.cons && !$("#inp").value.trim()) consAct("pause");
+    else if (CHAT.cons) sendMsg();
+    else post("/api/chat/stop", { chat: CHAT.id }).then(() => $("#inp").focus());
   },
   true,
 );

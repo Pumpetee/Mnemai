@@ -1239,17 +1239,16 @@ def _generate(
                 result = _act(vault, chat["id"], g, call, PR.PROVIDERS[pid]["client"], model)
                 if result is None:  # stopped while waiting for the owner's word
                     break
-                msgs = msgs + [
-                    {
-                        "role": "assistant",
-                        "text": said + f"\n[action: {call['tool']} {call.get('path') or call.get('query') or ''}]",
-                    },
-                    {"role": "user", "text": "[Результат действия от Mnemai]\n" + result},
-                ]
+                if said:
+                    msgs = msgs + [{"role": "assistant", "text": said}]
+                msgs = msgs + [{"role": "user", "text": "[Результат действия от Mnemai]\n" + result}]
                 g["text"] = ""
                 g["phase"] = "пишу"
                 g["started"] = time.time()
             g["text"] = strip_tool_markup(strip_thinking(g["text"]))
+            g["text"] = re.sub(r"\[action:[^\]]*\]", "", g["text"]).strip()
+            if not g["text"]:
+                g["text"] = "Готово."
             if not web and not g.get("sources") and text != OPENER:  # Mnemai speaking first never needs the web
                 from .. import web as W
 

@@ -1317,7 +1317,9 @@ function quoteLine(s) {
 function msgHtml(m, last, i, lastAi) {
   if (m.hidden) return "";
   if (m.kind === "progress") {
-    if (!CHAT.polling) return "";
+    const all = (CHAT.chat && CHAT.chat.messages) || [];
+    // the model's own «Принял, делаю.» or any later step replaces the temporary acknowledgement
+    if (!CHAT.polling || all.slice(i + 1).some((x) => x.role === "assistant" && x.kind !== "progress")) return "";
     return `<div class="actline progress">${ic("clock")}<span class="actone"><span data-noi18n>${esc(m.text)}</span></span></div>`;
   }
   if (m.kind === "action") {

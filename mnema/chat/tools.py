@@ -827,6 +827,15 @@ APP_ALIASES = {
     "vscode": ["code", "codium"],
     "terminal": ["konsole", "gnome-terminal", "xterm"],
     "терминал": ["konsole", "gnome-terminal", "xterm"],
+    "text_editor": ["kwrite", "kate", "gedit", "mousepad"],
+    "редактор": ["kwrite", "kate", "gedit", "mousepad"],
+    "текстовый редактор": ["kwrite", "kate", "gedit", "mousepad"],
+    "блокнот": ["kwrite", "kate", "gedit", "mousepad"],
+    "calculator": ["kcalc", "gnome-calculator", "galculator"],
+    "калькулятор": ["kcalc", "gnome-calculator", "galculator"],
+    "drawing": ["kolourpaint", "krita", "gimp"],
+    "рисовалка": ["kolourpaint", "krita", "gimp"],
+    "рисовалку": ["kolourpaint", "krita", "gimp"],
 }
 
 

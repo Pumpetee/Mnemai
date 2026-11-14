@@ -32,6 +32,22 @@ HOWTO_RE = re.compile(
 )
 _gen: dict[str, dict] = {}
 _queued: dict[str, list[dict]] = {}
+
+
+def _queue_add(vault: Vault, cid: str, item: dict) -> None:
+    """Queue a message both in memory and in the chat file, so a restart does not lose it."""
+    _queued.setdefault(cid, []).append(item)
+
+    def add(c):
+        c.setdefault("queued", []).append(item)
+        c["updated"] = _now()
+
+    try:
+        modify_chat(vault, cid, add)
+    except KeyError:
+        pass
+
+
 STOP_RE = re.compile(r"^\s*(?:стоп|останов(?:ись|и)?|хватит|отмена|прекрати|не\s+надо|stop|cancel)\b", re.I)
 
 ASK_RULE = """Вопросы владельцу:
@@ -812,9 +828,15 @@ def send(
                     {"role": "assistant", "kind": "progress", "queue": True, "ts": _now(), "text": "Останавливаю…"},
                 )
                 return {"chat": chat["id"], "title": chat["title"], "model": model, "stopped": True}
-            _queued.setdefault(chat["id"], []).append(
-                {"text": text, "files": files, "quote": quote, "web": web, "terms": terms}
-            )
+            item = {
+                "id": secrets.token_hex(4),
+                "text": text,
+                "files": files,
+                "quote": quote,
+                "web": web,
+                "terms": terms,
+            }
+            _queue_add(vault, chat["id"], item)
             _add_msg(
                 vault,
                 chat["id"],
@@ -1087,11 +1109,29 @@ WEB_NOTE = (
 def _drain_queue(vault: Vault, cid: str) -> None:
     """After a turn finishes (or crashes), take the next message the owner wrote during it and start it."""
     q = _queued.get(cid) or []
-    if not q:
-        return
-    item = q.pop(0)
+    item = q.pop(0) if q else None
     if not q:
         _queued.pop(cid, None)
+    if item is None:  # nothing in this process: the chat file may still hold a message from before a restart
+        try:
+            item = (load_chat(vault, cid).get("queued") or [None])[0]
+        except KeyError:
+            return
+        if not item:
+            return
+
+    def drop(c):
+        qs = c.get("queued") or []
+        for i, x in enumerate(qs):
+            if x.get("id") == item.get("id") or x == item:
+                qs.pop(i)
+                break
+        c["updated"] = _now()
+
+    try:
+        modify_chat(vault, cid, drop)
+    except KeyError:
+        return
     try:
         send(
             vault,
@@ -1115,6 +1155,16 @@ def _drain_queue(vault: Vault, cid: str) -> None:
             },
         )
         _drain_queue(vault, cid)
+
+
+def resume_queues(vault: Vault) -> None:
+    """After a restart, start the first message left in a chat queue by the previous run."""
+    for c in list_chats(vault, limit=100000):
+        if c.get("queued"):
+            try:
+                _drain_queue(vault, c["id"])
+            except Exception:  # noqa: BLE001 — one broken chat must not stop the others
+                pass
 
 
 def _generate(
@@ -1312,9 +1362,9 @@ def _generate(
                 g["text"] = ""
                 g["phase"] = "пишу"
                 g["started"] = time.time()
-            g["text"] = strip_tool_markup(strip_thinking(g["text"]))
-            g["text"] = re.sub(r"\[action:[^\]]*\]", "", g["text"]).strip()
-            if not g["text"]:
+            raw_text = strip_tool_markup(strip_thinking(g["text"]))
+            g["text"] = re.sub(r"\[action:[^\]]*\]", "", raw_text).strip()
+            if raw_text.strip() and not g["text"]:  # the answer was only our internal action marker
                 g["text"] = "Готово."
             if not web and not g.get("sources") and text != OPENER:  # Mnemai speaking first never needs the web
                 from .. import web as W

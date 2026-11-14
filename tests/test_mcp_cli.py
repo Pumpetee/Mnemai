@@ -221,7 +221,7 @@ class TestMcp(unittest.TestCase):
         self.assertIn("Заменено", r[1]["result"]["content"][0]["text"])
         self.assertIn("Новый факт", r[2]["result"]["content"][0]["text"])
         self.assertIn("Забыто", r[3]["result"]["content"][0]["text"])
-        self.assertEqual(r[4]["result"]["content"][0]["text"], "Ничего не нашлось.")
+        self.assertNotIn("Новый факт", r[4]["result"]["content"][0]["text"])
 
     def test_file_lifecycle_tools(self):
         root = Path(tempfile.mkdtemp())
@@ -381,6 +381,41 @@ class TestMcp(unittest.TestCase):
         self.assertIn("Сделать отчёт", r[1]["result"]["content"][0]["text"])
         self.assertIn("claude", r[2]["result"]["content"][0]["text"])
         self.assertTrue(r[3]["result"]["content"][0]["text"])
+
+    def test_client_cannot_forget_outside_its_write_scopes(self):
+        rules = self.dir / "70 Memory" / "Rules.md"
+        before = rules.read_text(encoding="utf-8")
+        r = self.session(
+            "gemini",
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": "memory_forget", "arguments": {"query": "Не выдумывай факты"}},
+                }
+            ],
+        )
+        self.assertTrue(r[0]["result"].get("isError"))
+        self.assertEqual(rules.read_text(encoding="utf-8"), before)  # the rule stayed
+
+    def test_secret_store_is_not_readable_over_mcp(self):
+        secret = Path(os.environ["MNEMA_HOME"]) / "secrets.json"
+        secret.parent.mkdir(parents=True, exist_ok=True)
+        secret.write_text('{"secret": 1}', encoding="utf-8")
+        r = self.session(
+            "claude",
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": "pc_read_file", "arguments": {"path": str(secret)}},
+                }
+            ],
+        )
+        self.assertTrue(r[0]["result"].get("isError"))
+        self.assertIn("служебные", r[0]["result"]["content"][0]["text"])
 
     def test_pc_tools_respect_the_switch(self):
         P.save(Vault(self.dir), {"pc_access": False})

@@ -46,6 +46,26 @@ class QueueTest(unittest.TestCase):
         self.assertTrue(r.get("stopped"))
         self.assertNotIn(self.cid, CH._queued)
 
+    def test_queue_is_persisted_in_the_chat_and_resumed(self):
+        CH._queued.pop(self.cid, None)
+        chat = CH.load_chat(self.v, self.cid)
+        chat["queued"] = [{"id": "q1", "text": "после перезапуска"}]
+        CH.save_chat(self.v, chat)
+        calls = []
+
+        def fake_send(*a, **k):
+            calls.append(k.get("cid"))
+            return {"chat": self.cid}
+
+        old = CH.send
+        CH.send = fake_send
+        try:
+            CH._drain_queue(self.v, self.cid)
+        finally:
+            CH.send = old
+        self.assertEqual(calls, [self.cid])
+        self.assertFalse(CH.load_chat(self.v, self.cid).get("queued"))
+
     def test_drain_keeps_going_after_a_failed_task(self):
         CH._queued[self.cid] = [{"text": "one"}, {"text": "two"}]
         calls = []

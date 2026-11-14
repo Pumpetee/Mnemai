@@ -75,8 +75,9 @@ class HarnessProvider(unittest.TestCase):
         )
         c = CH.load_chat(self.v, r["chat"])
         actions = [m for m in c["messages"] if m.get("kind") == "action"]
-        self.assertTrue(actions, "the harness should ask Mnema to read the file")
-        self.assertIn("harness-note.md", actions[0].get("text", ""))
+        self.assertTrue(actions, "the harness should ask Mnema to do the work")
+        # the model may pick read_file or a terminal cat — both are Mnema's own tools
+        self.assertIn(actions[0].get("tool"), ("read_file", "run_command", "list_files"))
         answer = [m for m in c["messages"] if m["role"] == "assistant" and m.get("kind") != "action"][-1]
         self.assertIn("ласточка", answer["text"].lower())
 

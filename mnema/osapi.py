@@ -529,6 +529,95 @@ def type_text(text: str) -> bool:
     return False
 
 
+KEYCODES = {
+    "return": 28,
+    "enter": 28,
+    "esc": 1,
+    "escape": 1,
+    "tab": 15,
+    "space": 57,
+    "backspace": 14,
+    "delete": 111,
+    "del": 111,
+    "home": 102,
+    "end": 107,
+    "pageup": 104,
+    "pagedown": 109,
+    "up": 103,
+    "down": 108,
+    "left": 105,
+    "right": 106,
+    "ctrl": 29,
+    "control": 29,
+    "alt": 56,
+    "shift": 42,
+    "super": 125,
+    "meta": 125,
+    "f1": 59,
+    "f2": 60,
+    "f3": 61,
+    "f4": 62,
+    "f5": 63,
+    "f6": 64,
+    "f7": 65,
+    "f8": 66,
+    "f9": 67,
+    "f10": 68,
+    "f11": 87,
+    "f12": 88,
+}
+
+
+def _key_sequence(name: str) -> list[str] | None:
+    """xdotool-style names → ydotool raw keycodes (e.g. ctrl+c → 29:1 46:1 46:0 29:0)."""
+    codes: list[int] = []
+    for part in str(name).lower().split("+"):
+        part = part.strip()
+        if part in KEYCODES:
+            codes.append(KEYCODES[part])
+        elif len(part) == 1 and part.isalnum():
+            letters = {
+                "q": 16,
+                "w": 17,
+                "e": 18,
+                "r": 19,
+                "t": 20,
+                "y": 21,
+                "u": 22,
+                "i": 23,
+                "o": 24,
+                "p": 25,
+                "a": 30,
+                "s": 31,
+                "d": 32,
+                "f": 33,
+                "g": 34,
+                "h": 35,
+                "j": 36,
+                "k": 37,
+                "l": 38,
+                "z": 44,
+                "x": 45,
+                "c": 46,
+                "v": 47,
+                "b": 48,
+                "n": 49,
+                "m": 50,
+            }
+            if part in letters:
+                codes.append(letters[part])
+            elif part.isdigit():
+                codes.append(2 + "1234567890".index(part))
+            else:
+                return None
+        else:
+            return None
+    if not codes:
+        return None
+    out = [f"{code}:1" for code in codes] + [f"{code}:0" for code in reversed(codes)]
+    return out
+
+
 def key(name: str) -> bool:
     tool = _input_tool()
     if not tool:
@@ -539,7 +628,10 @@ def key(name: str) -> bool:
         if tool[0] == "wtype":
             return subprocess.run(["wtype", "-k", str(name)], timeout=15).returncode == 0
         if tool[0] == "ydotool":
-            return subprocess.run(["ydotool", "key", str(name)], timeout=15).returncode == 0
+            seq = _key_sequence(str(name))
+            if not seq:
+                return False
+            return subprocess.run(["ydotool", "key", *seq], timeout=15).returncode == 0
     except Exception:
         return False
     return False

@@ -489,6 +489,7 @@ ACTION_TOOLS = [
                 "command": {"type": "string"},
                 "cwd": {"type": "string"},
                 "timeout": {"type": "integer", "minimum": 1, "maximum": 300, "default": 120},
+                "terminal": {"type": "boolean", "description": "Показать команду в видимом терминале."},
             },
             "required": ["command"],
         },
@@ -654,6 +655,18 @@ class Server:
             return f"Откачено: {ev['summary']}"
         raise KeyError(name)
 
+    def _is_internal(self, value: str) -> bool:
+        home = Path(os.environ.get("MNEMA_HOME") or (Path.home() / ".mnema")).resolve()
+        try:
+            p = Path(str(value)).expanduser().resolve()
+        except (OSError, RuntimeError):
+            return False
+        try:
+            p.relative_to(home)
+            return True
+        except ValueError:
+            return False
+
     def _pc(self, name: str, args: dict, c) -> str:
         """The owner's computer through MCP: the same terminal as in the chat, with the same journal. Reading needs
         the assistant to be enabled; running and writing also need its write permission."""
@@ -666,6 +679,12 @@ class Server:
         from .chat import tools as TL
         from .journal import log_event
 
+        if name == "pc_run" and TL.SECRET_ACCESS.search(str(args.get("command") or "")):
+            raise PermissionDenied("пароли и ключи не читаю — они лежат вне памяти и не отдаются ни одной модели")
+        if name in ("pc_read_file", "pc_list_dir", "pc_glob", "pc_grep"):
+            needle = str(args.get("path") or ("~" if name in ("pc_list_dir", "pc_glob", "pc_grep") else ""))
+            if self._is_internal(needle):
+                raise PermissionDenied("служебные файлы Mnemai закрыты для ассистентов")
         if name in PC_WRITE and not c.can_write:
             raise PermissionDenied(f"{c.name} не может менять файлы, запускать команды и программы")
         if name == "pc_run":
@@ -825,11 +844,21 @@ class Server:
         if not hits:
             return "Ничего не нашлось."
         gone: list[str] = []
+        forbidden = False
         for rel, line in hits:
+            target = line.strip()
+            if not target.startswith(("-", "*")):  # never remove headings or system prose by a word match
+                continue
+            try:
+                note = self.vault.read(rel)
+            except (OSError, ValueError):
+                continue
+            if not c.may_write(note.scope):  # a client with inbox write access must not forget rules/cards
+                forbidden = True
+                continue
             raw = self.vault.read_raw(rel)
             if not raw:
                 continue
-            target = line.strip()
             lines = raw.splitlines()
             if target not in [ln.strip() for ln in lines]:
                 continue
@@ -844,6 +873,8 @@ class Server:
                 MEM.generate_index(self.vault)
             except Exception:  # noqa: BLE001 — the files are already changed; the summary is best effort
                 pass
+        if not gone and forbidden:
+            raise PermissionDenied(f"{c.name} не может забывать записи вне своих разрешённых сфер")
         return "Забыто:\n" + "\n".join(gone[:20]) if gone else "Ничего не нашлось."
 
     def _update_memory(self, args: dict, c) -> str:
@@ -852,6 +883,11 @@ class Server:
         where = str(args.get("where") or "inbox")
         if not query or not text:
             raise ValueError("нужны query и text")
+        from .memory import PLACES
+
+        scope = PLACES.get(where.partition(":")[0])
+        if not scope or not c.may_write(scope):
+            raise PermissionDenied(f"{c.name} не может писать в {where}")
         gone = self._forget({"query": query}, c)
         if "Ничего" in gone:
             return gone
@@ -882,6 +918,10 @@ class Server:
         return f"{doc.get('title') or url}\n{doc.get('url') or url}\n\n{(doc.get('text') or '')[:cap]}"
 
     def _resources(self) -> list[dict]:
+        from .agent import profile as P
+
+        if not P.memory_on(self.vault):
+            return []
         c = get_client(self.vault, self.client_id)
         out: list[dict] = []
         try:
@@ -909,6 +949,10 @@ class Server:
         return out
 
     def _resource_read(self, uri: str) -> dict:
+        from .agent import profile as P
+
+        if not P.memory_on(self.vault):
+            raise ValueError("память выключена владельцем")
         if not uri.startswith("mnema://memory/"):
             raise ValueError("неизвестный ресурс")
         rel = urllib.parse.unquote(uri[len("mnema://memory/") :])
@@ -1070,6 +1114,7 @@ class Server:
             hits = list(root.glob(pattern))
         except (OSError, ValueError) as e:
             raise ValueError(f"плохой шаблон: {e}") from e
+        hits = [p for p in hits if not self._is_internal(str(p))]
         log_event(self.vault, self.client_id, "read", f"glob {pattern} в {root}", [])
         return "\n".join(str(p) for p in hits[:limit]) or "Ничего не нашлось."
 
@@ -1086,7 +1131,7 @@ class Server:
             raise ValueError("такой папки нет")
         globpat = str(args.get("glob") or "*")
         limit = max(1, min(200, int(args.get("limit") or 50)))
-        skip = {".git", "node_modules", ".cache", ".venv", "target", "dist", "__pycache__"}
+        skip = {".git", "node_modules", ".cache", ".venv", "target", "dist", "__pycache__", ".mnema"}
         out: list[str] = []
         started = time.time()
         for p in root.rglob(globpat):

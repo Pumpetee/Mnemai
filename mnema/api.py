@@ -307,6 +307,10 @@ def serve(vault: Vault, port: int = 7461, learn: bool = True) -> None:
         from . import tasks
 
         tasks.start_worker(vault)
+    from .chat import engine as CH
+    import threading as _th
+
+    _th.Thread(target=CH.resume_queues, args=(vault,), daemon=True, name="mnema-resume-queue").start()
     print(f"Mnemai: http://127.0.0.1:{port}  (хранилище {vault.root})", flush=True)
     try:
         srv.serve_forever()

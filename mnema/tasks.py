@@ -8,6 +8,7 @@ only when the client calls task_run.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import threading
 import time
@@ -81,13 +82,23 @@ def get(vault: Vault, tid: str) -> dict | None:
     return next((x for x in load(vault) if x.get("id") == tid), None)
 
 
+def _alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def update(vault: Vault, tid: str, **fields) -> dict:
     with _lock:
         items = load(vault)
         task = next((x for x in items if x.get("id") == tid), None)
         if not task:
             raise ValueError("такой задачи нет")
-        for k in ("text", "priority", "status", "auto", "model", "error", "result", "chat", "attempts"):
+        for k in ("text", "priority", "status", "auto", "model", "error", "result", "chat", "attempts", "runner"):
             if k in fields:
                 task[k] = fields[k]
         task["updated"] = time.time()
@@ -119,7 +130,9 @@ def run(vault: Vault, tid: str, client: str = "owner") -> str:
     task = get(vault, tid)
     if not task:
         raise ValueError("такой задачи нет")
-    update(vault, tid, status="running", error="")
+    if task.get("status") == "running":
+        raise ValueError("эта задача уже выполняется")
+    update(vault, tid, status="running", error="", runner=os.getpid())
     try:
         r = CH.send(vault, task["text"], model=task.get("model") or "", sync=True, learn=False)
         chat = CH.load_chat(vault, r["chat"])
@@ -158,8 +171,12 @@ def start_worker(vault: Vault) -> None:
                 changed = False
                 for t in items:
                     if t.get("status") == "running":
-                        t["status"] = "open"
-                        changed = True
+                        runner = int(t.get("runner") or 0)
+                        stale = time.time() - float(t.get("updated") or 0) > 3600
+                        if stale or not _alive(runner):  # another live MCP process may own it
+                            t["status"] = "open"
+                            t["runner"] = 0
+                            changed = True
                 if changed:
                     save(vault, items)
                 ordered = sorted(

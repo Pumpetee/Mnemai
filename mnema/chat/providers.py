@@ -7,6 +7,7 @@ provider itself — nothing is guessed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -1053,7 +1054,8 @@ def _claude_mcp_config(vault: Vault) -> Path:
     """A per-request MCP config: Claude Code sees Mnemai's server and no tools of its own."""
     cwd = Path(tempfile.gettempdir()) / "mnema-chat"
     cwd.mkdir(exist_ok=True)
-    cfg = cwd / "mcp.json"
+    stamp = hashlib.sha1(str(vault.root.resolve()).encode("utf-8")).hexdigest()[:12]
+    cfg = cwd / f"mcp-{stamp}.json"
     repo = str(Path(__file__).resolve().parents[2])
     data = {
         "mcpServers": {
@@ -1065,6 +1067,10 @@ def _claude_mcp_config(vault: Vault) -> Path:
         }
     }
     cfg.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    try:
+        cfg.chmod(0o600)
+    except OSError:
+        pass
     return cfg
 
 

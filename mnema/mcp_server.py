@@ -525,6 +525,12 @@ class Server:
             self.vault.write_raw(rel, "\n".join(rest) + "\n")
             log_event(self.vault, self.client_id, "forget", f"забыто: {query}", [rel])
             gone.append(f"- {line.strip()} ({rel})")
+        if gone:
+            try:
+                MEM.generate_now(self.vault)
+                MEM.generate_index(self.vault)
+            except Exception:  # noqa: BLE001 — the files are already changed; the summary is best effort
+                pass
         return "Забыто:\n" + "\n".join(gone[:20]) if gone else "Ничего не нашлось."
 
     def _update_memory(self, args: dict, c) -> str:

@@ -1051,7 +1051,10 @@ CLAUDE_MCP_NOTE = """=== MCP Mnemai ===
 ОТВЕТ ВЛАДЕЛЬЦУ: максимум две короткие фразы. Не пересказывай проверки, не составляй таблиц и списков
 инструментов, не пиши «проверил ещё…». Если проверил много — «Всё работает» и только найденные проблемы.
 Для интернета есть только mcp__mnemai__web_search и mcp__mnemai__web_fetch; встроенного WebSearch у тебя нет,
-не ищи его и не говори «инструмент не найден»."""
+не ищи его и не говори «инструмент не найден».
+Все имена начинаются с «mcp__mnemai__». Без этого префикса инструментов нет: никаких bash_tool, Bash, Read,
+Write, Edit, Glob, Grep, WebSearch, WebFetch, ToolSearch, str_replace, view, create_file. Не вызывай их и не
+упоминай. Если вызов вернул ошибку — скажи честно, что шаг не удался; не выдумывай успех."""
 
 
 def _claude_mcp_config(vault: Vault) -> Path:
@@ -1141,6 +1144,7 @@ def _stream_raw(
             "--no-session-persistence",
             "--tools",
             "",  # no built-in Claude tools: every action goes through Mnemai's MCP server
+            "--disable-slash-commands",  # no Claude Code skills/commands with their own tool names
             "--mcp-config",
             str(_claude_mcp_config(vault)),
             "--allowedTools",

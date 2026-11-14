@@ -43,6 +43,7 @@ class Intents(unittest.TestCase):
         self.assertEqual(IN.fast_action(self.v, "который час")["tool"], "time")
         self.assertEqual(IN.fast_action(self.v, "сколько памяти")["tool"], "system")
         self.assertIsNone(IN.fast_action(self.v, "расскажи, как прошёл день"))
+        self.assertIsNone(IN.fast_action(self.v, "Запусти ютуб в терминале"))  # not a shell command: let the model act
         self.assertIsNone(IN.fast_action(self.v, "открой файл с отчётом"))
 
     def test_file_commands_work_without_a_model(self):

@@ -27,7 +27,7 @@ LIST = re.compile(
 )
 FIND = re.compile(r"^\s*(?:найди|поищи)\s+(.+?)\s+(?:в файлах|по файлам|в документах)\s*[.!?]*$", re.I)
 COMMAND = re.compile(
-    r"^\s*(?:(?:выполни|выполнить|команда|запусти(?:те)?\s+(?:в\s+терминале\s+)?(?:команду\s+)?)\s*[:：]?\s*|"
+    r"^\s*(?:(?:выполни|выполнить|команда|cmd)\s*[:：]?\s*|"
     r"!(?:bash|sh)?\s*|/run\s+)(.+)$",
     re.I | re.S,
 )
@@ -205,7 +205,7 @@ def fast_action(vault: Vault, text: str) -> dict | None:
     if SHOWMEM.match(raw):
         return {"tool": "memory_show", "label": "память"}
     m = COMMAND.match(raw)
-    if m and (raw.startswith(("!", "/run")) or re.match(r"^\s*(?:выполни|выполнить|команда|запусти)", raw, re.I)):
+    if m and (raw.startswith(("!", "/run")) or re.match(r"^\s*(?:выполни|выполнить|команда|cmd\b)", raw, re.I)):
         command = m.group(1).strip()
         if command:
             return {"tool": "run_command", "command": command, "label": "команда"}
@@ -296,8 +296,15 @@ def _run(vault: Vault, tool: str, args: dict) -> tuple[str, str]:
     if tool == "find_files":
         return result.strip()[:1200] or "Ничего не нашла.", result
     if tool == "run_command":
-        text = result.strip()
-        return text[:1200] + ("\n…[вывод обрезан]" if len(text) > 1200 else ""), result
+        code = 0
+        m = re.match(r"\[код (-?\d+)", result)
+        if m:
+            code = int(m.group(1))
+        if code:
+            err = result.split("[ошибки]", 1)[-1].strip().splitlines()
+            return "Не получилось: " + ((err[0] if err else "команда завершилась с ошибкой")[:300]), result
+        shown = result.split("[вывод]", 1)[-1].split("[ошибки]")[0].strip() if "[вывод]" in result else ""
+        return (shown[:1200] or "Готово."), result
     return result.strip(), result
 
 

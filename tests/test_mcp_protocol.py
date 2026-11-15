@@ -26,6 +26,11 @@ def _vault() -> Vault:
     return v
 
 
+def _py(code: str) -> str:
+    """A command that sleeps/prints on every OS: no `sleep` binary is needed on Windows."""
+    return f'"{sys.executable}" -c "{code}"'
+
+
 def _req(mid, method, params=None):
     msg = {"jsonrpc": "2.0", "id": mid, "method": method}
     if params is not None:
@@ -98,7 +103,9 @@ class Protocol(unittest.TestCase):
 
         def long_call():
             t0 = time.time()
-            self.srv.handle(_req(7, "tools/call", {"name": "pc_run", "arguments": {"command": "sleep 1.2"}}))
+            self.srv.handle(
+                _req(7, "tools/call", {"name": "pc_run", "arguments": {"command": _py("import time; time.sleep(1.2)")}})
+            )
             seen["long"] = time.time() - t0
 
         th = threading.Thread(target=long_call, daemon=True)
@@ -120,7 +127,11 @@ class Protocol(unittest.TestCase):
                 "tools/call",
                 {
                     "name": "pc_run",
-                    "arguments": {"command": "echo one; sleep 0.3; echo two"},
+                    "arguments": {
+                        "command": _py(
+                            "import time; print('one', flush=True); time.sleep(0.3); print('two', flush=True)"
+                        )
+                    },
                     "_meta": {"progressToken": "tok-1"},
                 },
             )
@@ -149,7 +160,7 @@ class Protocol(unittest.TestCase):
                             "jsonrpc": "2.0",
                             "id": 11,
                             "method": "tools/call",
-                            "params": {"name": "pc_run", "arguments": {"command": "sleep 5"}},
+                            "params": {"name": "pc_run", "arguments": {"command": _py("import time; time.sleep(5)")}},
                         }
                     )
                     + "\n"
@@ -178,7 +189,10 @@ class Protocol(unittest.TestCase):
     def test_sudo_is_refused_without_a_password(self):
         import mnema.chat.tools as TL
 
-        with patch.object(TL, "sudo_cached", lambda vault: ""):
+        with (
+            patch.object(TL, "needs_sudo", lambda cmd: True),
+            patch.object(TL, "sudo_cached", lambda vault: ""),
+        ):
             r = self.srv.handle(
                 _req(12, "tools/call", {"name": "pc_run", "arguments": {"command": "sudo dnf install -y nmap"}})
             )

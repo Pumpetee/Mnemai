@@ -16,20 +16,22 @@ function planCardHTML(plan, inChat) {
   const tone = ["fast", "optimal", "quality"].includes(plan.id) ? plan.id : "optimal";
   const nodes = steps
     .map((s, i) => {
-      const e = s.est || {};
-      return `<div class="pnode"><div class="phead"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span></div><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${fmtTok(e.tokens || 0, true)} · ${planSecs(e.seconds)}</span></div>`;
+      const e = s.est || {},
+        a = s.actual;
+      const fact = a
+        ? ` title="прогноз ${fmtTok(e.tokens || 0, true)} · ${planSecs(e.seconds)} / факт ${fmtTok(a.tokens || 0, true)} · ${planSecs(a.seconds)}"`
+        : "";
+      return `<div class="pnode"${fact}><div class="phead"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span></div><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${fmtTok(e.tokens || 0, true)} · ${planSecs(e.seconds)}</span></div>`;
     })
     .join('<span class="parrow">→</span>');
-  const status =
-    plan.status === "running"
-      ? `<span class="pstat">идёт</span>`
-      : plan.actual
-        ? `<span class="pstat">${planSecs(plan.actual.seconds)}</span>`
-        : "";
+  const done = plan.actual;
+  const status = plan.status === "running" ? `<span class="pstat">идёт</span>` : "";
+  const tokens = `${fmtTok(est.tokens || 0, true)}${done ? ` → ${fmtTok(done.tokens || 0, true)}` : ""}`;
+  const secs = `${planSecs(est.seconds)}${done ? ` → ${planSecs(done.seconds)}` : ""}`;
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
-    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small><span class="ptotals"><span class="ptot">${ic("clock")}${planSecs(est.seconds)}</span><span class="ptot">${ic("coin")}${fmtTok(est.tokens || 0, true)}</span>${status}</span></div>
+    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small><span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${status}</span></div>
     <div class="pflow">${nodes}</div>
-    ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка примерная: цифры зависят от ответов моделей")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
+    ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка — нижняя граница: по факту токенов и времени обычно в 1,5–2 раза больше")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
 }
 

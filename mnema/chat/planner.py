@@ -285,13 +285,14 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 if g["stop"]:
                     g["text"] += "\n\n_Остановлено владельцем._"
                     break
+                step_started = time.time()
+                step_usage: dict = {}
                 g["phase"] = f"шаг {i + 1} из {len(steps)}: {step['role']}"
                 pid, mname = CH.split_model(step["model"])
                 system = (
                     f"Ты — исполнитель шага {i + 1} из {len(steps)} в цепочке ИИ. Твоя роль: {step['role']}. "
                     "Работай только над своим шагом и верни его результат."
                 )
-                usage: dict = {}
                 try:
                     answer = PR.complete(
                         vault,
@@ -299,14 +300,14 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                         mname,
                         system,
                         [{"role": "user", "text": _prompt_for(plan, i, task, made)}],
-                        usage=usage,
+                        usage=step_usage,
                         meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
                     ).strip()
                 except Exception as e:  # noqa: BLE001 — one broken step must not lose the whole chain
                     answer = f"_(шаг не выполнен: {type(e).__name__}: {str(e)[:160]})_"
-                for key, val in usage.items():
-                    if isinstance(val, (int, float)):
-                        tokens += int(val)
+                step_tokens = sum(int(val) for val in step_usage.values() if isinstance(val, (int, float)))
+                tokens += step_tokens
+                step["actual"] = {"tokens": step_tokens, "seconds": round(time.time() - step_started, 1)}
                 made.append(answer)
                 g["text"] += f"### Шаг {i + 1} · {step['role']} · {step['model_name']}\n\n{answer.strip()}\n\n"
             plan["status"] = "done" if not g["stop"] else "stopped"

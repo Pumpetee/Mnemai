@@ -20092,3 +20092,184 @@ button.xft:hover {
   width: 12px;
   height: 12px;
 }
+
+/* the task constructor window: a small, deliberate surface instead of a bare textarea */
+.planm {
+  backdrop-filter: blur(5px);
+}
+.planm .planc {
+  position: relative;
+  width: 860px;
+  max-width: 95vw;
+  max-height: 88vh;
+  overflow: auto;
+  padding: 22px 24px;
+  border-radius: 18px;
+  border-top: 3px solid var(--acc);
+}
+.planm .lmx {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+}
+.planhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-right: 28px;
+  margin-bottom: 16px;
+}
+.planic {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--acc2);
+  color: var(--acc);
+}
+.planic svg.i {
+  width: 21px;
+  height: 21px;
+}
+.planht h2 {
+  display: block;
+  margin: 1px 0 4px;
+  font-size: calc(19px * var(--fs));
+}
+.planht .hint {
+  margin: 0;
+  max-width: 620px;
+  font-size: calc(13px * var(--fs));
+  line-height: 1.5;
+}
+.planinp {
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 13px 14px;
+  background: var(--soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: calc(14px * var(--fs));
+  line-height: 1.55;
+}
+.planinp::placeholder {
+  color: var(--ink3);
+}
+.planinp:focus {
+  outline: none;
+  border-color: var(--acc3);
+  box-shadow: 0 0 0 3px var(--acc2);
+  background: var(--paper);
+}
+.planex {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: calc(12px * var(--fs));
+  color: var(--ink3);
+}
+.exchip {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink2);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: calc(12px * var(--fs));
+  cursor: pointer;
+}
+.exchip:hover {
+  border-color: var(--acc3);
+  color: var(--acc);
+}
+.planfoot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+.plannote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-right: auto;
+  font-size: calc(12px * var(--fs));
+  color: var(--ink3);
+}
+.plannote svg.i {
+  width: 13px;
+  height: 13px;
+}
+#plango {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--acc);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 12px;
+  box-shadow: var(--sh2);
+}
+#plango:hover {
+  background: var(--acc);
+  filter: brightness(1.07);
+}
+#plango svg.i {
+  width: 16px;
+  height: 16px;
+}
+
+/* the plan flow fits five steps without a bright scrollbar */
+.plancard .pflow {
+  scrollbar-width: thin;
+}
+.plancard .pflow::-webkit-scrollbar {
+  height: 6px;
+}
+.plancard .pflow::-webkit-scrollbar-thumb {
+  background: var(--line2);
+  border-radius: 3px;
+}
+.plancard .pnode {
+  min-width: 104px;
+  max-width: 148px;
+  padding: 8px 9px;
+}
+.plancard .parrow {
+  padding: 0 5px;
+}
+.plancard .pfoot .btn {
+  background: var(--acc);
+  color: #fff;
+}
+.plancard .pfoot .btn:hover {
+  background: var(--acc);
+  filter: brightness(1.07);
+}
+
+/* equal-width step nodes: the chain always fits the card, no horizontal bar */
+.plancard .pflow::-webkit-scrollbar {
+  display: none;
+}
+.plancard .pflow.multi {
+  overflow: visible;
+}
+.plancard .pflow.multi .pnode {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+}
+
+.plancard .pmeta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

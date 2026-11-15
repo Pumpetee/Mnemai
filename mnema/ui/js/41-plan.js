@@ -30,10 +30,8 @@ function planCardHTML(plan, inChat) {
     .map((s, i) => {
       const e = s.est || {},
         a = s.actual;
-      const fact = a
-        ? ` title="прогноз ${planTokRange(e)} · ${planSecRange(e)} / факт ${fmtTok(a.tokens || 0, true)} · ${planSecs(a.seconds)}"`
-        : "";
-      return `<div class="pnode"${fact}><div class="phead"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span></div><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${planTokRange(e)} · ${planSecRange(e)}</span></div>`;
+      const title = `прогноз ${planTokRange(e)} · ${planSecRange(e)}${a ? ` / факт ${fmtTok(a.tokens || 0, true)} · ${planSecs(a.seconds)}` : ""}`;
+      return `<div class="pnode" title="${title}"><div class="phead"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span></div><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${planTokRange(e)} · ${planSecRange(e)}</span></div>`;
     })
     .join('<span class="parrow">→</span>');
   const done = plan.actual;
@@ -45,7 +43,7 @@ function planCardHTML(plan, inChat) {
     : "";
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
     <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${status}</span></div>
-    <div class="pflow">${nodes}</div>
+    <div class="pflow ${steps.length > 1 ? "multi" : ""}">${nodes}</div>
     ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
 }
@@ -61,11 +59,27 @@ function planOpen() {
   pop.className = "modal planm";
   pop.id = "planm";
   pop.innerHTML = `<div class="card planc">
-    <button class="lmx" data-x>×</button>
-    <h2>${tr("Схема задачи")}</h2>
-    <p class="hint">${tr("Опиши задачу — Mnemai подберёт исполнителей из подключённых ИИ, разложит работу по шагам и покажет время и токены. Выбери вариант и запусти.")}</p>
-    <textarea id="plantask" class="inp" rows="3" placeholder="${tr("Например: разбери договоры в папке, найди риски и сделай короткий отчёт")}"></textarea>
-    <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="plango">${tr("Предложить варианты")}</button></div>
+    <button class="lmx" data-x title="${tr("Закрыть")}">×</button>
+    <div class="planhead">
+      <span class="planic">${ic("flow")}</span>
+      <div class="planht">
+        <h2>${tr("Схема задачи")}</h2>
+        <p class="hint">${tr("Опиши задачу — Mnemai разложит её на шаги, подберёт ИИ из подключённых, покажет время и токены и даст три варианта на выбор.")}</p>
+      </div>
+    </div>
+    <div class="planbox">
+      <textarea id="plantask" class="planinp" rows="4" placeholder="${tr("Например: разбери договоры в папке, найди риски и сделай короткий отчёт")}"></textarea>
+      <div class="planex">
+        <span>${tr("Примеры")}</span>
+        <button type="button" class="exchip" data-ex="${tr("Разбери договоры в папке, найди риски и сделай короткий отчёт")}">${tr("Договоры")}</button>
+        <button type="button" class="exchip" data-ex="${tr("Сравни поставщиков по цене и надёжности, дай рекомендацию")}">${tr("Поставщики")}</button>
+        <button type="button" class="exchip" data-ex="${tr("Спланируй миграцию данных без простоя")}">${tr("Миграция")}</button>
+      </div>
+    </div>
+    <div class="planfoot">
+      <div class="plannote">${ic("mem")}${tr("учтём память и историю разговора")} · ${ic("users")}${tr("исполнители из подключённых ИИ")}</div>
+      <button class="btn" id="plango">${ic("flow")}<span>${tr("Предложить варианты")}</span></button>
+    </div>
     <div id="planout"></div>
   </div>`;
   document.body.appendChild(pop);
@@ -74,6 +88,14 @@ function planOpen() {
     if (e.target === pop) planClose();
   };
   $("#plango", pop).onclick = planPropose;
+  $$("[data-ex]", pop).forEach(
+    (b) =>
+      (b.onclick = () => {
+        const t = $("#plantask", pop);
+        t.value = b.dataset.ex;
+        t.focus();
+      }),
+  );
   setTimeout(() => $("#plantask", pop).focus(), 60);
 }
 

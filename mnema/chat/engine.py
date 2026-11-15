@@ -1327,6 +1327,20 @@ def resume_queues(vault: Vault) -> None:
                 pass
 
 
+REPEAT_TAIL = re.compile(r"(.{10,}?[.!?])(?:\s*\1)+$")
+
+
+def _collapse_tail(text: str) -> str:
+    """A provider that replays the same sentence at the end: keep one copy («Принял, делаю.Принял, делаю.»)."""
+    out = text
+    for _ in range(5):
+        fixed = REPEAT_TAIL.sub(r"\1", out)
+        if fixed == out:
+            break
+        out = fixed
+    return out
+
+
 def _generate(
     vault: Vault,
     chat: dict,
@@ -1477,6 +1491,9 @@ def _generate(
                     for piece in PR.stream(
                         vault, pid, mname, system, msgs, stop=lambda: g["stop"], usage=usage, meta=meta
                     ):
+                        if piece == PR.STREAM_RESET:
+                            g["text"] = ""  # a retried attempt starts over: the first partial answer is dropped
+                            continue
                         if len(piece) >= 8 and g["text"].endswith(piece):
                             continue  # a model or relay that repeats the same chunk: one copy is enough
                         g["text"] += piece
@@ -1501,6 +1518,9 @@ def _generate(
                     for piece in PR.stream(
                         vault, pid, mname, system, msgs, stop=lambda: g["stop"], usage=usage, meta=meta
                     ):
+                        if piece == PR.STREAM_RESET:
+                            g["text"] = ""
+                            continue
                         if len(piece) >= 8 and g["text"].endswith(piece):
                             continue
                         g["text"] += piece
@@ -1527,7 +1547,7 @@ def _generate(
                 g["phase"] = "пишу"
                 g["started"] = time.time()
             raw_text = strip_tool_markup(strip_thinking(g["text"]))
-            g["text"] = re.sub(r"\[action:[^\]]*\]", "", raw_text).strip()
+            g["text"] = _collapse_tail(re.sub(r"\[action:[^\]]*\]", "", raw_text).strip())
             if raw_text.strip() and not g["text"]:  # the answer was only our internal action marker
                 g["text"] = "Готово."
             if not web and not g.get("sources") and text != OPENER:  # Mnemai speaking first never needs the web

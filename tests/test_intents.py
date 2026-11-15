@@ -171,6 +171,30 @@ class Intents(unittest.TestCase):
         text = [m.get("text") for m in msgs if m.get("role") == "assistant" and m.get("text")][-1]
         self.assertEqual(text, "Принял, делаю.")
 
+    def test_a_retried_stream_keeps_only_the_latest_attempt(self):
+        class Retried:
+            def __call__(self, *a, **k):
+                yield "черновик первого ответа"
+                yield PR.STREAM_RESET
+                yield "Принял, делаю."
+
+        with patch.object(PR, "stream", Retried()):
+            r = CH.send(self.v, "просто ответь", model="claude_code:sonnet", sync=True, learn=False)
+        msgs = CH.load_chat(self.v, r["chat"])["messages"]
+        text = [m.get("text") for m in msgs if m.get("role") == "assistant" and m.get("text")][-1]
+        self.assertEqual(text, "Принял, делаю.")
+
+    def test_a_repeated_sentence_in_one_chunk_is_kept_once(self):
+        class RepeatingChunk:
+            def __call__(self, *a, **k):
+                yield "Ответ.Принял, делаю.Принял, делаю.Принял, делаю."
+
+        with patch.object(PR, "stream", RepeatingChunk()):
+            r = CH.send(self.v, "просто ответь", model="claude_code:sonnet", sync=True, learn=False)
+        msgs = CH.load_chat(self.v, r["chat"])["messages"]
+        text = [m.get("text") for m in msgs if m.get("role") == "assistant" and m.get("text")][-1]
+        self.assertEqual(text, "Ответ.Принял, делаю.")
+
 
 if __name__ == "__main__":
     unittest.main()

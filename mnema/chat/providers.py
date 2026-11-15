@@ -28,6 +28,8 @@ from .. import net
 from .. import tuning as _tuning
 from ..learn import secrets_store
 from ..learn.brains import claude_exe, claude_settings_env, claude_signed_in
+
+STREAM_RESET = "\x00mnema-stream-reset\x00"  # a provider retried: the chat keeps only the latest attempt
 from ..vault import Vault
 from ..fsutil import read_json, write_json
 from . import model_rank
@@ -1209,7 +1211,9 @@ def _stream_raw(
                     continue
                 if d.get("type") == "stream_event":
                     e = d.get("event", {})
-                    if e.get("type") == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta":
+                    if e.get("type") == "message_start" and got:
+                        yield STREAM_RESET  # Claude Code retried the request: do not glue the first attempt to the second
+                    elif e.get("type") == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta":
                         got = True
                         yield e["delta"]["text"]
                 elif d.get("type") == "result":
@@ -1286,14 +1290,19 @@ def _stream_raw(
             headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
         )
         finished = False
+        got_text = False
         for ev in _sse(req):
             if stop and stop():
                 return
             if ev.get("type") == "message_stop":
                 finished = True
             if ev.get("type") == "content_block_delta" and ev.get("delta", {}).get("type") == "text_delta":
+                got_text = True
                 yield ev["delta"]["text"]
             elif ev.get("type") == "message_start":
+                if got_text:
+                    yield STREAM_RESET
+                got_text = False
                 u = (ev.get("message") or {}).get("usage") or {}
                 usage.update(
                     {

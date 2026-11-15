@@ -11,6 +11,7 @@ const CHAT = {
   detail: LS.get("detail", false),
   newPrivate: false,
   chat: null,
+  reading: false, // the owner scrolled up: do not pull the view back while the answer streams
 };
 const NET = { ok: true, ms: 0, timer: 0, frozen: false, resumePoll: false, resumeChat: "" };
 
@@ -99,6 +100,7 @@ const TYPING = '<span class="typing"><i></i><i></i><i></i></span>',
   QUIET_PHASE = new Set(["", "думаю", "пишу"]);
 const SEND_ICON = '<svg viewBox="0 0 24 24"><path d="M3 20l18-8L3 4v6l12 2-12 2z"/></svg>';
 async function viewChat(id) {
+  CHAT.reading = false;
   const [cl, mdl] = await Promise.all([api("/api/chats"), api("/api/models")]);
   CHAT.model = CHAT.model || cl.default_model;
   const opts = mdl.providers
@@ -1782,7 +1784,8 @@ function renderChat(c) {
     .map((m) => m.role)
     .lastIndexOf("assistant");
   let rnd = 0;
-  const stick = msgsNearBottom();
+  const stick = msgsNearBottom(),
+    prevTop = $("#msgs").scrollTop;
   $("#msgs").innerHTML =
     ms
       .map((m, i) => {
@@ -1799,6 +1802,7 @@ function renderChat(c) {
   bindMsg();
   bindCostTip();
   if (stick) scrollEnd();
+  else $("#msgs").scrollTop = prevTop; // keep the owner where he was reading
   drawPrivate();
   drawTable();
 }
@@ -1976,11 +1980,29 @@ function scrollEnd() {
 // follow the answer only when the owner is at the bottom: reading above must not be interrupted by a jump
 function msgsNearBottom() {
   const m = $("#msgs");
-  return !m || m.scrollHeight - m.scrollTop - m.clientHeight < 200;
+  return !m || m.scrollHeight - m.scrollTop - m.clientHeight < 80;
 }
 function scrollIfNear() {
-  if (msgsNearBottom()) scrollEnd();
+  if (!CHAT.reading && msgsNearBottom()) scrollEnd();
 }
+// a wheel up over the conversation means "I am reading above": stop following the stream until the bottom
+document.addEventListener(
+  "wheel",
+  (e) => {
+    const m = e.target.closest && e.target.closest("#msgs");
+    if (!m) return;
+    if (e.deltaY < -2) CHAT.reading = true;
+    else if (msgsNearBottom()) CHAT.reading = false;
+  },
+  { passive: true, capture: true },
+);
+document.addEventListener(
+  "scroll",
+  (e) => {
+    if (e.target && e.target.id === "msgs") CHAT.reading = !msgsNearBottom();
+  },
+  true,
+);
 async function startByMnema() {
   if (CHAT.polling || CHAT.id) return;
   $("#msgs").innerHTML =
@@ -2097,6 +2119,7 @@ async function sendMsg() {
     msgHtml({ role: "user", text: text || "Посмотри прикреплённое.", files, quote }) +
       `<div class="msg ai" id="live"><div class="av"></div><div><div class="md">${TYPING}</div></div></div>`,
   );
+  CHAT.reading = false;
   scrollEnd();
   try {
     const fresh = !CHAT.id;
@@ -2208,8 +2231,7 @@ function poll() {
           : "") +
         (T.phase === "проверяю ответ" && shown ? '<span class="phase"><i></i>проверяю ответ</span>' : "") +
         run;
-      const m = $("#msgs");
-      if (m && m.scrollHeight - m.scrollTop - m.clientHeight < 200) scrollEnd();
+      if (!CHAT.reading && msgsNearBottom()) scrollEnd();
     }
     if (T.done && T.shown >= T.target.length) {
       T.raf = 0;

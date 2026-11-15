@@ -111,6 +111,7 @@ TERMINAL_RULE = """```mnema run_command command="одна команда тер�
 ```
 (выполняет команду в терминале этого компьютера и возвращает вывод и код возврата; cwd — где выполнять, по умолчанию
 домашняя папка; timeout — секунды, по умолчанию 120, максимум 900. Вывод виден в чате по ходу выполнения.
+Ставя пакеты, сначала проверь пакетный менеджер (`command -v dnf apt-get pacman zypper apk`) — не угадывай apt/dpkg.
 Так можно смотреть процессы, железо, сеть, git,
 запускать программы, ставить пакеты, работать с файлами вне рабочих папок — всё, что делает терминал.
 Если команда сложная, пиши её в теле блока: ```mnema run_command cwd="…"``` и следующей строкой саму команду.
@@ -712,6 +713,17 @@ def sudo_blocked() -> str:
     if re.search(r"not in the sudoers|не входит в файл sudoers", blob, re.I):
         return "у пользователя нет прав sudo"
     return ""
+
+
+def sudo_needs_password() -> bool:
+    """False when sudo is configured with NOPASSWD: no card is needed, the command just runs."""
+    if os.name == "nt":
+        return False
+    try:
+        r = subprocess.run(["sudo", "-n", "true"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    return r.returncode != 0
 
 
 def sudo_remember(vault: Vault, pw: str) -> None:

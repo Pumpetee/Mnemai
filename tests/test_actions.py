@@ -256,6 +256,22 @@ class ActionsTest(unittest.TestCase):
         self.assertEqual(action.get("text"), "Выполнила команду")  # but the chat line is short
         self.assertTrue(any(e["action"] == "exec" for e in events(v, 30)))  # and it is in the journal
 
+    def test_a_missing_program_is_an_answer_not_a_failure(self):
+        v = _vault(self.work)
+        s = Script('Проверю.\n```mnema run_command command="command -v definitely-not-installed-xyz"\n```', "Готово.")
+        r, _ = self._send(v, "Проверь программу", s, ["yes"])
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        action = next(m for m in msgs if m.get("kind") == "action")
+        self.assertNotIn("failed", action)  # a diagnostic check that found nothing is not a red error
+        self.assertIn("definitely-not-installed-xyz", action.get("text") or "")
+
+    def test_a_two_letter_fragment_is_not_shown_as_an_answer(self):
+        v = _vault(self.work)
+        s = Script('Пр\n```mnema run_command command="echo ok"\n```', "Готово.")
+        r, _ = self._send(v, "Проверь сеть", s, ["yes"])
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        self.assertFalse(any((m.get("text") or "").strip() == "Пр" for m in msgs))
+
     @unittest.skipIf(os.name == "nt", "the fake sudo helper is a POSIX shell script")
     def test_sudo_gets_a_gui_askpass_without_a_terminal(self):
         v = _vault(self.work)

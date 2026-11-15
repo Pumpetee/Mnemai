@@ -226,6 +226,13 @@ class Sudo(unittest.TestCase):
         self.assertTrue(any("недоступен" in (m.get("text") or "") for m in msgs))
         self.assertFalse(self.marker.exists(), "the command must not run in a blocked environment")
 
+    def test_passwordless_sudo_asks_nothing(self):
+        v = _vault()
+        script = Script(f'```mnema run_command command="{self.sudo_command("echo never")}"\n```', "Готово.")
+        with patch.object(TL, "sudo_needs_password", lambda: False):
+            self._send(v, "Проверь сеть", script, self.owner([]))
+        self.assertTrue(self.marker.exists(), "the command runs without a card when sudo needs no password")
+
 
 if __name__ == "__main__":
     unittest.main()

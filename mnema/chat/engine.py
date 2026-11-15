@@ -596,6 +596,28 @@ def _update_msg(vault: Vault, cid: str, mid: str, fields: dict) -> None:
 _answers: dict[str, dict] = {}
 
 
+PROBE_COMMAND = re.compile(
+    r"^\s*(?::\s*)?(?:command\s+-v|which|type\s+-a|rpm\s+-q|dpkg\s+(?:-s|-l)|pacman\s+-Q|"
+    r"apt-cache\s+(?:policy|show|search)|dnf\s+(?:list|info|search)|zypper\s+(?:se|search|info)|"
+    r"apk\s+(?:info|search)|cat\s+/etc/os-release|lsb_release|hostnamectl|uname|"
+    r"[\w.+-]+\s+--version)\b",
+    re.I,
+)
+
+
+def _probe_summary(command: str) -> str:
+    m = re.search(r"(?:command\s+-v|which|type\s+-a)\s+([\w.+-]+)", command, re.I)
+    if m:
+        return "Не нашла: " + m.group(1)
+    m = re.search(r"(?:rpm\s+-q|dpkg\s+-[sl]|pacman\s+-Q)\s+([\w.+-]+)", command, re.I)
+    if m:
+        return "Пакет не установлен: " + m.group(1)
+    m = re.search(r"([\w.+-]+)\s+--version", command, re.I)
+    if m:
+        return "Не нашла: " + m.group(1)
+    return "Проверила систему"
+
+
 FILE_SUMMARY = {
     "read_file": "Прочитала файл",
     "list_files": "Показала папку",
@@ -617,6 +639,15 @@ def _packages(command: str) -> str:
 
 def _command_summary(command: str) -> str:
     low = command.lower()
+    m = re.search(r"(?:command -v|which|type -a)\s+([\w.+-]+)", command, re.I)
+    if m:
+        return "Проверила программу " + m.group(1)
+    m = re.search(r"(?:apt-cache search|dnf search|zypper se|apk search|pacman -Ss)\s+([\w.+-]+)", command, re.I)
+    if m:
+        return "Искала пакет " + m.group(1)
+    m = re.search(r"(?:rpm -q|dpkg -s|pacman -Q)\s+([\w.+-]+)", command, re.I)
+    if m:
+        return "Проверила пакет " + m.group(1)
     if re.search(r"\b(?:command -v|which|type -a)\b", low):
         return "Проверила программу"
     if any(w in low for w in ("/etc/os-release", "uname", "hostnamectl", "lsb_release", "neofetch")):
@@ -647,6 +678,10 @@ def _action_view(call: dict, line: str, path: str, result: str, failed: bool = F
         if m:
             code = int(m.group(1))
         if code:
+            if PROBE_COMMAND.search(command):
+                # «command -v airmon-ng» says the program is absent — that is an answer, not a failed action
+                view["text"] = _probe_summary(command)
+                return view
             view["text"] = "Не получилось: " + _command_summary(command).lower()
             view["failed"] = True
             return view
@@ -724,26 +759,29 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
                 f"sudo в этой среде недоступен ({blocked}) — команда не выполнена. Предложи способ без sudo "
                 "или попроси владельца запустить Mnemai обычным окном, а не во встроенном просмотре."
             )
-        pw = _sudo_password_in_chat(vault, cid, g, str(call.get("command") or ""))
-        if pw is None:
-            return None  # stopped while waiting for the password
-        if not pw:
-            _add_msg(
-                vault,
-                cid,
-                {
-                    "role": "assistant",
-                    "kind": "action",
-                    "ts": _now(),
-                    "text": "Не выполнено: нужен пароль администратора",
-                    "failed": True,
-                },
-            )
-            return (
-                "Владелец не ввёл пароль администратора — команда не выполнена. Не повторяй её с sudo: предложи "
-                "способ без администратора или спроси владельца, что делать дальше."
-            )
-        call = {**call, "sudo_password": pw}
+        if TL.sudo_needs_password():
+            pw = _sudo_password_in_chat(vault, cid, g, str(call.get("command") or ""))
+            if pw is None:
+                return None  # stopped while waiting for the password
+            if not pw:
+                _add_msg(
+                    vault,
+                    cid,
+                    {
+                        "role": "assistant",
+                        "kind": "action",
+                        "ts": _now(),
+                        "text": "Не выполнено: нужен пароль администратора",
+                        "failed": True,
+                    },
+                )
+                return (
+                    "Владелец не ввёл пароль администратора — команда не выполнена. Не повторяй её с sudo: предложи "
+                    "способ без администратора или спроси владельца, что делать дальше."
+                )
+            call = {**call, "sudo_password": pw}
+        else:  # NOPASSWD: sudo does not ask, so neither do we
+            call = {**call, "sudo_password": ""}
     mid = secrets.token_hex(4)
     pending_text = (
         ("Выполняю: " + str(call.get("command") or "")[:90]) if call.get("tool") == "run_command" else "Делаю: " + desc
@@ -1561,7 +1599,7 @@ def _generate(
                     break
                 steps += 1
                 said = TL.before(strip_tool_markup(strip_thinking(g["text"])), call)
-                if said:  # what it said before the action stays above the action's line
+                if len(said.strip()) >= 3:  # what it said before the action stays above the action's line
                     _add_msg(vault, chat["id"], {"role": "assistant", "text": said, "ts": _now(), "model": model})
                 g["text"] = ""
                 result = _act(vault, chat["id"], g, call, PR.PROVIDERS[pid]["client"], model)
@@ -1727,6 +1765,8 @@ HARNESS_NOTE = """=== Инструменты DeepSeek Harness ===
 (терминал), чтение и запись файлов, поиск. Не пиши блоки ```mnema: просто выполни нужное инструментом и продолжи.
 Владелец дал доступ к компьютеру по умолчанию. Не выводи в ответ пароли, ключи и токены.
 
+Ставя пакеты, сначала определи пакетный менеджер (`command -v dnf apt-get pacman zypper apk`) или прочитай
+/etc/os-release — не угадывай apt/dpkg.
 Коротко — для дел: одна-две фразы, сразу результат. Не пиши «Что сделал», «Детали», «Варианты», списки, отчёты о
 проверках и команды — если владелец не попросил подробно. Не предлагай альтернативы, когда задача уже выполнена.
 Если просят открыть программу — открой именно её, без рассказов о том, как искал.

@@ -131,9 +131,9 @@ async function viewChat(id) {
        <input type="file" id="apick" accept="audio/*,video/*,.m4a,.ogg,.opus,.amr" hidden>
        <button class="ib tog ${LS.get("web", true) ? "on" : ""}" id="webchip" title="Интернет — когда вопрос про внешние факты">${ic("globe")}</button>
        <button class="ib" id="plusb" data-menu title="Ещё">${ic("plus")}<i class="pdot" hidden></i></button>
+       <button class="ib" id="planchip" title="${tr("Схема задачи: подобрать ИИ на шаги, время и токены")}">${ic("right")}</button>
        <button class="cchip" id="privchip" title="Этот разговор не учит память">${ic("eyeoff")}<span>Без обучения</span></button>
        <button class="cchip" id="conschip" title="Несколько ИИ обсуждают вопрос">${ic("users")}<span>Консорциум</span><i class="cgear" id="consgear" title="${tr("Настройки консорциума")}">${ic("gear")}</i></button>
-       <button class="cchip" id="planchip" title="Схема задачи: подобрать ИИ на шаги, время и токены">${ic("right")}<span>${tr("Схема")}</span></button>
        <span class="cstate" id="cstate"></span>
        <button class="micbig" id="micb" data-menu title="Голос">${ic("mic")}</button><button class="send" id="send" title="Отправить">${SEND_ICON}</button></div></div></div></section>
    </div><aside class="panel drawer" id="panel" hidden></aside>`;
@@ -1024,6 +1024,7 @@ function plusMenu(anchor) {
     priv = isPrivate();
   m.innerHTML = `<button data-p="terms" class="${terms ? "on" : ""}">${ic("hint")}<span>Подсказки к терминам</span>${hq("hints")}<i class="sw2"></i></button>
     <div class="sep"></div><div class="mhead">${tr("Попробовать")}</div>
+    <button data-p="plan">${ic("right")}<span>${tr("Схема задачи")}<small>${tr("несколько ИИ по шагам, время и токены")}</small></span></button>
     <button data-p="roast">${ic("fire")}<span>${tr("Прожарка")}<small>${tr("несколько ИИ жёстко и по делу разбирают идею, резюме или текст")}</small></span></button>
     <button data-p="compare">${ic("eye")}<span>${tr("С памятью и без")}<small>${tr("один вопрос — два ответа рядом")}</small></span></button>
     <button data-p="quiz">${ic("check")}<span>${tr("Насколько Mnemai тебя знает")}<small>${tr("квиз по твоей памяти")}</small></span></button>
@@ -1037,6 +1038,12 @@ function plusMenu(anchor) {
     (b) =>
       (b.onclick = async () => {
         const k = b.dataset.p;
+        if (k === "plan") {
+          m.remove();
+          MENU_ANCHOR = null;
+          planOpen();
+          return;
+        }
         if (k === "terms") {
           const on = !LS.get("terms", true);
           LS.set("terms", on);

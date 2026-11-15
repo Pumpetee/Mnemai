@@ -80,7 +80,9 @@ function gearFill(m) {
     ${LS.get("tour", true) ? "" : `<div class="gline"><span>${tr("Туториал в новых разговорах")}</span><button class="sw" id="gtour"></button></div><button class="gbig" data-g="tour">${ic("book")}<span>${tr("Как устроена Mnemai")}</span><small>${tr("6 шагов, минута")}</small></button>`}
     <button class="gbig" data-g="memtour">${ic("lock")}<span>${tr("Как работает память")}</span><small>${tr(`${MEMTOUR.length} шагов`)}</small></button>
     <button class="gbig" data-g="kb">${ic("book")}<span>${tr("Справочник Mnemai")}</span><small>${tr("как всё устроено")}</small></button>
+    ${APP.desktop ? `<div class="gline upd"><span>${tr("Версия")} <b data-noi18n>${esc(APP.version || "")}</b>${UPD && UPD.available ? " · " + tr("есть обновление") + " <b data-noi18n>" + esc(UPD.version) + "</b>" : ""}</span><button class="btn g sm" id="gupd">${UPD && UPD.available ? tr("Обновить") : tr("Проверить")}</button></div>` : ""}
     <button class="gbig" data-g="settings">${ic("set")}<span>${tr("Все настройки")}</span></button>`;
+  wireUpdate(m);
   if ($("#glon", m))
     $("#glon", m).onclick = async (e) => {
       const on = !e.currentTarget.classList.contains("on");
@@ -320,4 +322,150 @@ async function kbModal(q0) {
   $("#kbq", pop).oninput = (e) => list(e.target.value);
   list(q0);
   setTimeout(() => $("#kbq", pop).focus(), 50);
+}
+
+// ---------------------------------------------------------------- the update notice: one quiet pill, never a modal
+let UPD = null,
+  UPD_TIMER = 0;
+
+function updLabel() {
+  if (!UPD) return tr("Проверить");
+  return UPD.status === "ready" ? tr("Обновление готово") : tr("Обновить") + (UPD.version ? " " + UPD.version : "");
+}
+
+function updatePill() {
+  const slot = $("#gslot");
+  if (!slot) return;
+  let b = $("#updb");
+  const show = UPD && UPD.available && !UPD.dismissed;
+  if (!show) {
+    if (b) b.remove();
+    if ($("#updc")) $("#updc").remove();
+    return;
+  }
+  if (!b) {
+    b = document.createElement("button");
+    b.id = "updb";
+    b.type = "button";
+    b.className = "updb";
+    b.onclick = (e) => {
+      e.stopPropagation();
+      updateCard(b);
+    };
+    slot.insertBefore(b, slot.firstChild);
+  }
+  b.title = tr("Доступно обновление Mnemai");
+  b.innerHTML = `${ic(UPD.status === "ready" ? "check" : "down", "s")}<span>${esc(updLabel())}</span>`;
+}
+
+async function updateLoad() {
+  try {
+    UPD = await api("/api/app/update");
+  } catch (e) {
+    UPD = null;
+  }
+  updatePill();
+  if ($("#updc") && $("#updb")) updateCard($("#updb"), true);
+}
+
+async function updateDo(action, extra) {
+  try {
+    UPD = await post("/api/app/update_do", { action, ...(extra || {}) });
+  } catch (e) {
+    toast(e.message);
+    return UPD;
+  }
+  updatePill();
+  if ($("#updc") && $("#updb")) updateCard($("#updb"), true);
+  return UPD;
+}
+
+function updateHow() {
+  if (!UPD) return "";
+  if (UPD.kind === "dmg") return tr("Откроется образ .dmg — перетащи Mnemai в «Программы».");
+  if (UPD.kind === "installer") return tr("Установщик запустится при выходе, программа вернётся в трей.");
+  if (UPD.kind === "appimage") return tr("Новый файл заменит программу, и она перезапустится.");
+  return tr("Файл скачается, останется открыть его и заменить программу.");
+}
+
+function updateCard(anchor, keep) {
+  if (!keep && $("#updc") && $("#updc").dataset.anchor === String(anchor && anchor.id)) {
+    $("#updc").remove();
+    MENU_ANCHOR = null;
+    return;
+  }
+  if ($("#updc")) $("#updc").remove();
+  if (!anchor || !UPD) return;
+  closeMenus();
+  MENU_ANCHOR = anchor;
+  const m = document.createElement("div");
+  m.className = "menu updc";
+  m.id = "updc";
+  m.dataset.anchor = String(anchor.id);
+  document.body.appendChild(m);
+  const ready = UPD.status === "ready";
+  const downloading = UPD.status === "downloading";
+  const how = ready
+    ? UPD.kind === "dmg"
+      ? tr("Откроется образ .dmg — перетащи Mnemai в «Программы».")
+      : UPD.kind === "installer" || UPD.kind === "appimage"
+        ? tr("Нажми и Mnemai перезапустится уже новой версией.")
+        : tr("Файл скачается, останется открыть его и заменить программу.")
+    : updateHow();
+  m.innerHTML = `<div class="updh">${ic("down")}<b>${ready ? tr("Обновление готово") : tr("Доступно обновление")}${UPD.version ? " " + esc(UPD.version) : ""}</b></div>
+    <p class="hint">${esc(how)}</p>
+    ${downloading ? `<div class="updbar"><i style="width:${Math.round((UPD.progress || 0) * 100)}%"></i></div>` : ""}
+    ${UPD.status === "error" ? `<p class="hint ew">${tr("Не получилось скачать обновление.")}</p>` : ""}
+    ${UPD.dismissed ? `<p class="hint">${tr("Напоминание отложено. Проверить можно в шестерёнке.")}</p>` : ""}
+    <div class="row">${
+      ready
+        ? `<button class="btn sm" data-upd="apply">${
+            UPD.kind === "dmg"
+              ? tr("Открыть установщик")
+              : UPD.kind === "installer" || UPD.kind === "appimage"
+                ? tr("Обновить сейчас")
+                : tr("Показать файл")
+          }</button>`
+        : `<button class="btn sm" data-upd="download" ${downloading ? "disabled" : ""}>${downloading ? tr("Скачиваю…") : tr("Обновить")}</button>`
+    }<button class="btn g sm" data-upd="later">${tr("Позже")}</button></div>
+    ${UPD.page ? `<p class="hint"><a href="${esc(UPD.page)}" target="_blank" rel="noopener">${tr("Что нового")}</a></p>` : ""}`;
+  const r = anchor.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(innerWidth - m.offsetWidth - 8, r.right - m.offsetWidth)) + "px";
+  m.style.top = r.bottom + 8 + "px";
+  $$("[data-upd]", m).forEach(
+    (b) =>
+      (b.onclick = async () => {
+        if (b.dataset.upd === "later") {
+          await updateDo("later");
+          if ($("#updc")) $("#updc").remove();
+          return;
+        }
+        await updateDo(b.dataset.upd);
+      }),
+  );
+  clearTimeout(UPD_TIMER);
+  if (downloading)
+    UPD_TIMER = setTimeout(async () => {
+      if (!$("#updc")) return; // the owner closed the card: no polling and no reopening
+      UPD = await api("/api/app/update").catch(() => UPD);
+      updatePill();
+      if (UPD && UPD.status === "downloading") updateCard($("#updb") || anchor, true);
+      else if ($("#updb")) updateCard($("#updb"), true);
+    }, 900);
+}
+
+function wireUpdate(m) {
+  const b = $("#gupd", m);
+  if (!b) return;
+  b.onclick = async () => {
+    if (UPD && UPD.available) {
+      updateCard($("#updb") || $("#gearbtn"));
+      return;
+    }
+    b.disabled = true;
+    UPD = await updateDo("check");
+    b.disabled = false;
+    if (UPD && UPD.available) updateCard($("#updb") || $("#gearbtn"));
+    else toast(tr("Установлена последняя версия"));
+  };
 }

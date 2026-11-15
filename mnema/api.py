@@ -138,7 +138,9 @@ def make_handler(vault: Vault, port: int):
                     )
                 if u.path.startswith("/api/app/"):
                     name = u.path.rsplit("/", 1)[-1]
-                    hook = APP_HOOKS.get(name) if name in ("show", "info", "switch", "quit", "vaults") else None
+                    hook = (
+                        APP_HOOKS.get(name) if name in ("show", "info", "switch", "quit", "vaults", "update") else None
+                    )
                     return self.send(200, hook() if hook else {"desktop": False, "port": port})
                 r = api_chat.get(vault, u.path, q)
                 if r:
@@ -236,7 +238,8 @@ def make_handler(vault: Vault, port: int):
                     name = u.path.rsplit("/", 1)[-1]
                     hook = (
                         APP_HOOKS.get(name)
-                        if name in ("autostart", "close_pref", "vault_open", "vault_forget", "vault_rename")
+                        if name
+                        in ("autostart", "close_pref", "vault_open", "vault_forget", "vault_rename", "update_do")
                         else None
                     )
                     return self.send(200, hook(b) if hook else {"desktop": False})

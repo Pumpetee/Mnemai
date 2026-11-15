@@ -623,6 +623,8 @@ class App:
         self.port = free_port()
         api.APP_HOOKS.update(
             show=self.show,
+            update=self.update_api,
+            update_do=self.update_do_api,
             autostart=self.autostart_api,
             info=self.info,
             switch=self.switch,
@@ -667,6 +669,33 @@ class App:
             "desktop": True,
             "on_close": cfg.get("on_close", "ask"),
         }
+
+    def update_api(self, _=None) -> dict:
+        """What the update button shows: the current version and the newest release for this system."""
+        checker = getattr(self, "checker", None)
+        return checker.state() if checker else {"desktop": False, "current": __version__, "available": False}
+
+    def update_do_api(self, body=None) -> dict:
+        """The owner's word on an update: check now, download, apply, put it off; or the quiet background flag."""
+        checker = getattr(self, "checker", None)
+        if not checker:
+            return {"desktop": False, "available": False}
+        body = body if isinstance(body, dict) else {}
+        action = str(body.get("action") or "")
+        if action == "check":
+            return checker.check(force=True)
+        if action == "download":
+            return checker.download()
+        if action == "later":
+            return checker.later()
+        if action == "auto":
+            return checker.set_auto(bool(body.get("on", True)))
+        if action == "apply":
+            state = checker.apply()
+            if state.get("restart"):  # the silent updater installs after this normal exit
+                self.quit_api()
+            return state
+        return checker.state()
 
     def autostart_api(self, body=None) -> dict:
         set_autostart(bool((body or {}).get("on")))
@@ -1038,10 +1067,21 @@ class App:
         )
         self.window.events.closing += self.on_closing
         self.build_tray()
-        from .updater import Updater
+        from .updater import Checker, Updater
 
         updater = Updater(HOME, load_config)
         updater.start()
+        self.updater = updater
+        self.checker = Checker(
+            HOME,
+            load_config,
+            save=save_config,
+            on_installer=lambda path, digest: (
+                setattr(updater, "pending", (path, digest)),
+                setattr(updater, "forced", True),
+            ),
+        )
+        self.checker.start()
         if os.environ.get("MNEMA_DEBUG_PORT"):  # developer check of the real window (localhost only)
             webview.settings["REMOTE_DEBUGGING_PORT"] = int(os.environ["MNEMA_DEBUG_PORT"])
         kw = {"gui": "qt", "func": self.qt_tray} if OS.IS_LINUX else {}

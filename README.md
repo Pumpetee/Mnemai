@@ -124,6 +124,7 @@ Mnemai remembers who you are, what you are working on, what you decided and how 
 - **Works with your files.** Reads scans, writes notes, makes PDF, Word and Excel, merges and splits PDF. Every write can be undone in Memory → History.
 - **Commands without a model.** «Open Wikipedia with the word …», «open YouTube», «open this site» and other one-off requests run at once, without asking an AI — the same on every model.
 - **The administrator password stays in the chat.** sudo and installing need no terminal window: Mnemai asks for the password right in the conversation, once, and neither the chat file nor a model ever sees it.
+- **Updates from inside the app.** Mnemai quietly checks for a new release and shows a small Update button when there is one: the file for your system is downloaded and installed — on Windows at exit, on Linux by replacing the AppImage and restarting, on macOS by opening the .dmg.
 - **Nine languages.** The interface and the AI's answers follow the one you pick, even when you write in another.
 
 <details>

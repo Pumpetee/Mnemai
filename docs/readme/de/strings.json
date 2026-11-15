@@ -157,6 +157,7 @@
   "**Arbeitet mit deinen Dateien.** Liest Scans, schreibt Notizen, erstellt PDF, Word und Excel, fügt PDFs zusammen und teilt sie. Jede Schreibaktion lässt sich unter Gedächtnis → Verlauf rückgängig machen.",
   "**Befehle ohne Modell.** «Öffne Wikipedia mit dem Wort …», «öffne YouTube», «öffne diese Seite» und andere einmalige Anfragen laufen sofort, ohne eine KI zu fragen – auf jedem Modell gleich.",
   "**Das Administratorkennwort bleibt im Chat.** sudo und Installieren brauchen kein Terminalfenster: Mnemai fragt das Kennwort direkt im Gespräch, einmal, und weder die Chatdatei noch ein Modell sieht es je.",
+  "**Updates aus der App.** Mnemai prüft still auf eine neue Version und zeigt dann einen kleinen Knopf «Aktualisieren»: die Datei für dein System wird geladen und installiert – unter Windows beim Beenden, unter Linux ersetzt sie das AppImage und startet neu, unter macOS öffnet sich das .dmg.",
   "**Neun Sprachen.** Oberfläche und KI-Antworten richten sich nach der Sprache, die du auswählst – auch wenn du in einer anderen schreibst."
  ],
  "fold": [

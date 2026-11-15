@@ -39,6 +39,11 @@ applyAch();
   try {
     APP = await api("/api/app/info");
   } catch (e) {}
+  if (APP.desktop) {
+    updateLoad();
+    setTimeout(updateLoad, 35000); // the quiet check starts half a minute after launch
+    setInterval(updateLoad, 30 * 60 * 1000);
+  }
   const [v, ...argl] = location.hash.slice(1).split("/"),
     arg = argl.join("/");
   go(v || "chat", arg);

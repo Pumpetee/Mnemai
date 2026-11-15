@@ -363,6 +363,7 @@ class UpdaterTest(unittest.TestCase):
                     patch.object(desktop.webview, "start", side_effect=window_loop),
                     patch("mnema.cli.migrate_mcp"),
                     patch.object(U, "Updater", return_value=updater),
+                    patch.object(U, "Checker"),  # the notice must not reach the network in a unit test
                 ):
                     app = desktop.App(hidden=False)
                     if crash:
@@ -456,3 +457,141 @@ class UpdaterTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _release(name: str, tag: str | None = None) -> dict:
+    tag = tag or newer()
+    asset = {
+        "name": name,
+        "state": "uploaded",
+        "size": len(DATA),
+        "digest": "sha256:" + DIGEST,
+        "browser_download_url": f"https://github.com/{U.REPO}/releases/download/v{tag}/{name}",
+    }
+    return {
+        "tag_name": "v" + tag,
+        "assets": [asset],
+        "draft": False,
+        "prerelease": False,
+        "body": "notes",
+        "html_url": "https://example.invalid",
+    }
+
+
+class NoticeTest(unittest.TestCase):
+    """The quiet update notice: what it offers, what it downloads, what the button does."""
+
+    def test_platform_file_and_kind(self):
+        with patch.object(U.sys, "platform", "win32"):
+            names, kind = U.platform_names("v2.5.0")
+            self.assertEqual((names, kind), (["Mnemai-Setup-2.5.0.exe"], "installer"))
+        with patch.object(U.sys, "platform", "darwin"), patch.object(U.platform, "machine", return_value="arm64"):
+            names, kind = U.platform_names("v2.5.0")
+            self.assertEqual((names, kind), (["Mnemai-2.5.0-macos-arm64.dmg"], "dmg"))
+        with patch.object(U.sys, "platform", "linux"), patch.object(U.platform, "machine", return_value="x86_64"):
+            names, kind = U.platform_names("v2.5.0")
+            self.assertEqual(names[0], "Mnemai-2.5.0-x86_64.AppImage")
+            self.assertEqual(kind, "appimage")
+
+    def test_the_notice_picks_the_file_for_this_system(self):
+        with patch.object(U.sys, "platform", "linux"), patch.object(U.platform, "machine", return_value="x86_64"):
+            found = U.pick(_release(f"Mnemai-{newer()}-x86_64.AppImage"))
+            self.assertEqual(found["kind"], "appimage")
+            self.assertEqual(found["version"], newer())
+            self.assertIsNone(U.pick(_release(f"Mnemai-{newer()}-x86_64.AppImage"), "99.0.0"))
+            data = _release(f"Mnemai-{newer()}-x86_64.AppImage")
+            data["draft"] = True
+            self.assertIsNone(U.pick(data))
+            data["draft"] = False
+            data["assets"][0]["browser_download_url"] = "https://example.org/x.AppImage"
+            with self.assertRaises(ValueError):
+                U.pick(data)
+            data["assets"][0]["browser_download_url"] = (
+                f"https://github.com/{U.REPO}/releases/download/v{newer()}/Mnemai-{newer()}-x86_64.AppImage"
+            )
+            data["assets"][0].pop("digest")
+            with self.assertRaises(ValueError):  # no digest and no .sha256 beside it: fail closed
+                U.pick(data)
+
+    def test_later_remembers_that_version_only(self):
+        cfg = {"auto_update": True}
+        saved = []
+        c = U.Checker(Path("home"), lambda: cfg, save=lambda d: (saved.append(d), cfg.update(d)), on_installer=None)
+        c.info = {"version": "2.5.0", "kind": "appimage"}
+        c.later()
+        self.assertEqual(saved[-1]["update_later"], "2.5.0")
+        self.assertTrue(c.state()["dismissed"])
+        c.info = {"version": "2.6.0", "kind": "appimage"}
+        self.assertFalse(c.state()["dismissed"])
+
+    def test_download_then_apply_opens_the_dmg(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.object(U.sys, "platform", "darwin"),
+            patch.object(U.platform, "machine", return_value="arm64"),
+        ):
+            c = U.Checker(Path(root), lambda: {})
+            c.info = U.pick(_release(f"Mnemai-{newer()}-macos-arm64.dmg"))
+            target = Path(root) / c.info["name"]
+            target.write_bytes(DATA)
+            with (
+                patch.object(U, "download", return_value=target),
+                patch("mnema.osapi.open_path") as opened,
+            ):
+                c._download(c.info)
+                self.assertEqual(c.state()["status"], "ready")
+                state = c.apply()
+                opened.assert_called_once()
+                self.assertTrue(state["opened"])
+                self.assertFalse(state.get("restart"))
+
+    def test_apply_restarts_into_a_windows_installer(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(U.sys, "platform", "win32"):
+            c = U.Checker(Path(root), lambda: {})
+            c.info = U.pick(_release(f"Mnemai-Setup-{newer()}.exe"))
+            target = Path(root) / c.info["name"]
+            target.write_bytes(DATA)
+            c.file = target
+            handed = []
+            c.on_installer = lambda p, d: handed.append((p, d))
+            with patch.object(U, "installed_dir", return_value=Path("app")):
+                state = c.apply()
+            self.assertTrue(state["restart"])
+            self.assertEqual(handed, [(target, c.info["digest"])])
+
+    def test_apply_replaces_the_running_appimage_or_shows_the_file(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(U.sys, "platform", "linux"):
+            current = Path(root) / "Mnemai.AppImage"
+            current.write_bytes(b"old")
+            new = Path(root) / "new.AppImage"
+            new.write_bytes(b"new")
+            c = U.Checker(Path(root), lambda: {})
+            c.info = {"version": "2.5.0", "kind": "appimage", "digest": DIGEST}
+            c.file = new
+            with patch.dict(os.environ, {"APPIMAGE": str(current)}):
+                self.assertTrue(c.apply()["restart"])
+            self.assertEqual(current.read_bytes(), b"new")
+            # no APPIMAGE (a folder install, a source run): the file is shown, never swapped
+            new.write_bytes(b"new")
+            c.file = new
+            with patch.dict(os.environ, {"APPIMAGE": ""}), patch("mnema.osapi.reveal") as reveal:
+                self.assertTrue(c.apply()["revealed"])
+                reveal.assert_called_once()
+
+    def test_nothing_runs_when_updates_are_off(self):
+        with patch.object(U.threading, "Thread") as thread:
+            c = U.Checker(Path("home"), lambda: {"auto_update": False})
+            c.start()
+            thread.assert_not_called()
+            self.assertFalse(c.state()["auto"])
+
+
+class ForcedInstallTest(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "Windows handoff")
+    def test_the_button_installs_even_when_background_updates_are_off(self):
+        updater = U.Updater(Path("home"), lambda: {"auto_update": False})
+        updater.pending = Path("cache/setup.exe"), DIGEST
+        updater.forced = True
+        with patch.object(U, "installed_dir", return_value=Path("app")), patch.object(U.subprocess, "Popen") as launch:
+            updater.on_exit()
+            launch.assert_called_once()

@@ -19717,3 +19717,75 @@ button.xft:hover {
   font-size: calc(12px * var(--fs));
   color: var(--acc);
 }
+
+/* the update notice: one quiet pill next to the gear, never a modal */
+#gslot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.updb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, #8b5cf6 38%, var(--line));
+  background: color-mix(in oklab, #8b5cf6 9%, var(--paper));
+  color: var(--ink2);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.updb:hover {
+  background: color-mix(in oklab, #8b5cf6 18%, var(--paper));
+  color: var(--ink);
+}
+.updb svg.i {
+  width: 13px;
+  height: 13px;
+}
+.menu.updc {
+  width: 300px;
+  padding: 13px;
+}
+.updc .updh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.updc .updh svg.i {
+  width: 15px;
+  height: 15px;
+  color: #8b5cf6;
+}
+.updc .hint {
+  margin: 4px 0 6px;
+}
+.updc .hint.ew {
+  color: var(--warn, #d97706);
+}
+.updc .row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.updc .updbar {
+  height: 4px;
+  border-radius: 2px;
+  margin: 6px 0;
+  overflow: hidden;
+  background: color-mix(in oklab, #8b5cf6 18%, var(--line));
+}
+.updc .updbar i {
+  display: block;
+  height: 100%;
+  background: #8b5cf6;
+  transition: width 0.3s;
+}

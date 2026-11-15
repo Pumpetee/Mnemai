@@ -1,9 +1,20 @@
-# Background updates on Windows
+# Updates
 
-The installed Windows desktop app checks the latest published stable release of
-`Pumpetee/Mnemai` 30 seconds after startup, then every six hours. Drafts, prereleases,
-older versions and builds without a matching versioned Windows installer are ignored.
-No GitHub account or token is needed.
+Every copy of Mnemai checks the latest published stable release of
+`Pumpetee/Mnemai` a little after startup, then every six hours: drafts, prereleases,
+older versions and builds without a file for this system are ignored. No GitHub
+account or token is needed, and nothing is downloaded behind the owner's back on
+macOS, Linux or a source run.
+
+When a newer release exists, a small **Update** pill appears next to the gear with
+the new version number; the gear menu also has the current version and a manual
+«Check» button. The download starts only when the owner presses Update. Reopening
+the notice is enough after pressing «Later»: the reminder for that version stays
+quiet until the next release, and the gear's «Check» always asks again.
+
+**Windows (installed copy).** The installed app also stages the verified installer in
+the background and installs it after a normal exit, without a button.
+
 Network requests follow the proxy selected in Mnemai, including the explicit
 direct-connection setting.
 
@@ -31,11 +42,22 @@ program; inspect `~/.mnema/updates/update-install.log`. Inno Setup's existing fi
 replacement is used; there is no transactional rollback of a failed installation.
 An interrupted installation may require rerunning the official installer manually.
 
-To disable background updates, set `"auto_update": false` in `~/.mnema/config.json`
-while Mnemai is closed, or launch with `MNEMA_NO_UPDATE=1`. This is checked again
-before handing off installation. Source runs, portable Windows copies, macOS and
-Linux do not self-update through this mechanism. Existing AppImage update metadata
-continues to work independently.
+**macOS.** The button downloads the `.dmg` for this Mac's architecture and opens it:
+the owner drags Mnemai into Applications, as with a manual install (the app is not
+code-signed).
+
+**Linux.** The button downloads the AppImage for this architecture and, when Mnemai
+itself runs from an AppImage, replaces that file and restarts the app. A folder
+install (`.tar.gz`) or a source run never modifies itself: the downloaded file is
+shown in its folder and the release page is offered.
+
+**Portable Windows copy.** The button downloads the installer and shows it; running
+it installs the per-user copy.
+
+To disable the checks, set `"auto_update": false` in `~/.mnema/config.json` while
+Mnemai is closed, or launch with `MNEMA_NO_UPDATE=1`. This is checked again before
+handing off an installation. Existing AppImage update metadata continues to work
+independently.
 
 Maintainers: publish the versioned `Mnemai-Setup-X.Y.Z.exe` and its checksum from
 the normal build workflow, then publish the draft release. This implementation

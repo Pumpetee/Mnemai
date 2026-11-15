@@ -1,7 +1,9 @@
-"""Stage official Windows releases in the background; install only after a normal exit.
+"""Official releases: a quiet background check everywhere, and an update on the owner's word.
 
-Source trees, portable copies and other platforms never self-modify. The installer
-owns file replacement. No tokens, accounts or third-party update service are used.
+The installed Windows app also stages an installer in the background and installs it after a normal exit.
+Source trees, portable copies and other platforms never self-modify: the update button downloads the file
+that fits this system and either restarts into it (Windows installer, Linux AppImage) or opens it where the
+system needs the owner's hand (macOS dmg). No tokens, accounts or third-party update service are used.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -220,6 +223,7 @@ class Updater:
         self.home, self.config = home, config
         self.stop = threading.Event()
         self.pending: tuple[Path, str] | None = None
+        self.forced = False  # the owner pressed Update while background updates are off: install anyway
         self.thread: threading.Thread | None = None
 
     def start(self):
@@ -249,7 +253,7 @@ class Updater:
         if self.thread:
             self.thread.join(timeout=2)
         app = installed_dir()
-        if not self.pending or not app or not enabled(self.config()):
+        if not self.pending or not app or (not self.forced and not enabled(self.config())):
             return
         installer, digest = self.pending
         script = install_script(installer, digest, app, os.getpid())
@@ -262,3 +266,225 @@ class Updater:
             close_fds=True,
             cwd=str(self.home),
         )
+
+
+# ---------------------------------------------------------------- the update notice
+
+
+def platform_names(tag: str) -> tuple[list[str], str]:
+    """The release files this system can use, best first, and the kind of update that is."""
+    v = tag.removeprefix("v")
+    if sys.platform == "win32":
+        return [f"Mnemai-Setup-{v}.exe"], "installer"
+    if sys.platform == "darwin":
+        arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
+        return [f"Mnemai-{v}-macos-{arch}.dmg"], "dmg"
+    arch = "aarch64" if platform.machine().lower() in ("aarch64", "arm64") else "x86_64"
+    return [f"Mnemai-{v}-{arch}.AppImage", f"Mnemai-{v}-linux-{arch}.tar.gz"], "appimage"
+
+
+def _kind(name: str) -> str:
+    if name.endswith(".exe"):
+        return "installer"
+    if name.endswith(".dmg"):
+        return "dmg"
+    if name.endswith(".AppImage"):
+        return "appimage"
+    return "archive"
+
+
+def pick(data: dict, current: str = __version__) -> dict | None:
+    """The newest published release file for this system, or None. The same fail-closed checks as the installer."""
+    tag = data.get("tag_name", "")
+    if data.get("draft") or data.get("prerelease") or version(tag) <= version(current):
+        return None
+    names, _ = platform_names(tag)
+    assets = data.get("assets", [])
+    for name in names:
+        asset = next((a for a in assets if a.get("name") == name and a.get("state") == "uploaded"), None)
+        if not asset or not 0 < asset.get("size", 0) <= MAX_INSTALLER:
+            continue
+        _asset_url(asset, tag)
+        digest = asset.get("digest") or ""
+        if not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", digest):
+            checksum = next((a for a in assets if a.get("name") == name + ".sha256"), None)
+            if not checksum:
+                raise ValueError("Release has no SHA-256")
+            text = _read(_asset_url(checksum, tag), 4096).decode("utf-8").strip()
+            match = re.fullmatch(r"([0-9a-fA-F]{64})\s+\*?" + re.escape(name), text)
+            if not match:
+                raise ValueError("Invalid release checksum")
+            digest = "sha256:" + match[1]
+        return {
+            "version": tag.removeprefix("v"),
+            "tag": tag,
+            "name": name,
+            "size": int(asset["size"]),
+            "digest": digest[7:].lower(),
+            "kind": _kind(name),
+            "page": str(data.get("html_url") or ""),
+            "notes": str(data.get("body") or "")[:4000],
+        }
+    return None
+
+
+class Checker:
+    """The update notice: finds a newer published release for this system and downloads it on the owner's word.
+
+    Nothing installs behind the owner's back. Applying either restarts into the new version (a Windows
+    installer handled by the silent updater, or a Linux AppImage replaced on disk) or opens the downloaded
+    file where the system needs the owner's hand (a macOS dmg). Every other case shows the file in its folder
+    and offers the release page. The button is quiet: it appears only when a newer release exists.
+    """
+
+    def __init__(self, home: Path, config, save=None, on_installer=None):
+        self.home, self.config = home, config
+        self.save = save or (lambda cfg: None)
+        self.on_installer = on_installer  # Windows: hand the verified installer to the silent updater
+        self.stop = threading.Event()
+        self.thread: threading.Thread | None = None
+        self.lock = threading.Lock()
+        self.info: dict | None = None
+        self.file: Path | None = None
+        self.status = "idle"  # idle | checking | downloading | ready | error
+        self.error = ""
+        self.progress = 0.0
+
+    # -- what the window shows
+    def state(self) -> dict:
+        with self.lock:
+            info = dict(self.info or {})
+            status, error, progress = self.status, self.error, self.progress
+            file_ready = str(self.file) if self.file else ""
+        cfg = self.config() or {}
+        return {
+            "desktop": True,
+            "current": __version__,
+            "auto": enabled(cfg),
+            "available": bool(info),
+            "dismissed": bool(info) and (cfg.get("update_later") or "") == info.get("version"),
+            "version": info.get("version", ""),
+            "kind": info.get("kind", ""),
+            "page": info.get("page", ""),
+            "notes": info.get("notes", ""),
+            "status": status,
+            "progress": round(progress, 2),
+            "error": error,
+            "file": file_ready,
+            "ready": bool(file_ready),
+        }
+
+    def dismissed(self) -> bool:
+        info = self.info or {}
+        return bool(info) and (self.config().get("update_later") or "") == info.get("version")
+
+    # -- the quiet check
+    def start(self):
+        if not enabled(self.config()):
+            return
+        if self.thread and self.thread.is_alive():
+            return
+        self.thread = threading.Thread(target=self._run, daemon=True, name="mnemai-update-check")
+        self.thread.start()
+
+    def _run(self):
+        # the window and the local server come first; the owner should not see a network call at launch
+        if self.stop.wait(25):
+            return
+        while not self.stop.is_set() and enabled(self.config()):
+            self.check()
+            if self.stop.wait(INTERVAL):
+                return
+
+    def check(self, force: bool = False) -> dict:
+        with self.lock:
+            self.status, self.error = "checking", ""
+        try:
+            data = json.loads(_read(LATEST, 1024 * 1024))
+            found = pick(data)
+        except Exception as e:  # an unavailable GitHub must never disturb the app
+            with self.lock:
+                self.status, self.error = "error", type(e).__name__
+            return self.state()
+        with self.lock:
+            fresh = found and (not self.info or found["version"] != self.info.get("version"))
+            self.info = found
+            if fresh:
+                self.file, self.progress = None, 0.0
+            self.status = "ready" if self.file else "idle"
+        return self.state()
+
+    # -- download and apply on the owner's word
+    def download(self) -> dict:
+        if self.file and self.file.is_file():
+            return self.state()
+        if not self.info:
+            self.check()
+        info = self.info
+        if not info:
+            return self.state()
+        with self.lock:
+            if self.status == "downloading":
+                return self.state()
+            self.status, self.error, self.progress = "downloading", "", 0.0
+        threading.Thread(target=self._download, args=(info,), daemon=True, name="mnemai-update-download").start()
+        return self.state()
+
+    def _download(self, info: dict):
+        try:
+            asset = {
+                "name": info["name"],
+                "size": info["size"],
+                "browser_download_url": f"https://github.com/{REPO}/releases/download/{info['tag']}/{info['name']}",
+            }
+            path = download(asset, info["digest"], self.home / "updates", self.stop)
+        except Exception as e:  # a broken download leaves the old version running
+            with self.lock:
+                self.status, self.error = "error", type(e).__name__
+            return
+        with self.lock:
+            self.file, self.progress, self.status = path, 1.0, "ready"
+        if sys.platform == "win32" and installed_dir() and self.on_installer:
+            try:
+                self.on_installer(path, info["digest"])
+            except Exception:  # the silent updater is a bonus; the button still works
+                pass
+
+    def later(self) -> dict:
+        version_ = (self.info or {}).get("version", "")
+        if version_:
+            cfg = dict(self.config() or {})
+            cfg["update_later"] = version_
+            self.save(cfg)
+        return self.state()
+
+    def set_auto(self, on: bool) -> dict:
+        cfg = dict(self.config() or {})
+        cfg["auto_update"] = bool(on)
+        self.save(cfg)
+        if on:
+            self.start()
+        return self.state()
+
+    def apply(self) -> dict:
+        info, path = self.info, self.file
+        if not info or not path or not path.is_file():
+            return self.state()
+        from . import osapi
+
+        if info["kind"] == "installer" and installed_dir() and self.on_installer:
+            self.on_installer(path, info["digest"])
+            return {**self.state(), "restart": True}
+        if info["kind"] == "dmg":
+            osapi.open_path(path)
+            return {**self.state(), "opened": True}
+        if info["kind"] == "appimage":
+            target = Path(os.environ.get("APPIMAGE", "") or "")
+            if target.is_file():
+                try:
+                    os.replace(path, target)
+                    return {**self.state(), "restart": True}
+                except OSError:  # a read-only place: show the downloaded file instead
+                    pass
+        osapi.reveal(path)
+        return {**self.state(), "revealed": True}

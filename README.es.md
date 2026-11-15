@@ -124,6 +124,7 @@ Mnemai recuerda quién eres, en qué trabajas, qué has decidido y cómo te gust
 - **Trabaja con tus archivos.** Lee escaneos, escribe notas, crea PDF, Word y Excel, y une y divide PDF. Cada escritura se puede deshacer en Memoria → Historial.
 - **Órdenes sin modelo.** «Abre Wikipedia con la palabra…», «abre YouTube», «abre este sitio» y otras peticiones puntuales se ejecutan al instante, sin preguntar a una IA, igual en todos los modelos.
 - **La contraseña de administrador se queda en el chat.** sudo e instalar no necesitan ventana de terminal: Mnemai pide la contraseña en la propia conversación, una vez, y ni el archivo del chat ni ningún modelo la ven.
+- **Actualizaciones desde la app.** Mnemai comprueba en silencio si hay una versión nueva y entonces muestra un pequeño botón «Actualizar»: se descarga e instala el archivo de tu sistema —en Windows al salir, en Linux sustituye el AppImage y reinicia, en macOS abre el .dmg.
 - **Nueve idiomas.** La interfaz y las respuestas de la IA siguen el idioma que elijas, incluso cuando escribes en otro.
 
 <details>

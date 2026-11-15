@@ -85,7 +85,8 @@ class HarnessProvider(unittest.TestCase):
         # the model may pick read_file or a terminal cat — both are Mnema's own tools
         self.assertIn(actions[0].get("tool"), ("read_file", "run_command", "list_files"))
         answer = [m for m in c["messages"] if m["role"] == "assistant" and m.get("kind") != "action"][-1]
-        self.assertIn("ласточка", answer["text"].lower())
+        # the model may keep the Russian word or translate it; the test checks reading, not the language
+        self.assertTrue("ласточка" in answer["text"].lower() or "swallow" in answer["text"].lower(), answer["text"])
 
 
 if __name__ == "__main__":

@@ -163,7 +163,7 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
     """Where the numbers come from: memory+history+task+previous answers+instruction, output by role, speed by provider."""
     previous = 0
     total_tokens = total_tokens_hi = 0.0
-    total_seconds = total_seconds_hi = 0.0
+    total_seconds = total_seconds_hi = total_seconds_lo = 0.0
     total_cost = total_cost_hi = 0.0
     for step in plan.get("steps") or []:
         instruction = str(step.get("instruction") or "")
@@ -175,6 +175,7 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
         tokens = round(input_chars / 3.2 + out_chars / 3.2)
         tokens_hi = round(tokens * 2.0)  # a real chain came out 1.6× the point estimate
         seconds_hi = round(seconds * 2.2, 1)  # and the real time was about 2×
+        seconds_lo = round(seconds * 0.5, 1)  # a short Harness answer took 5 s where the point said 11 s
         price_in, price_out = _price(pid, step.get("model_name") or step.get("model") or "")
         cost = (input_chars / 3.2) * price_in / 1e6 + (out_chars / 3.2) * price_out / 1e6
         step["est"] = {
@@ -182,7 +183,7 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
             "tokens_min": tokens,
             "tokens_max": tokens_hi,
             "seconds": round(seconds, 1),
-            "seconds_min": round(seconds, 1),
+            "seconds_min": seconds_lo,
             "seconds_max": seconds_hi,
             "in": round(input_chars / 3.2),
             "out": round(out_chars / 3.2),
@@ -194,6 +195,7 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
         total_tokens_hi += tokens_hi
         total_seconds += seconds
         total_seconds_hi += seconds_hi
+        total_seconds_lo += seconds_lo
         total_cost += cost
         total_cost_hi += cost * 2.0
         previous += out_chars
@@ -202,7 +204,7 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
         "tokens_min": round(total_tokens),
         "tokens_max": round(total_tokens_hi),
         "seconds": round(total_seconds),
-        "seconds_min": round(total_seconds),
+        "seconds_min": round(total_seconds_lo, 1),
         "seconds_max": round(total_seconds_hi, 1),
         "cost": round(total_cost, 6),
         "cost_min": round(total_cost, 6),

@@ -195,6 +195,21 @@ class Intents(unittest.TestCase):
         text = [m.get("text") for m in msgs if m.get("role") == "assistant" and m.get("text")][-1]
         self.assertEqual(text, "Ответ.Принял, делаю.")
 
+    def test_finding_a_line_in_a_folder_is_one_quick_action(self):
+        folder = self.work / "docs"
+        folder.mkdir()
+        (folder / "a.md").write_text("тут ffmpeg и ещё строка\n", encoding="utf-8")
+        call = IN.fast_action(self.v, f"найди в {folder} строку ffmpeg")
+        self.assertEqual(call["tool"], "search_text")
+        text = IN.answer(self.v, call)
+        self.assertIn("ffmpeg", text)
+        self.assertIn("a.md", text)
+        self.assertIn(
+            "ничего не нашлось", IN.answer(self.v, {"tool": "search_text", "path": str(folder), "query": "нетакого"})
+        )
+        # the old «найди … в файлах» command still goes through find_files
+        self.assertEqual(IN.fast_action(self.v, "найди договор в файлах")["tool"], "find_files")
+
 
 if __name__ == "__main__":
     unittest.main()

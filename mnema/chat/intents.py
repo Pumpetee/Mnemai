@@ -25,6 +25,12 @@ READ = re.compile(
 LIST = re.compile(
     r"^\s*(?:что\s+(?:в|лежит в)\s+(?:папке\s+)?|покажи папку|список файлов(?: в)?)\s*(.+?)\s*[.!?]*$", re.I
 )
+SEARCH_TEXT = re.compile(
+    r"^\s*(?:найди|поищи|ищи)\s+в\s+(?P<path>~?/[^\s]+)\s+(?:(?:строку|строки|слово|текст|совпадени[яе])\s+)?"
+    r"(?P<query>.+?)\s*$",
+    re.I,
+)
+
 FIND = re.compile(r"^\s*(?:найди|поищи)\s+(.+?)\s+(?:в файлах|по файлам|в документах)\s*[.!?]*$", re.I)
 COMMAND = re.compile(
     r"^\s*(?:(?:выполни|выполнить|команда|cmd)\s*[:：]?\s*|"
@@ -255,6 +261,11 @@ def fast_action(vault: Vault, text: str) -> dict | None:
         # the answer will say so in a line instead of sending the phrase to the model.
         if Path(path).is_dir() or target.lower() in FOLDERS:
             return {"tool": "list_files", "path": path, "label": "папка"}
+    m = SEARCH_TEXT.match(raw)
+    if m:
+        query = _target(m.group("query"))
+        if query:
+            return {"tool": "search_text", "path": _target(m.group("path")), "query": query, "label": "строка"}
     m = FIND.match(raw)
     if m:
         return {"tool": "find_files", "query": _target(m.group(1)), "label": "поиск"}
@@ -413,6 +424,13 @@ def answer(vault: Vault, call: dict) -> str:
             return "Эти действия сейчас выключены в настройках."
     if tool in ("run_command", "open_app") and not _is_tools_ok(vault, tool):
         return "Доступ к компьютеру выключен в настройках."
+    if tool == "search_text":
+        if not _is_tools_ok(vault, "read_file"):
+            return "Действия сейчас выключены в настройках."
+        try:
+            return TL.find_text(str(call.get("path") or ""), str(call.get("query") or ""))
+        except TL.Refused as e:
+            return str(e)[:300]
     try:
         return _run(vault, tool, {k: v for k, v in call.items() if k not in ("tool", "label")})[0]
     except TL.Refused as e:

@@ -329,6 +329,18 @@ class ActionsTest(unittest.TestCase):
         self.assertIn("first-line", blob)
         self.assertIn("second-line", blob)
 
+    def test_a_file_action_accepts_file_as_the_path(self):
+        v = _vault(self.work)
+        target = v.root / "00 Inbox" / "alias.md"
+        TL.run(v, {"tool": "write_file", "file": str(target), "body": "привет"})
+        self.assertIn("привет", target.read_text(encoding="utf-8"))
+
+    def test_a_missing_path_is_explained_with_the_shape_to_use(self):
+        v = _vault(self.work)
+        with self.assertRaises(TL.Refused) as ctx:
+            TL.run(v, {"tool": "write_file", "body": "x"})
+        self.assertIn('path="', str(ctx.exception))
+
     @unittest.skipIf(os.name == "nt", "sleep is a POSIX program")
     def test_stop_stops_the_command_itself(self):
         v = _vault(self.work)

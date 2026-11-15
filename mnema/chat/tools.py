@@ -330,7 +330,7 @@ OPENABLE = {
 
 def resolve(vault: Vault, path: str) -> Path:
     if not (path or "").strip():
-        raise Refused("не указан путь")
+        raise Refused('не указан путь: укажи path="~/…" или полный путь в блоке действия')
     p = Path(path.strip().strip('"')).expanduser()
     if not p.is_absolute():
         p = vault.root / p
@@ -1284,7 +1284,8 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
                 "доступ к компьютеру выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»"
             )
         return _open_app(vault, call, client)
-    p = resolve(vault, call.get("path", ""))
+    raw_path = call.get("path") or call.get("file") or call.get("filename") or call.get("target") or ""
+    p = resolve(vault, raw_path)
     if t == "list_files":
         if not p.is_dir():
             raise Refused("это не папка")
@@ -1369,6 +1370,49 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
         _write_bytes(vault, client, p, data, f"создан документ {p.name}")
         return f"Готово: {p}", f"Создала документ {p}", str(p)
     raise Refused("такого действия нет")
+
+
+SEARCH_SKIP = {".git", "node_modules", ".venv", "venv", "target", "dist", "build", "__pycache__", ".cache", ".mnema"}
+
+
+def find_text(path: str, query: str, limit: int = 40, seconds: float = 10.0) -> str:
+    """Find lines in a folder without a model round-trip and without an unbounded `grep -r`: capped and quick."""
+    root = Path(str(path or "")).expanduser()
+    if not root.is_dir():
+        raise Refused(f"нет такой папки: {root}")
+    needle = str(query or "").strip().lower()
+    if not needle:
+        raise Refused("не указан текст для поиска")
+    home = Path(os.environ.get("MNEMA_HOME") or (Path.home() / ".mnema")).resolve()
+    started = time.time()
+    found: list[str] = []
+    truncated = False
+    for item in root.rglob("*"):
+        if len(found) >= limit or time.time() - started > seconds:
+            truncated = True
+            break
+        try:
+            if not item.is_file() or any(part in SEARCH_SKIP for part in item.parts):
+                continue
+            if item.resolve().is_relative_to(home):
+                continue  # service files of Mnemai are never searched
+            if item.stat().st_size > 1_500_000:
+                continue
+            text = item.read_text(encoding="utf-8", errors="ignore")
+        except (OSError, ValueError):
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if needle in line.lower():
+                found.append(f"{item}:{number}: {line.strip()[:200]}")
+                if len(found) >= limit:
+                    truncated = True
+                    break
+    if not found:
+        return f"В папке {root} ничего не нашлось по «{query}»."
+    head = f"Нашла в {root}: {len(found)} совпадений"
+    if truncated:
+        head += " (поиск остановлен по лимиту)"
+    return head + "\n" + "\n".join(found)
 
 
 def _find(vault: Vault, query: str) -> str:

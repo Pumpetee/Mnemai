@@ -20355,3 +20355,20 @@ button.xft:hover {
   line-height: 1.4;
   color: var(--ink3);
 }
+
+/* the title sits between the pills and the right rail instead of being centred over the whole bar:
+   at the default window width an absolutely centred title ran into the Wi-Fi pill */
+.top .tcenter {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  justify-content: center;
+}
+.top .tcenter .title {
+  min-width: 0;
+}

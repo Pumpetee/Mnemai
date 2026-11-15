@@ -75,6 +75,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      # checkout first: it cleans the workspace, and the downloaded packages must land after that
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           path: out
@@ -87,9 +91,6 @@ jobs:
             cp "$f" "$(echo "$f" | sed -E 's/-[0-9]+\.[0-9]+\.[0-9]+//')"
           done
           ls -l
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: Release notes from the tag annotation
         run: |
           git fetch --tags --force
@@ -101,3 +102,4 @@ jobs:
           draft: false  # a tag on main is a release: the packages are built and published by this job
           body_path: release-notes.md
           files: out/*
+          fail_on_unmatched_files: true

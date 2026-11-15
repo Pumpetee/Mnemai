@@ -20356,3 +20356,8 @@ button.xft:hover {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.pqact .btn:not(.g):not(.l) {
+  background: var(--acc);
+  color: #fff;
+}

@@ -131,7 +131,6 @@ async function viewChat(id) {
      <div class="composer" id="composer"><div id="recbar"></div><div class="cbox"><button class="hq chelp" id="chelp" title="${tr("Что умеет строка ввода")}">?</button><button class="ccfg" id="ccfg" title="Настроить строку ввода">${ic("gear")}</button><div class="qbar" id="qbar" hidden></div><div class="fbar" id="fbar" hidden></div><div class="cstatus" id="cstatus"></div><textarea id="inp" rows="1" placeholder="" title="Enter — отправить, Shift+Enter — новая строка"></textarea>
        <div class="cbar"><button class="ib" id="clip" title="Прикрепить файл">${ic("clip")}</button><input type="file" id="fpick" multiple hidden>
        <input type="file" id="apick" accept="audio/*,video/*,.m4a,.ogg,.opus,.amr" hidden>
-       <button class="ib tog ${LS.get("web", true) ? "on" : ""}" id="webchip" title="Интернет — когда вопрос про внешние факты">${ic("globe")}</button>
        <button class="ib" id="plusb" data-menu title="Ещё">${ic("plus")}<i class="pdot" hidden></i></button>
        <button class="cchip" id="privchip" title="Этот разговор не учит память">${ic("eyeoff")}<span>Без обучения</span></button>
        <button class="cchip" id="conschip" title="Несколько ИИ обсуждают вопрос">${ic("users")}<span>Консорциум</span><i class="cgear" id="consgear" title="${tr("Настройки консорциума")}">${ic("gear")}</i></button>
@@ -181,12 +180,6 @@ async function viewChat(id) {
       $("#inp").focus();
     }
   });
-  $("#webchip").onclick = (e) => {
-    const on = !LS.get("web", true);
-    LS.set("web", on);
-    e.currentTarget.classList.toggle("on", on);
-    drawState();
-  };
   $("#hideleft").onclick = () => setLeft(false);
   $("#tleft").onclick = () => setLeft(true);
   if (L) sideGrip();
@@ -1004,7 +997,7 @@ function drawState() {
   // "без обучения" and "консорциум" are buttons of their own now; the dot on "+" means a setting inside it is off
   box.innerHTML = items.join("");
   const d = $("#plusb .pdot");
-  if (d) d.hidden = LS.get("terms", true);
+  if (d) d.hidden = LS.get("terms", true) && LS.get("web", true);
   $$("[data-st]", box).forEach((b) => (b.onclick = () => (b.dataset.st === "priv" ? togglePrivate() : consortModal())));
 }
 function drawChips() {
@@ -1033,6 +1026,7 @@ function plusMenu(anchor) {
     tour = LS.get("tour", true),
     priv = isPrivate();
   m.innerHTML = `<button data-p="terms" class="${terms ? "on" : ""}">${ic("hint")}<span>Подсказки к терминам</span>${hq("hints")}<i class="sw2"></i></button>
+    <button data-p="web" class="${LS.get("web", true) ? "on" : ""}">${ic("globe")}<span>${tr("Интернет")}<small>${tr("искать в сети, когда нужны свежие факты")}</small></span><i class="sw2"></i></button>
     <div class="sep"></div><div class="mhead">${tr("Попробовать")}</div>
     <button data-p="plan">${ic("flow")}<span>${tr("Схема задачи")}<small>${tr("несколько ИИ по шагам, время и токены")}</small></span></button>
     <button data-p="roast">${ic("fire")}<span>${tr("Прожарка")}<small>${tr("несколько ИИ жёстко и по делу разбирают идею, резюме или текст")}</small></span></button>
@@ -1061,6 +1055,13 @@ function plusMenu(anchor) {
           b.classList.toggle("on", on);
           drawState();
           applyComposer();
+          return;
+        }
+        if (k === "web") {
+          const on = !LS.get("web", true);
+          LS.set("web", on);
+          b.classList.toggle("on", on);
+          drawState();
           return;
         }
         if (k === "tour") {

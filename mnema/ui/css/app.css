@@ -20372,3 +20372,26 @@ button.xft:hover {
 .top .tcenter .title {
   min-width: 0;
 }
+
+/* one-line provider pill and equal-height controls in the chat header and the composer row */
+.top .modelpill {
+  height: 36px !important;
+}
+.top .netpill,
+.top .heatpill {
+  height: 36px !important;
+}
+.top .modelpill .mtxt {
+  flex-direction: row;
+  align-items: center;
+}
+.top .modelpill small {
+  display: none;
+}
+.cbar .ib {
+  width: 32px;
+  height: 32px;
+}
+.cbar .cchip {
+  height: 32px;
+}

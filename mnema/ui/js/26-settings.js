@@ -1802,7 +1802,13 @@ function drawModelLabel() {
   drawState();
   const f = $("#mfree");
   const ready = (CHAT.providers || []).find((x) => x.id === String(CHAT.model || "").split(":")[0] && x.ready);
-  if (f) f.textContent = CHAT.cons ? tr("несколько ИИ") : ready ? provOf(CHAT.model) : tr("скачай или укажи ключ");
+  if (f) {
+    // the provider is already in the main line («DeepSeek Harness · DeepSeek Flash»):
+    // a second tiny line glued under it only duplicated it
+    const hint = CHAT.cons || ready ? "" : tr("скачай или укажи ключ");
+    f.textContent = hint;
+    f.hidden = !hint;
+  }
   const l = $("#mlabel");
   if (l) l.textContent = CHAT.cons ? `Консорциум · ${CHAT.cons.members.length} ИИ` : modelLabel(CHAT.model);
   if ($("#model")) $("#model").classList.toggle("none", !CHAT.cons && !ready);

@@ -6,6 +6,7 @@ Run: python -m mnema mcp --client claude [--vault PATH]
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -14,6 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 from pathlib import Path
@@ -38,7 +40,9 @@ INSTRUCTIONS = (
     "уведомление — pc_notify, снимок экрана — pc_screenshot; управление — pc_clipboard_*/pc_click/pc_type/pc_key/pc_scroll. "
     "Это настоящий доступ, а не описание. Файлы памяти доступны и как ресурсы (mnema://memory/…), а промпты "
     "memory_brief и remember_fact помогают начать. Когда просят "
-    "что-то сделать на компьютере, выполни команду и покажи результат. Не выводи пароли и ключи."
+    "что-то сделать на компьютере, выполни команду и покажи результат. Долгие команды лучше запускать через "
+    "pc_job_start; sudo из MCP идёт только после того, как владелец ввёл пароль администратора в Mnemai, и MCP "
+    "никогда не открывает окно терминала. Не выводи пароли и ключи."
 )
 
 TOOLS = [
@@ -383,17 +387,14 @@ TOOLS = [
         "name": "pc_run",
         "description": "Выполнить команду в терминале этого компьютера и вернуть вывод, код возврата и время. "
         "Это настоящий доступ к системе (процессы, железо, сеть, git, файлы вне папок памяти). "
-        "Одна команда за раз, таймаут по умолчанию 120 с, максимум 900 с; вывод идёт в чат.",
+        "Одна команда за раз, таймаут по умолчанию 120 с, максимум 900 с; вывод возвращается в ответ, "
+        "окно терминала не открывается. Для долгих команд — pc_job_start.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "command": {"type": "string"},
                 "cwd": {"type": "string"},
                 "timeout": {"type": "integer", "minimum": 1, "maximum": 900, "default": 120},
-                "terminal": {
-                    "type": "boolean",
-                    "description": "Показать команду в видимом терминале (только для интерактивных программ; sudo и установка идут без окна).",
-                },
             },
             "required": ["command"],
         },
@@ -485,17 +486,13 @@ ACTION_TOOLS = [
     },
     {
         "name": "run_command",
-        "description": "Выполнить команду в терминале компьютера (то же, что pc_run).",
+        "description": "Выполнить команду в терминале компьютера (то же, что pc_run, без окна терминала).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "command": {"type": "string"},
                 "cwd": {"type": "string"},
                 "timeout": {"type": "integer", "minimum": 1, "maximum": 900, "default": 120},
-                "terminal": {
-                    "type": "boolean",
-                    "description": "Показать команду в видимом терминале (только интерактивным программам).",
-                },
             },
             "required": ["command"],
         },
@@ -530,6 +527,132 @@ WRITE_ACTIONS = {"write_file", "edit_file", "make_document", "edit_pdf"}
 
 TOOLS += ACTION_TOOLS
 
+# MCP clients pick the right approval from annotations: a search is safe to repeat, a delete is not.
+READ_TOOLS = {
+    "memory_context",
+    "memory_search",
+    "memory_stale",
+    "memory_journal",
+    "clients_list",
+    "journal_tail",
+    "todo_list",
+    "task_list",
+    "pc_read_file",
+    "pc_list_dir",
+    "pc_glob",
+    "pc_grep",
+    "pc_job_list",
+    "pc_job_output",
+    "pc_clipboard_get",
+    "pc_screenshot",
+    "read_file",
+    "list_files",
+    "find_files",
+    "web_search",
+    "web_fetch",
+}
+DESTRUCTIVE_TOOLS = {
+    "memory_forget",
+    "memory_update",
+    "memory_undo",
+    "write_file",
+    "edit_file",
+    "make_document",
+    "edit_pdf",
+    "remember_fact",
+    "pc_write_file",
+    "pc_delete",
+    "pc_move",
+    "pc_copy",
+    "pc_make_dir",
+    "pc_run",
+    "run_command",
+    "pc_job_start",
+    "pc_job_kill",
+    "pc_clipboard_set",
+    "pc_click",
+    "pc_type",
+    "pc_key",
+    "pc_scroll",
+    "pc_open_app",
+    "open_app",
+    "task_add",
+    "task_update",
+    "task_done",
+    "task_remove",
+    "task_run",
+    "todo_add",
+    "todo_done",
+    "todo_update",
+    "todo_remove",
+    "subagent_run",
+}
+IDEMPOTENT_TOOLS = {
+    "memory_context",
+    "memory_search",
+    "memory_stale",
+    "memory_journal",
+    "clients_list",
+    "journal_tail",
+    "todo_list",
+    "task_list",
+    "pc_read_file",
+    "pc_list_dir",
+    "pc_glob",
+    "pc_grep",
+    "pc_job_list",
+    "pc_job_output",
+    "pc_clipboard_get",
+    "read_file",
+    "list_files",
+    "find_files",
+}
+OPEN_WORLD_TOOLS = {"web_search", "web_fetch", "subagent_run", "pc_run", "run_command"}
+TOOL_TITLES = {
+    "memory_context": "Контекст памяти",
+    "memory_search": "Поиск в памяти",
+    "memory_remember": "Запомнить факт",
+    "memory_stale": "Устаревшее в памяти",
+    "memory_journal": "Журнал памяти",
+    "memory_forget": "Забыть факт",
+    "memory_update": "Обновить факт",
+    "memory_undo": "Отменить запись",
+    "clients_list": "Подключённые ИИ",
+    "journal_tail": "Журнал действий",
+    "web_search": "Поиск в интернете",
+    "web_fetch": "Открыть страницу",
+    "pc_run": "Команда в терминале",
+    "pc_read_file": "Прочитать файл",
+    "pc_write_file": "Записать файл",
+    "pc_list_dir": "Список папки",
+    "pc_glob": "Найти файлы по шаблону",
+    "pc_grep": "Поиск в файлах",
+    "pc_job_start": "Фоновая задача",
+    "pc_screenshot": "Снимок экрана",
+    "subagent_run": "Другой ИИ",
+    "todo_list": "Список дел",
+    "task_list": "Задачи",
+}
+for _tool in TOOLS:
+    name = _tool["name"]
+    _tool.setdefault("title", TOOL_TITLES.get(name, name.replace("_", " ")))
+    _tool["annotations"] = {
+        "readOnlyHint": name in READ_TOOLS,
+        "destructiveHint": name in DESTRUCTIVE_TOOLS,
+        "idempotentHint": name in IDEMPOTENT_TOOLS,
+        "openWorldHint": name in OPEN_WORLD_TOOLS,
+    }
+
+RESOURCE_TEMPLATES = [
+    {
+        "uriTemplate": "mnema://memory/{path}",
+        "name": "Файл памяти",
+        "title": "Файл памяти Mnemai",
+        "description": "Заметка памяти по пути внутри папки памяти; скрытые и чужие разделы не отдаются.",
+        "mimeType": "text/markdown",
+    },
+]
+
 
 def run_action(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
     """The one place where a model's action is executed: the MCP server and the chat both go through it."""
@@ -552,25 +675,44 @@ PROMPTS = [
 ]
 
 
+LONG_TOOLS = {"pc_run", "run_command"}  # these may run for minutes: the server keeps answering meanwhile
+
+
+class ToolError(Exception):
+    """A tool-level failure: it goes back as isError in the result, never as a JSON-RPC error."""
+
+
 class Server:
-    def __init__(self, vault: Vault, client_id: str):
+    def __init__(self, vault: Vault, client_id: str, writer=None):
         self.vault = vault
         self.client_id = client_id
+        self._writer = writer  # the stdio writer, set by serve(); a test may collect notifications instead
+        self._cancels: dict[str, threading.Event] = {}
 
     # -- tools
-    def call(self, name: str, args: dict) -> str:
+    def _refuse(self, text: str, strict: bool) -> str:
+        """A refusal is a tool error for an MCP client (isError) and plain text for direct callers and tests."""
+        if strict:
+            raise ToolError(text)
+        return text
+
+    def call(self, name: str, args: dict, cancel=None, progress=None, strict: bool = False) -> str:
+        if cancel is not None and cancel.is_set():
+            raise ToolError("Запрос отменён.")
         if (self.vault.service / "crypto.json").exists():  # encrypted (maybe after this server started): its key
             from . import crypt
 
             if crypt.attach(self.vault.root) == "locked":
-                return "Память зашифрована: открой Mnemai и введи пароль — тогда память снова доступна."
+                return self._refuse(
+                    "Память зашифрована: открой Mnemai и введи пароль — тогда память снова доступна.", strict
+                )
         c = get_client(self.vault, self.client_id)
         if not c.enabled:
-            return "Доступ к памяти для этого ассистента выключен владельцем."
+            return self._refuse("Доступ к памяти для этого ассистента выключен владельцем.", strict)
         from .agent import profile as P
 
         if name.startswith("memory_") and not P.memory_on(self.vault):
-            return P.MEMORY_OFF
+            return self._refuse(P.MEMORY_OFF, strict)
         if name == "memory_forget":
             if not c.can_write:
                 raise PermissionDenied(f"{c.name} не может удалять записи")
@@ -612,10 +754,21 @@ class Server:
             return self._todo(name, args)
         if name in ACTION_NAMES:
             if not P.load(self.vault).get("tools", True):
-                return "Действия выключены владельцем: Настройки → Программа → «Действия на компьютере»."
+                return self._refuse(
+                    "Действия выключены владельцем: Настройки → Программа → «Действия на компьютере».", strict
+                )
             if name in WRITE_ACTIONS and not c.can_write:
                 raise PermissionDenied(f"{c.name} не может менять файлы")
-            return run_action(self.vault, {"tool": name, **args}, self.client_id)[0]
+            if name in ("run_command", "open_app") and name == "run_command":
+                from .chat import tools as TL
+
+                if TL.needs_sudo(str(args.get("command") or "")) and not TL.sudo_cached(self.vault):
+                    raise ToolError(
+                        "sudo из MCP не выполняется без пароля. Введи пароль администратора один раз в чате Mnemai — "
+                        "после этого sudo-команды из MCP пойдут с ним; или выполни команду без sudo."
+                    )
+            clean = {k: v for k, v in args.items() if k not in ("terminal", "visible")}  # MCP never opens windows
+            return run_action(self.vault, {"tool": name, **clean}, self.client_id)[0]
         if name == "memory_context":
             part = max(0, int(args.get("part", 0) or 0))
             text, total = context_for(self.vault, self.client_id, part=part)
@@ -650,7 +803,7 @@ class Server:
                 or "Журнал пуст."
             )
         if name.startswith("pc_"):
-            return self._pc(name, args, c)
+            return self._pc(name, args, c, cancel=cancel, progress=progress, strict=strict)
         if name == "memory_undo":
             if not c.can_write:
                 raise PermissionDenied(f"{c.name} не может откатывать записи")
@@ -673,14 +826,16 @@ class Server:
         except ValueError:
             return False
 
-    def _pc(self, name: str, args: dict, c) -> str:
+    def _pc(self, name: str, args: dict, c, cancel=None, progress=None, strict: bool = False) -> str:
         """The owner's computer through MCP: the same terminal as in the chat, with the same journal. Reading needs
         the assistant to be enabled; running and writing also need its write permission."""
         from .agent import profile as P
 
+        if cancel is not None and cancel.is_set():
+            raise ToolError("Запрос отменён.")
         if not P.load(self.vault).get("pc_access", True):
-            raise PermissionDenied(
-                "доступ к компьютеру выключен владельцем: Настройки → Программа → «Действия на компьютере»"
+            return self._refuse(
+                "доступ к компьютеру выключен владельцем: Настройки → Программа → «Действия на компьютере»", strict
             )
         from .chat import tools as TL
         from .journal import log_event
@@ -697,9 +852,26 @@ class Server:
             cmd = str(args.get("command") or "").strip()
             if not cmd:
                 raise ValueError("нужна команда")
+            if TL.needs_sudo(cmd) and not TL.sudo_cached(self.vault):
+                raise ToolError(
+                    "sudo из MCP не выполняется без пароля. Введи пароль администратора один раз в чате Mnemai — "
+                    "после этого sudo-команды из MCP пойдут с ним; или выполни команду без sudo."
+                )
             call = {"tool": "run_command", "command": cmd, "timeout": args.get("timeout")}
             if args.get("cwd"):
                 call["cwd"] = str(args["cwd"])
+            if cancel is not None:
+                call["stop"] = cancel.is_set
+            if progress is not None:
+                state = {"lines": 0, "at": 0.0}
+
+                def on_line(line: str) -> None:
+                    state["lines"] += 1
+                    if time.time() - state["at"] >= 0.25:  # a progress notification per quarter second is enough
+                        state["at"] = time.time()
+                        progress(state["lines"], line.strip()[:120])
+
+                call["progress"] = on_line
             return TL._run_command(self.vault, call, self.client_id)[0]
         if name == "pc_read_file":
             p = Path(str(args.get("path") or "")).expanduser()
@@ -1366,19 +1538,56 @@ class Server:
         return True
 
     # -- protocol
-    def handle(self, msg: dict) -> dict | None:
+    def _notify(self, msg: dict) -> None:
+        """A server-to-client notification (progress), written through the same stdio channel."""
+        writer = self._writer
+        if writer:
+            writer(msg)
+
+    def _progress(self, token):
+        if token is None:
+            return None
+
+        def send(value, message: str = "") -> None:
+            self._notify(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/progress",
+                    "params": {"progressToken": token, "progress": value, "message": message[:200]},
+                }
+            )
+
+        return send
+
+    def _resources_page(self, cursor) -> dict:
+        items = self._resources()
+        page = 200
+        start = 0
+        if cursor:
+            try:
+                start = max(0, int(base64.urlsafe_b64decode(str(cursor).encode()).decode()))
+            except (ValueError, TypeError):
+                start = 0
+        result = {"resources": items[start : start + page]}
+        if start + page < len(items):
+            result["nextCursor"] = base64.urlsafe_b64encode(str(start + page).encode()).decode()
+        return result
+
+    def handle(self, msg: dict, cancel: threading.Event | None = None) -> dict | None:
         method, mid = msg.get("method"), msg.get("id")
         if mid is None:  # notification
             return None
+        params = msg.get("params") or {}
         try:
             if method == "initialize":
-                asked = (msg.get("params") or {}).get("protocolVersion")
+                asked = params.get("protocolVersion")
                 result = {
                     "protocolVersion": asked if asked in PROTOCOLS else PROTOCOLS[0],
                     "capabilities": {
                         "tools": {"listChanged": False},
                         "resources": {"subscribe": False, "listChanged": False},
                         "prompts": {"listChanged": False},
+                        "logging": {},
                     },
                     "serverInfo": {"name": "mnemai", "version": __version__},
                     "instructions": INSTRUCTIONS,
@@ -1388,36 +1597,70 @@ class Server:
             elif method == "tools/list":
                 result = {"tools": TOOLS}
             elif method == "tools/call":
-                p = msg.get("params") or {}
-                name = p.get("name")
-                if name not in {t["name"] for t in TOOLS}:
+                name = params.get("name")
+                if not isinstance(name, str) or name not in {t["name"] for t in TOOLS}:
                     return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": f"unknown tool {name}"}}
+                meta = params.get("_meta") or {}
+                token = meta.get("progressToken")
                 try:
-                    text, is_error = self.call(name, p.get("arguments") or {}), False
+                    text = self.call(
+                        name,
+                        params.get("arguments") or {},
+                        cancel=cancel,
+                        progress=self._progress(token),
+                        strict=True,
+                    )
+                    result = {"content": [{"type": "text", "text": text}], "isError": False}
+                except ToolError as e:
+                    result = {"content": [{"type": "text", "text": str(e)}], "isError": True}
                 except (PermissionDenied, UndoError, ValueError) as e:
-                    text, is_error = f"Ошибка: {e}", True
-                result = {"content": [{"type": "text", "text": text}], "isError": is_error}
+                    result = {"content": [{"type": "text", "text": f"Ошибка: {e}"}], "isError": True}
+                except Exception as e:  # a broken tool is reported as a tool error, never as a protocol crash
+                    result = {
+                        "content": [{"type": "text", "text": f"Ошибка: {type(e).__name__}: {e}"}],
+                        "isError": True,
+                    }
             elif method == "resources/list":
-                result = {"resources": self._resources()}
+                result = self._resources_page(params.get("cursor"))
+            elif method == "resources/templates/list":
+                result = {"resourceTemplates": RESOURCE_TEMPLATES}
             elif method == "resources/read":
-                result = self._resource_read(str((msg.get("params") or {}).get("uri") or ""))
+                result = self._resource_read(str(params.get("uri") or ""))
             elif method == "prompts/list":
                 result = {"prompts": PROMPTS}
             elif method == "prompts/get":
-                result = self._prompt_get(msg.get("params") or {})
+                result = self._prompt_get(params)
+            elif method == "logging/setLevel":
+                result = {}
             else:
                 return {
                     "jsonrpc": "2.0",
                     "id": mid,
                     "error": {"code": -32601, "message": f"method not found: {method}"},
                 }
+            if cancel is not None and cancel.is_set() and method in ("tools/call", "resources/read"):
+                return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32800, "message": "request cancelled"}}
             return {"jsonrpc": "2.0", "id": mid, "result": result}
         except Exception as e:  # never crash the server on one bad request
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": str(e)}}
 
     def serve(self, stdin=None, stdout=None) -> None:
+        """stdio, one JSON-RPC message per line.
+
+        Requests keep their order (a client may write a file and then read it), except a long terminal command:
+        it runs in a worker, so ping, progress and cancellation are served while it is still running.
+        """
         stdin = stdin or sys.stdin.buffer
         stdout = stdout or sys.stdout.buffer
+        lock = threading.Lock()
+
+        def write(obj: dict) -> None:
+            with lock:
+                stdout.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
+                stdout.flush()
+
+        self._writer = write
+        workers: list[threading.Thread] = []
         for raw in stdin:
             line = raw.decode("utf-8", "replace").strip()
             if not line:
@@ -1425,9 +1668,50 @@ class Server:
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
-                resp = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}}
-            else:
-                resp = self.handle(msg)
+                write({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
+                continue
+            if not isinstance(msg, dict):
+                continue
+            mid = msg.get("id")
+            if mid is None:
+                self._notification(msg)
+                continue
+            cancel = threading.Event()
+            self._cancels[str(mid)] = cancel
+            params = msg.get("params") or {}
+            if msg.get("method") == "tools/call" and str(params.get("name")) in LONG_TOOLS:
+                worker = threading.Thread(
+                    target=self._run_request, args=(msg, cancel, write), daemon=True, name="mnema-mcp-request"
+                )
+                workers.append(worker)
+                worker.start()
+                continue
+            try:
+                resp = self.handle(msg, cancel=cancel)
+            except Exception as e:
+                resp = {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": str(e)}}
+            finally:
+                self._cancels.pop(str(mid), None)
             if resp is not None:
-                stdout.write((json.dumps(resp, ensure_ascii=False) + "\n").encode("utf-8"))
-                stdout.flush()
+                write(resp)
+        for worker in workers:  # stdin closed: let the answers already running go out, then exit
+            worker.join(timeout=2.0)
+
+    def _notification(self, msg: dict) -> None:
+        if msg.get("method") != "notifications/cancelled":
+            return  # initialized, roots/list_changed: nothing to do
+        rid = (msg.get("params") or {}).get("requestId")
+        cancel = self._cancels.get(str(rid))
+        if cancel is not None:
+            cancel.set()
+
+    def _run_request(self, msg: dict, cancel: threading.Event, write) -> None:
+        mid = msg.get("id")
+        try:
+            resp = self.handle(msg, cancel=cancel)
+        except Exception as e:
+            resp = {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": str(e)}}
+        finally:
+            self._cancels.pop(str(mid), None)
+        if resp is not None:
+            write(resp)

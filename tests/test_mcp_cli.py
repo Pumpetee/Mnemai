@@ -45,7 +45,11 @@ class TestMcp(unittest.TestCase):
             cwd=str(REPO),
             timeout=60,
         )
-        return [json.loads(l) for l in p.stdout.decode("utf-8").splitlines() if l.strip()]
+        out = [json.loads(l) for l in p.stdout.decode("utf-8").splitlines() if l.strip()]
+        # requests run in parallel now: answers may arrive in any order, so restore the order they were asked in
+        order = {m.get("id"): i for i, m in enumerate(messages) if isinstance(m, dict) and "id" in m}
+        out.sort(key=lambda r: order.get(r.get("id"), 1 << 30))
+        return out
 
     def test_handshake_and_tools(self):
         r = self.session(

@@ -359,20 +359,20 @@ Below is a separate "In the background" block: "Don't interrupt my work" lowers 
 
 ## Who Sees What
 
-Settings → Security → "Who sees what" is a table with AIs as columns, parts of memory as rows, and a block of closed topics (Money, Health, Personal) that get cut out even from the parts an AI is allowed to see. Each click is saved immediately, and the switch under a column turns that AI off completely. By default nothing is hidden, and any AI can put something new into Inbox:
+Settings → Security → "Who Sees What" — a table: AI models as columns, memory sections as rows, plus a block of private topics (Money, Health, Personal — stripped out even from permitted sections). Changes save instantly; the toggle under a column disables that AI entirely. By default nothing is hidden, and any AI can add new items to the inbox:
 
-| AI | Sees | Can append to |
+| AI | Can read | Can write to |
 |---|---|---|
-| On-device model (built-in, Ollama, Strata) | everything | inbox |
+| Local model (built-in, Ollama, Strata) | everything | inbox |
 | Claude, Claude Code | everything | inbox, decisions, projects, cards, people, rules |
 | ChatGPT | profile, rules, projects, cards, decisions | inbox |
 | OpenRouter, DeepSeek, YandexGPT | profile, rules, projects, cards, decisions | inbox |
 | Gemini | profile, rules, cards | inbox |
 | Cursor | rules, projects | inbox |
 
-The on-device model sees everything because nothing leaves your computer. Money, Health and Personal are visible by default to every AI that has access to Cards. To hide a topic from one of them, click "visible" in its column and it will change to "hidden".
+Local models can read everything because nothing leaves your computer. Money, Health, and Personal are visible by default to any AI that has access to Cards: to hide a topic from a specific AI, click "visible" in its column — it will switch to "hidden". Over MCP, a long-running command does not block the response: the client receives progress updates and can cancel it; a sudo command from MCP only executes after the password is entered in the Mnemai chat, and MCP never opens a terminal window.
 
-A hidden tag on a heading (for example, "## Money #money") hides that heading and everything under it. A tag on the title, "# Money #money", or in the file's properties (tags) hides the whole file. Russian tags work too — #деньги, #здоровье, #личное — in any letter case, as do properties written the way Obsidian writes them (tags as a list). A status change in a hidden card goes into the event feed with the same tag, so it is hidden as well.
+A hidden tag on a heading (e.g. `## Money #money`) hides that heading and everything under it. A tag on a file title (`# Money #money`) or in the file's front matter (`tags`) hides the entire file. Russian tags also work — #деньги, #здоровье, #личное — in any case, as do properties in the format Obsidian writes them (tags as a list). A status change on a hidden card appears in the activity feed with the same tag, so it is hidden there too.
 
 ## What leaves your computer
 

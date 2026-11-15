@@ -45,7 +45,7 @@ Como o Mnemai funciona, tela por tela e configuração por configuração. O Mne
 - [Voz e reuniões](#voz-e-reuniões)
 - [Modelo integrado no computador](#modelo-integrado-no-computador)
 - [Mecanismo: tokens e carga](#mecanismo-tokens-e-carga)
-- [Quem de cada IA vê o quê](#quem-de-cada-ia-vê-o-quê)
+- [Quem dos IAs vê o quê](#quem-dos-ias-vê-o-quê)
 - [O que sai do computador](#o-que-sai-do-computador)
 - [Criptografia da memória com senha](#criptografia-da-memória-com-senha)
 - [Histórico e reversão](#histórico-e-reversão)
@@ -357,22 +357,22 @@ O ajuste fino é uma coluna só: "Mais preciso ↔ Mais econômico", a resposta 
 
 Logo abaixo há um bloco separado, "Em segundo plano": "Não atrapalhar o trabalho" reduz a prioridade do modelo no computador, e "Aprendizado em segundo plano" define com que frequência o Mnemai verifica as fontes de aprendizado.
 
-## Quem de cada IA vê o quê
+## Quem dos IAs vê o quê
 
-Configurações → Segurança → "Quem de cada IA vê o quê" — uma tabela: as IAs nas colunas, as partes da memória nas linhas, além de um bloco de temas fechados (Dinheiro, Saúde, Pessoal — eles são removidos até mesmo das partes permitidas). O clique é salvo na hora, e o interruptor embaixo da coluna desliga essa IA por completo. Por padrão, nada fica oculto, e qualquer IA pode colocar conteúdo novo na caixa de entrada:
+Configurações → Segurança → "Quem dos IAs vê o quê" — uma tabela: IAs nas colunas, partes da memória nas linhas, bloco de tópicos privados (Dinheiro, Saúde, Pessoal — removidos até das partes permitidas). As alterações são salvas imediatamente; o botão abaixo da coluna desativa aquele IA completamente. Por padrão nada está oculto, e qualquer IA pode adicionar itens novos à caixa de entrada:
 
-| IA | Vê | Pode acrescentar em |
+| IA | Vê | Pode adicionar |
 |---|---|---|
-| Modelo no computador (integrado, Ollama, Strata) | tudo | entrada |
-| Claude, Claude Code | tudo | entrada, decisões, projetos, cartões, pessoas, regras |
-| ChatGPT | perfil, regras, projetos, cartões, decisões | entrada |
-| OpenRouter, DeepSeek, YandexGPT | perfil, regras, projetos, cartões, decisões | entrada |
-| Gemini | perfil, regras, cartões | entrada |
-| Cursor | regras, projetos | entrada |
+| Modelo local (integrado, Ollama, Strata) | tudo | caixa de entrada |
+| Claude, Claude Code | tudo | caixa de entrada, decisões, projetos, cartões, pessoas, regras |
+| ChatGPT | perfil, regras, projetos, cartões, decisões | caixa de entrada |
+| OpenRouter, DeepSeek, YandexGPT | perfil, regras, projetos, cartões, decisões | caixa de entrada |
+| Gemini | perfil, regras, cartões | caixa de entrada |
+| Cursor | regras, projetos | caixa de entrada |
 
-O modelo no computador vê tudo, porque nada sai do seu computador. Dinheiro, saúde e pessoal ficam visíveis por padrão para todas as IAs que têm acesso aos Cartões: para esconder um tema de alguma delas, clique em "visível" na coluna dela, que vai mudar para "oculto".
+O modelo local vê tudo porque nada sai do computador. Dinheiro, saúde e pessoal ficam visíveis por padrão para todos os IAs que têm acesso aos Cartões: para ocultar um tópico de algum deles, clique em "visível" na coluna correspondente — vai aparecer "oculto". Via MCP um comando demorado não bloqueia a resposta: o cliente recebe o progresso e pode cancelá-lo; sudo via MCP só é executado após digitar a senha no chat do Mnemai, e o MCP não abre janela de terminal.
 
-Uma tag oculta em um título (por exemplo, "## Dinheiro #money") esconde esse título e tudo o que está embaixo dele. Uma tag no nome do arquivo "# Dinheiro #money" ou nas propriedades do arquivo (tags) esconde o arquivo inteiro. As tags em russo também funcionam — #деньги, #здоровье, #личное — com maiúsculas ou minúsculas, assim como as propriedades no formato que o Obsidian usa (tags em lista). A mudança de status em um cartão oculto vai para o feed de eventos com a mesma tag, então também fica oculta.
+Uma tag oculta no título (por exemplo, `## Dinheiro #money`) esconde esse título e tudo abaixo dele. Uma tag no nome `# Dinheiro #money` ou nas propriedades do arquivo (tags) esconde o arquivo inteiro. Tags em português também funcionam — #dinheiro, #saúde, #pessoal — em qualquer capitalização, assim como propriedades no formato que o Obsidian usa (tags em lista). Mudanças de status em um cartão oculto aparecem no feed de eventos com a mesma tag e, portanto, também ficam ocultas.
 
 ## O que sai do computador
 

@@ -45,7 +45,7 @@ Cómo funciona Mnemai, pantalla por pantalla y ajuste por ajuste. Mnemai respond
 - [Voz y reuniones](#voz-y-reuniones)
 - [Modelo integrado en el ordenador](#modelo-integrado-en-el-ordenador)
 - [Motor: tokens y carga](#motor-tokens-y-carga)
-- [Quién ve qué (de las IA)](#quién-ve-qué-de-las-ia)
+- [Quién ve qué entre las IA](#quién-ve-qué-entre-las-ia)
 - [Qué sale de tu ordenador](#qué-sale-de-tu-ordenador)
 - [Cifrado de la memoria con contraseña](#cifrado-de-la-memoria-con-contraseña)
 - [Historial y reversión](#historial-y-reversión)
@@ -358,22 +358,22 @@ Ajuste fino: una columna cada uno: "Más preciso ↔ Más económico", la respue
 
 Más abajo hay un bloque aparte, "En segundo plano": "No molestar al trabajar" reduce la prioridad del modelo del ordenador, y "Aprendizaje en segundo plano" define la frecuencia con la que Mnemai revisa las fuentes de aprendizaje.
 
-## Quién ve qué (de las IA)
+## Quién ve qué entre las IA
 
-Ajustes → Seguridad → "Quién ve qué": una tabla con las IA en columnas y las partes de la memoria en filas, más un bloque de temas privados (Dinero, Salud, Personal), que se recortan incluso de las partes permitidas. Cada cambio se guarda al instante, y el interruptor bajo una columna desactiva por completo esa IA. Por defecto no se oculta nada y cualquier IA puede dejar contenido nuevo en la bandeja de entrada:
+"Ajustes" → "Seguridad" → "Quién ve qué entre las IA" — tabla: las IA por columnas, las partes de la memoria por filas, bloque de temas privados (Dinero, Salud, Personal — se recortan incluso de las partes permitidas). Los cambios se guardan al instante; el interruptor bajo cada columna desactiva esa IA por completo. Por defecto no hay nada oculto, y cualquier IA puede añadir cosas nuevas a la bandeja de entrada:
 
 | IA | Ve | Puede añadir |
 |---|---|---|
-| Modelo en el equipo (integrado, Ollama, Strata) | todo | bandeja de entrada |
-| Claude, Claude Code | todo | bandeja de entrada, decisiones, proyectos, fichas, personas, reglas |
-| ChatGPT | perfil, reglas, proyectos, fichas, decisiones | bandeja de entrada |
-| OpenRouter, DeepSeek, YandexGPT | perfil, reglas, proyectos, fichas, decisiones | bandeja de entrada |
-| Gemini | perfil, reglas, fichas | bandeja de entrada |
+| Modelo local (integrado, Ollama, Strata) | todo | bandeja de entrada |
+| Claude, Claude Code | todo | bandeja de entrada, decisiones, proyectos, tarjetas, personas, reglas |
+| ChatGPT | perfil, reglas, proyectos, tarjetas, decisiones | bandeja de entrada |
+| OpenRouter, DeepSeek, YandexGPT | perfil, reglas, proyectos, tarjetas, decisiones | bandeja de entrada |
+| Gemini | perfil, reglas, tarjetas | bandeja de entrada |
 | Cursor | reglas, proyectos | bandeja de entrada |
 
-El modelo en el equipo lo ve todo porque nada sale de tu equipo. Dinero, salud y personal están visibles por defecto para todas las IA que tienen acceso a las Fichas: para ocultar un tema a una IA concreta, pulsa "visible" en su columna y pasará a "oculto".
+El modelo local lo ve todo porque nada sale del ordenador. Dinero, salud y personal son visibles por defecto para todas las IA que tienen acceso a las Tarjetas: para ocultar un tema a alguna de ellas, haz clic en "visible" en su columna y pasará a "oculto". Con MCP un comando largo no bloquea la respuesta: el cliente recibe el progreso y puede cancelarlo; el sudo desde MCP solo se ejecuta tras introducir la contraseña en el chat de Mnemai, y MCP no abre ninguna ventana de terminal.
 
-Una etiqueta de ocultación en un encabezado (por ejemplo, "## Dinero #money") oculta ese encabezado y todo lo que hay debajo. Una etiqueta en el título "# Dinero #money" o en las propiedades del archivo (tags) oculta el archivo entero. También funcionan las etiquetas en ruso (#деньги, #здоровье, #личное), sin distinguir mayúsculas de minúsculas, y las propiedades tal como las escribe Obsidian (tags como lista). Un cambio de estado en una ficha oculta pasa al registro de eventos con la misma etiqueta, así que también queda oculto.
+Una etiqueta oculta en un encabezado (por ejemplo, `## Dinero #money`) oculta ese encabezado y todo lo que hay bajo él. Una etiqueta en el título `# Dinero #money` o en las propiedades del archivo (`tags`) oculta el archivo entero. También funcionan las etiquetas en ruso — #деньги, #здоровье, #личное — en cualquier capitalización, así como las propiedades en el formato que usa Obsidian (tags en lista). Un cambio de estado en una tarjeta oculta aparece en el registro de eventos con la misma etiqueta, por lo que también queda oculto.
 
 ## Qué sale de tu ordenador
 

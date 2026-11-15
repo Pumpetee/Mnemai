@@ -45,7 +45,7 @@ Comment fonctionne Mnemai, écran par écran et réglage par réglage. Mnemai r�
 - [Voix et réunions](#voix-et-réunions)
 - [Modèle intégré sur ton ordinateur](#modèle-intégré-sur-ton-ordinateur)
 - [Moteur : jetons et charge](#moteur--jetons-et-charge)
-- [Qui parmi les IA voit quoi](#qui-parmi-les-ia-voit-quoi)
+- [Qui voit quoi parmi les IA](#qui-voit-quoi-parmi-les-ia)
 - [Ce qui quitte ton ordinateur](#ce-qui-quitte-ton-ordinateur)
 - [Chiffrement de la mémoire par mot de passe](#chiffrement-de-la-mémoire-par-mot-de-passe)
 - [Historique et annulation](#historique-et-annulation)
@@ -356,22 +356,22 @@ Réglage avancé — une seule colonne : « Plus précis ↔ Plus économe », l
 
 Plus bas se trouve un bloc distinct « En arrière-plan » : « Ne pas déranger pendant le travail » baisse la priorité du modèle local sur ton ordinateur, « Apprentissage en arrière-plan » règle la fréquence à laquelle Mnemai vérifie les sources d'apprentissage.
 
-## Qui parmi les IA voit quoi
+## Qui voit quoi parmi les IA
 
-Paramètres → Sécurité → "Qui parmi les IA voit quoi" — un tableau : les IA en colonnes, les parties de la mémoire en lignes, plus un bloc de sujets fermés (Argent, Santé, Personnel — ils sont retirés même des parties autorisées). Chaque clic est enregistré immédiatement, et l'interrupteur sous une colonne désactive entièrement cette IA. Par défaut, rien n'est masqué, et n'importe quelle IA peut déposer du nouveau contenu dans la boîte de réception :
+Paramètres → Sécurité → "Qui voit quoi parmi les IA" — tableau : les IA en colonnes, les parties de la mémoire en lignes, un bloc de sujets privés (Argent, Santé, Personnel — retirés même des parties autorisées). Chaque modification est enregistrée immédiatement ; le bouton sous une colonne désactive complètement cette IA. Par défaut, rien n'est masqué, et n'importe quelle IA peut ajouter de nouveaux éléments dans la boîte de réception :
 
-| IA | Voit | Peut ajouter à |
+| IA | Voit | Peut compléter |
 |---|---|---|
-| Modèle sur l'ordinateur (intégré, Ollama, Strata) | tout | boîte de réception |
+| Modèle local (intégré, Ollama, Strata) | tout | boîte de réception |
 | Claude, Claude Code | tout | boîte de réception, décisions, projets, fiches, personnes, règles |
 | ChatGPT | profil, règles, projets, fiches, décisions | boîte de réception |
 | OpenRouter, DeepSeek, YandexGPT | profil, règles, projets, fiches, décisions | boîte de réception |
 | Gemini | profil, règles, fiches | boîte de réception |
 | Cursor | règles, projets | boîte de réception |
 
-Le modèle sur l'ordinateur voit tout, car rien ne quitte ton ordinateur. L'argent, la santé et le personnel sont visibles par défaut pour toutes les IA qui ont accès aux Fiches : pour cacher un sujet à l'une d'elles, clique sur "visible" dans sa colonne, et ça passera à "masqué".
+Le modèle local voit tout, car rien ne quitte l'ordinateur. L'argent, la santé et le personnel sont visibles par défaut pour toutes les IA ayant accès aux Fiches : pour masquer un sujet à une IA, clique sur "visible" dans sa colonne — cela devient "masqué". Via MCP, une commande longue ne bloque pas la réponse : le client reçoit la progression et peut l'annuler ; un sudo via MCP ne s'exécute qu'après saisie du mot de passe dans le chat Mnemai, et MCP n'ouvre pas de fenêtre de terminal.
 
-Un tag masqué sur un titre (par exemple "## Argent #money") cache ce titre et tout ce qui se trouve en dessous. Un tag sur le titre principal "# Argent #money" ou dans les propriétés du fichier (tags) cache le fichier entier. Les tags en russe fonctionnent aussi — #деньги, #здоровье, #личное — quelle que soit la casse, ainsi que les propriétés telles qu'Obsidian les écrit (tags sous forme de liste). Un changement de statut dans une fiche masquée apparaît dans le fil d'événements avec le même tag, il est donc masqué lui aussi.
+Un tag caché dans un titre (par exemple, `## Argent #money`) masque ce titre et tout ce qui le suit. Un tag dans le nom d'un fichier `# Argent #money` ou dans les propriétés du fichier (tags) masque le fichier entier. Les tags en russe fonctionnent aussi — #деньги, #здоровье, #личное — quelle que soit la casse, ainsi que les propriétés au format Obsidian (tags en liste). Un changement de statut dans une fiche masquée apparaît dans le fil d'événements avec le même tag, et est donc également masqué.
 
 ## Ce qui quitte ton ordinateur
 

@@ -45,7 +45,7 @@ Wie Mnemai funktioniert, Bildschirm für Bildschirm und Einstellung für Einstel
 - [Stimme und Meetings](#stimme-und-meetings)
 - [Integriertes Modell auf dem Computer](#integriertes-modell-auf-dem-computer)
 - [Engine: Token und Last](#engine-token-und-last)
-- [Wer welche KI sieht](#wer-welche-ki-sieht)
+- [Wer von den KIs was sieht](#wer-von-den-kis-was-sieht)
 - [Was den Computer verlässt](#was-den-computer-verlässt)
 - [Speicher mit Passwort verschlüsseln](#speicher-mit-passwort-verschlüsseln)
 - [Verlauf und Rückgängig-Machen](#verlauf-und-rückgängig-machen)
@@ -357,22 +357,22 @@ Die Feineinstellung ist eine einzige Spalte: „Genauer ↔ Sparsamer“, längs
 
 Darunter folgt ein eigener Bereich „Im Hintergrund“: „Arbeit nicht stören“ senkt die Priorität des Modells auf deinem Computer, „Lernen im Hintergrund“ legt fest, wie oft Mnemai die Lernquellen prüft.
 
-## Wer welche KI sieht
+## Wer von den KIs was sieht
 
-Einstellungen → Sicherheit → „Wer welche KI sieht" – eine Tabelle: die KIs stehen in den Spalten, die Teile des Gedächtnisses in den Zeilen, dazu ein Bereich mit gesperrten Themen (Geld, Gesundheit, Persönliches – sie werden selbst aus erlaubten Teilen herausgeschnitten). Ein Klick wird sofort gespeichert, der Schalter unter einer Spalte deaktiviert diese KI komplett. Standardmäßig ist nichts verborgen, und jede KI darf Neues in den Eingang legen:
+Einstellungen → Sicherheit → „Wer von den KIs was sieht" — Tabelle: KIs in den Spalten, Speicherbereiche in den Zeilen, Block für gesperrte Themen (Geld, Gesundheit, Persönliches — werden auch aus freigegebenen Bereichen ausgeblendet). Änderungen werden sofort gespeichert, der Schalter unter der Spalte deaktiviert diese KI vollständig. Standardmäßig ist nichts verborgen, und jede KI kann Neues in den Posteingang legen:
 
-| KI | Sieht | Darf ergänzen |
+| KI | Sieht | Kann ergänzen |
 |---|---|---|
-| Modell auf dem Computer (integriert, Ollama, Strata) | alles | Eingang |
-| Claude, Claude Code | alles | Eingang, Entscheidungen, Projekte, Karten, Personen, Regeln |
-| ChatGPT | Profil, Regeln, Projekte, Karten, Entscheidungen | Eingang |
-| OpenRouter, DeepSeek, YandexGPT | Profil, Regeln, Projekte, Karten, Entscheidungen | Eingang |
-| Gemini | Profil, Regeln, Karten | Eingang |
-| Cursor | Regeln, Projekte | Eingang |
+| Lokales Modell (integriert, Ollama, Strata) | alles | Posteingang |
+| Claude, Claude Code | alles | Posteingang, Entscheidungen, Projekte, Karten, Personen, Regeln |
+| ChatGPT | Profil, Regeln, Projekte, Karten, Entscheidungen | Posteingang |
+| OpenRouter, DeepSeek, YandexGPT | Profil, Regeln, Projekte, Karten, Entscheidungen | Posteingang |
+| Gemini | Profil, Regeln, Karten | Posteingang |
+| Cursor | Regeln, Projekte | Posteingang |
 
-Das Modell auf dem Computer sieht alles, weil von deinem Computer nichts nach außen geht. Geld, Gesundheit und Persönliches sind standardmäßig für alle KIs sichtbar, denen die Karten offenstehen: Um ein Thema vor einer KI zu verbergen, klick in ihrer Spalte auf „sichtbar" – dann steht dort „verborgen".
+Das lokale Modell sieht alles, weil keine Daten den Computer verlassen. Geld, Gesundheit und Persönliches sind standardmäßig für alle KIs sichtbar, denen Karten freigegeben sind: Um ein Thema vor einer KI zu verbergen, klicke in ihrer Spalte auf „sichtbar" – daraus wird dann „verborgen". Bei MCP blockiert ein langer Befehl die Antwort nicht: Der Client erhält Fortschrittsmeldungen und kann den Befehl abbrechen; sudo über MCP wird nur nach Eingabe des Passworts im Mnemai-Chat ausgeführt, und MCP öffnet kein Terminalfenster.
 
-Ein verborgener Tag an einer Überschrift (zum Beispiel „## Geld #money") verbirgt sie samt allem, was darunter steht. Ein Tag am Titel „# Geld #money" oder in den Eigenschaften der Datei (tags) verbirgt die ganze Datei. Auch russische Tags funktionieren – #деньги, #здоровье, #личное – in beliebiger Groß- und Kleinschreibung, ebenso Eigenschaften in der Form, wie Obsidian sie schreibt (tags als Liste). Eine Statusänderung in einer verborgenen Karte landet mit demselben Tag im Ereignisprotokoll und ist deshalb ebenfalls verborgen.
+Ein versteckter Tag an einer Überschrift (z. B. „## Деньги #money") verbirgt diese und alles darunter. Ein Tag im Dateititel („# Деньги #money") oder in den Dateieigenschaften (tags) verbirgt die gesamte Datei. Auch russische Tags funktionieren – #деньги, #здоровье, #личное – in jeder Groß-/Kleinschreibung, ebenso Eigenschaften im Format, das Obsidian für tags (als Liste) verwendet. Eine Statusänderung bei einer verborgenen Karte erscheint im Aktivitäts-Feed mit demselben Tag und ist daher ebenfalls verborgen.
 
 ## Was den Computer verlässt
 

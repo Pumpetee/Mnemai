@@ -54,6 +54,8 @@ def _price(pid: str, name: str) -> tuple[float, float]:
         if "opus" in name:
             return (15.0, 75.0)
         return (3.0, 15.0)
+    if pid in ("harness", "deepseek"):
+        return (1.0, 3.0) if "pro" in name else (0.28, 0.42)  # Flash is cheap, V4 Pro is the dear one
     if pid == "openrouter":
         if "mini" in name or "flash" in name:
             return (0.2, 0.8)

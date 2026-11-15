@@ -138,6 +138,7 @@ YANDEX_MODELS = [
 ]
 CLAUDE_CODE_MODELS = [("", "Claude"), ("sonnet", "Claude Sonnet"), ("opus", "Claude Opus"), ("haiku", "Claude Haiku")]
 HARNESS_MODEL = "deepseek-flash"
+HARNESS_MODELS = [("deepseek-flash", "DeepSeek Flash"), ("deepseek-v4-pro", "DeepSeek V4 Pro")]
 DSH_PATCH = """# Written by Mnemai: the DeepSeek Harness profile for the chat brain.
 # The headless profile turns the signed-in account and credentials off by default; this layer turns them back on and
 # uses the same account provider as the web app, so no API key is needed on this computer.
@@ -324,7 +325,7 @@ def status(vault: Vault) -> list[dict]:
         key = key_of(vault, pid) if p["key"] else ""
         if pid == "harness":
             ready = bool(dsh_exe())
-            models = [{"id": HARNESS_MODEL, "name": "DeepSeek Flash"}]
+            models = [{"id": mid, "name": name} for mid, name in HARNESS_MODELS]
         elif pid == "local":
             from .. import localllm
 
@@ -390,7 +391,7 @@ def fetch_models(vault: Vault, pid: str) -> list[str]:
     if pid == "claude_code":
         return [m for m, _ in CLAUDE_CODE_MODELS]
     if pid == "harness":
-        return [HARNESS_MODEL]
+        return [mid for mid, _name in HARNESS_MODELS]
     if pid == "codex":
         from . import codex_server as CS
 
@@ -813,14 +814,19 @@ def dsh_exe() -> str | None:
     return None
 
 
-def harness_patch() -> Path:
-    """The profile layer that gives headless DSH the signed-in DeepSeek account (no API key needed)."""
+def harness_patch(model: str = HARNESS_MODEL) -> Path:
+    """The profile layer that gives headless DSH the signed-in DeepSeek account (no API key needed).
+    One patch per model: concurrent chats on Flash and Pro must not overwrite each other's choice."""
+    model = (model or HARNESS_MODEL).strip()
+    if not re.fullmatch(r"[\w.-]+", model):
+        model = HARNESS_MODEL
+    text = DSH_PATCH.replace("model: deepseek-flash", f"model: {model}")
     home = Path(os.environ.get("MNEMA_HOME") or (Path.home() / ".mnema"))
-    p = home / "dsh-harness.yml"
+    p = home / f"dsh-harness-{model}.yml"
     try:
-        if not p.exists() or p.read_text(encoding="utf-8") != DSH_PATCH:
+        if not p.exists() or p.read_text(encoding="utf-8") != text:
             home.mkdir(parents=True, exist_ok=True)
-            p.write_text(DSH_PATCH, encoding="utf-8")
+            p.write_text(text, encoding="utf-8")
     except OSError:
         pass
     return p
@@ -841,7 +847,7 @@ def _stream_harness(
         raise NotSent(
             "DeepSeek Harness не найден: нужен dsh (npx @deepseek-ai/dsh). Выбери другую модель слева вверху."
         )
-    patch = harness_patch()
+    patch = harness_patch(model)
     last_user = str(messages[-1].get("text") if messages else "")
     allowed = bool(re.search(r"\b(?:установ|постав|скачай|обнови|install|upgrade)\w*", last_user, re.I)) and not bool(
         re.search(r"\bне\s+(?:установ|постав|скачивай|обновляй)", last_user, re.I)

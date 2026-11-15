@@ -49,8 +49,15 @@ class HarnessProvider(unittest.TestCase):
     def test_status_offers_the_harness_model(self):
         st = next(p for p in PR.status(self.v) if p["id"] == "harness")
         self.assertTrue(st["ready"])
-        self.assertEqual([m["id"] for m in st["models"]], ["deepseek-flash"])
-        self.assertEqual(PR.fetch_models(self.v, "harness"), ["deepseek-flash"])
+        self.assertEqual([m["id"] for m in st["models"]], ["deepseek-flash", "deepseek-v4-pro"])
+        self.assertEqual(PR.fetch_models(self.v, "harness"), ["deepseek-flash", "deepseek-v4-pro"])
+
+    def test_each_harness_model_gets_its_own_patch(self):
+        flash = PR.harness_patch("deepseek-flash")
+        pro = PR.harness_patch("deepseek-v4-pro")
+        self.assertNotEqual(flash, pro)
+        self.assertIn("model: deepseek-v4-pro", pro.read_text(encoding="utf-8"))
+        self.assertIn("model: deepseek-flash", flash.read_text(encoding="utf-8"))
 
     def test_stream_answers(self):
         usage = {}

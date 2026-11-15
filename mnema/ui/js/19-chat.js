@@ -165,9 +165,7 @@ async function viewChat(id) {
     const s = $("#cstatus"),
       v = !!$("#inp").value;
     if (s) s.classList.toggle("hastext", v);
-    $("#inp").classList.toggle("empty", !v);
   });
-  $("#inp").classList.toggle("empty", !$("#inp").value);
   drawChips();
   $("#ccfg").onclick = () => compModal();
   $("#chelp").onclick = () => compTour();

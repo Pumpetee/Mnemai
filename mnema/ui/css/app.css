@@ -20057,11 +20057,6 @@ button.xft:hover {
   will-change: transform;
 }
 
-/* while the field is empty its caret is hidden: no 2/s blink next to the hint (QtWebEngine) */
-.cbox textarea.empty {
-  caret-color: transparent;
-}
-
 /* the task constructor is a visible button, next to «Консорциум», not a tiny icon */
 #planchip {
   color: var(--acc);

@@ -63,7 +63,6 @@ function applyComposer() {
     stline = $("#cstatus");
   if (inp) {
     inp.placeholder = "";
-    inp.classList.toggle("empty", !inp.value);
     inp.rows = Math.max(1, Math.min(8, c.rows));
     inp.style.minHeight = c.rows > 1 ? c.rows * 22 + "px" : "";
   }

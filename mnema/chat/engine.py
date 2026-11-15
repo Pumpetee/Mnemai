@@ -597,12 +597,22 @@ _answers: dict[str, dict] = {}
 
 
 PROBE_COMMAND = re.compile(
-    r"^\s*(?::\s*)?(?:command\s+-v|which|type\s+-a|rpm\s+-q|dpkg\s+(?:-s|-l)|pacman\s+-Q|"
-    r"apt-cache\s+(?:policy|show|search)|dnf\s+(?:list|info|search)|zypper\s+(?:se|search|info)|"
-    r"apk\s+(?:info|search)|cat\s+/etc/os-release|lsb_release|hostnamectl|uname|"
-    r"[\w.+-]+\s+--version)\b",
+    r"\b(?:command\s+-v|which|type\s+-a|rpm\s+-q|dpkg\s+(?:-s|-l)|pacman\s+-[QS]|"
+    r"apt-cache\s+(?:policy|show|search)|apt\s+list|dnf\s+(?:list|info|search)|zypper\s+(?:se|search|info)|"
+    r"apk\s+(?:info|search)|flatpak\s+list|snap\s+list|cat\s+/etc/os-release|lsb_release|hostnamectl|uname|"
+    r"find|\bls\b|[\w.+-]+\s+--version)\b",
     re.I,
 )
+MUTATING_COMMAND = re.compile(
+    r"(?:^|[;&|])\s*(?:sudo\s+\S+\s+)?(?:rm|rmdir|mv|cp|mkdir|touch|chmod|chown|dd|truncate|install)\b|"
+    r"\b(?:install|remove|purge|uninstall|upgrade)\b|\s-delete\b|\s-exec\s",
+    re.I,
+)
+
+
+def _looks_like_probe(command: str) -> bool:
+    """Inspection only: such a command may exit 1 because it found nothing, and that is still an answer."""
+    return bool(PROBE_COMMAND.search(command)) and not bool(MUTATING_COMMAND.search(command))
 
 
 def _probe_summary(command: str) -> str:
@@ -678,7 +688,7 @@ def _action_view(call: dict, line: str, path: str, result: str, failed: bool = F
         if m:
             code = int(m.group(1))
         if code:
-            if PROBE_COMMAND.search(command):
+            if _looks_like_probe(command):
                 # «command -v airmon-ng» says the program is absent — that is an answer, not a failed action
                 view["text"] = _probe_summary(command)
                 return view
@@ -1766,7 +1776,9 @@ HARNESS_NOTE = """=== Инструменты DeepSeek Harness ===
 Владелец дал доступ к компьютеру по умолчанию. Не выводи в ответ пароли, ключи и токены.
 
 Ставя пакеты, сначала определи пакетный менеджер (`command -v dnf apt-get pacman zypper apk`) или прочитай
-/etc/os-release — не угадывай apt/dpkg.
+/etc/os-release — не угадывай apt/dpkg. Удаляя программу, сначала проверь, установлена ли она (`rpm -q`,
+`command -v`, `flatpak list`); если нет — скажи, что удалять нечего, и ничего не удаляй. Не отвечай вместо
+действия блоком кода с командой: либо выполни действием, либо скажи, что не получилось.
 Коротко — для дел: одна-две фразы, сразу результат. Не пиши «Что сделал», «Детали», «Варианты», списки, отчёты о
 проверках и команды — если владелец не попросил подробно. Не предлагай альтернативы, когда задача уже выполнена.
 Если просят открыть программу — открой именно её, без рассказов о том, как искал.

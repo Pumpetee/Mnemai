@@ -272,6 +272,25 @@ class ActionsTest(unittest.TestCase):
         msgs = CH.load_chat(v, r["chat"])["messages"]
         self.assertFalse(any((m.get("text") or "").strip() == "Пр" for m in msgs))
 
+    def test_a_bundle_of_checks_is_not_a_failure(self):
+        v = _vault(self.work)
+        s = Script(
+            'Проверю.\n```mnema run_command command="( command -v arimong; ls -d /definitely-not-here 2>/dev/null )"\n```',
+            "Нечего удалять.",
+        )
+        r, _ = self._send(v, "Удали arimong", s, ["yes"])
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        action = next(m for m in msgs if m.get("kind") == "action")
+        self.assertNotIn("failed", action)  # the check found nothing; that is an answer, not a crash
+        self.assertIn("arimong", action.get("text") or "")
+
+    def test_a_russian_command_prefix_is_not_part_of_the_shell_command(self):
+        call = TL.parse("```mnema команда: echo mnema-ru-ok\n```")
+        self.assertEqual(call["command"], "echo mnema-ru-ok")
+        v = _vault(self.work)
+        text, _, _ = TL.run(v, {"tool": "run_command", "command": call["command"]})
+        self.assertIn("mnema-ru-ok", text)
+
     @unittest.skipIf(os.name == "nt", "the fake sudo helper is a POSIX shell script")
     def test_sudo_gets_a_gui_askpass_without_a_terminal(self):
         v = _vault(self.work)

@@ -112,6 +112,8 @@ TERMINAL_RULE = """```mnema run_command command="одна команда тер�
 (выполняет команду в терминале этого компьютера и возвращает вывод и код возврата; cwd — где выполнять, по умолчанию
 домашняя папка; timeout — секунды, по умолчанию 120, максимум 900. Вывод виден в чате по ходу выполнения.
 Ставя пакеты, сначала проверь пакетный менеджер (`command -v dnf apt-get pacman zypper apk`) — не угадывай apt/dpkg.
+Удаляя программу, сначала проверь, установлена ли она (`rpm -q`, `command -v`, `flatpak list`); если нет — скажи,
+что удалять нечего, и ничего не удаляй. Не отвечай вместо действия блоком кода с командой.
 Так можно смотреть процессы, железо, сеть, git,
 запускать программы, ставить пакеты, работать с файлами вне рабочих папок — всё, что делает терминал.
 Если команда сложная, пиши её в теле блока: ```mnema run_command cwd="…"``` и следующей строкой саму команду.
@@ -264,7 +266,12 @@ def parse(text: str) -> dict | None:
         if tool not in TOOLS:
             # «```mnema cat /etc/os-release```» — a bare command after the marker
             command = " ".join((raw_tool + rest).split())
-            command = re.sub(r"^(?:command|cmd|shell|bash)\s*:\s*", "", command, flags=re.I)
+            command = re.sub(
+                r"^(?:command|cmd|shell|bash|sh|run|exec|команда|команду|выполни|выполнить)\s*:\s*",
+                "",
+                command,
+                flags=re.I,
+            )
             command = re.sub(r"^:\s*", "", command)
             body = (m.group(3) or "").strip()
             if body:

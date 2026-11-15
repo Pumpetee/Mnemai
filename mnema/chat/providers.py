@@ -778,6 +778,16 @@ def _sse(req: urllib.request.Request, timeout: int = 600, abort: dict | None = N
                 continue
 
 
+def _harness_task(system: str, messages: list[dict]) -> str:
+    """Harness runs one prompt per call. Mnemai's system prompt is the part that carries memory, the owner's
+    rules and the term-hint instruction: it must be in the task, not only in the file Claude Code reads."""
+    parts = [HARNESS_HARD]
+    if system.strip():
+        parts.append(system.strip())
+    parts.append(_flatten("", messages))
+    return "\n\n".join(parts)
+
+
 def _flatten(system: str, messages: list[dict]) -> str:
     """Claude Code runs one prompt per call: the conversation goes in as text."""
     hist = []
@@ -836,7 +846,7 @@ def _stream_harness(
     allowed = bool(re.search(r"\b(?:установ|постав|скачай|обнови|install|upgrade)\w*", last_user, re.I)) and not bool(
         re.search(r"\bне\s+(?:установ|постав|скачивай|обновляй)", last_user, re.I)
     )
-    task = HARNESS_HARD + "\n\n" + _flatten(system, messages)
+    task = _harness_task(system, messages)
     cmd = [
         exe,
         "headless",

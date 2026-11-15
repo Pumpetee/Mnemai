@@ -40,6 +40,12 @@ class HarnessProvider(unittest.TestCase):
         self.v = Vault(self.dir)
         init_vault(self.v)
 
+    def test_system_prompt_is_part_of_the_harness_task(self):
+        task = PR._harness_task("=== ПРАВИЛО ===\nпомни про термины", [{"role": "user", "text": "привет"}])
+        self.assertIn("ПРАВИЛО", task)  # memory and term hints reach the model, not just Claude Code
+        self.assertIn("термины", task)
+        self.assertIn("привет", task)
+
     def test_status_offers_the_harness_model(self):
         st = next(p for p in PR.status(self.v) if p["id"] == "harness")
         self.assertTrue(st["ready"])

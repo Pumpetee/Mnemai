@@ -126,7 +126,7 @@ async function viewChat(id) {
      <div class="netfreeze" id="netfreeze" hidden><i></i><span>Заморозил сессию, пока нет соединения. Контекст не потеряется.</span></div>
      <div id="ctable"></div><div class="msgs" id="msgs"></div>
      <div class="workbar" id="workbar" hidden><span class="workdot"></span><span class="worklabel">Mnemai работает</span><span class="workphase" id="workphase"></span><span class="workline"><i></i></span></div>
-     <div class="composer" id="composer"><div id="recbar"></div><div class="cbox"><button class="hq chelp" id="chelp" title="${tr("Что умеет строка ввода")}">?</button><button class="ccfg" id="ccfg" title="Настроить строку ввода">${ic("gear")}</button><div class="qbar" id="qbar" hidden></div><div class="fbar" id="fbar" hidden></div><textarea id="inp" rows="1" placeholder="Напиши что угодно — я помню тебя и учусь по ходу" title="Enter — отправить, Shift+Enter — новая строка"></textarea>
+     <div class="composer" id="composer"><div id="recbar"></div><div class="cbox"><button class="hq chelp" id="chelp" title="${tr("Что умеет строка ввода")}">?</button><button class="ccfg" id="ccfg" title="Настроить строку ввода">${ic("gear")}</button><div class="qbar" id="qbar" hidden></div><div class="fbar" id="fbar" hidden></div><div class="cstatus" id="cstatus"></div><textarea id="inp" rows="1" placeholder="" title="Enter — отправить, Shift+Enter — новая строка"></textarea>
        <div class="cbar"><button class="ib" id="clip" title="Прикрепить файл">${ic("clip")}</button><input type="file" id="fpick" multiple hidden>
        <input type="file" id="apick" accept="audio/*,video/*,.m4a,.ogg,.opus,.amr" hidden>
        <button class="ib tog ${LS.get("web", true) ? "on" : ""}" id="webchip" title="Интернет — когда вопрос про внешние факты">${ic("globe")}</button>
@@ -159,6 +159,14 @@ async function viewChat(id) {
   // the chip opens the simple view, its gear — the full settings
   $("#conschip").onclick = (e) => consortModal(!!e.target.closest("#consgear"));
   $("#planchip").onclick = () => planOpen();
+  // the hint above the field is a real line: the blinking caret does not repaint it (QtWebEngine flicker)
+  $("#inp").addEventListener("input", () => {
+    const s = $("#cstatus"),
+      v = !!$("#inp").value;
+    if (s) s.classList.toggle("hastext", v);
+    $("#inp").classList.toggle("empty", !v);
+  });
+  $("#inp").classList.toggle("empty", !$("#inp").value);
   drawChips();
   $("#ccfg").onclick = () => compModal();
   $("#chelp").onclick = () => compTour();

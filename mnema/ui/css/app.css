@@ -20033,3 +20033,31 @@ button.xft:hover {
   font-size: 11.5px;
   color: var(--ink3);
 }
+
+/* the hint above the composer: its own line, so the caret blink cannot repaint it */
+.cstatus {
+  padding: calc(12px * var(--den)) calc(46px * var(--den)) 0 calc(16px * var(--den));
+  font-size: calc(14px * var(--fs));
+  line-height: 1.4;
+  color: var(--ink3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  pointer-events: none;
+}
+.cstatus.hastext {
+  visibility: hidden;
+}
+.cbox textarea {
+  padding-top: calc(4px * var(--den));
+}
+.cbox .chelp,
+.ccfg {
+  will-change: transform;
+}
+
+/* while the field is empty its caret is hidden: no 2/s blink next to the hint (QtWebEngine) */
+.cbox textarea.empty {
+  caret-color: transparent;
+}

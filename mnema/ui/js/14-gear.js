@@ -6,8 +6,15 @@ function statusText() {
   return STATUS.label + (STATUS.when ? " · " + STATUS.when : "");
 }
 function statusLine() {
-  const i = $("#inp");
-  if (i && !compCfg().placeholder) i.placeholder = statusText();
+  const s = $("#cstatus"),
+    i = $("#inp");
+  const txt = compCfg().placeholder || statusText();
+  if (s) {
+    s.textContent = txt;
+    s.hidden = !txt;
+    s.classList.toggle("hastext", !!(i && i.value));
+  }
+  if (i) i.placeholder = ""; // the hint lives above the field, not in it
 }
 function achOn() {
   return LS.get("ach_on", true);

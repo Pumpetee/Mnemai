@@ -299,6 +299,7 @@ class ActionsTest(unittest.TestCase):
         msgs = CH.load_chat(v, r["chat"])["messages"]
         self.assertTrue(any("таймаут" in (m.get("text") or "").lower() for m in msgs))
 
+    @unittest.skipIf(os.name == "nt", "the fake package manager is a POSIX shell script")
     def test_installing_never_opens_a_terminal_even_when_asked(self):
         v = _vault(self.work)
         bindir = self.work / "bin-install"
@@ -316,6 +317,7 @@ class ActionsTest(unittest.TestCase):
             os.environ["PATH"] = old_path
         self.assertIn("fake-install-ok", text)
 
+    @unittest.skipIf(os.name == "nt", "printf is a POSIX shell command")
     def test_the_chat_sees_the_output_while_the_command_runs(self):
         v = _vault(self.work)
         got: list[str] = []

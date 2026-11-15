@@ -2128,6 +2128,12 @@ function poll() {
   btn.classList.add("stop");
   btn.innerHTML = '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
   const cid = CHAT.id;
+  // the server adds «Принял. Делаю…» at once, but the chat is re-read only at the end: show it here, in the same second
+  if (!$("#localack") && $("#msgs"))
+    $("#msgs").insertAdjacentHTML(
+      "beforeend",
+      `<div class="actline progress" id="localack">${ic("clock")}<span class="actone"><span data-noi18n>${esc(tr("Принял. Делаю…"))}</span></span></div>`,
+    );
   const T = {
     target: "",
     shown: 0,
@@ -2191,6 +2197,8 @@ function poll() {
     T.raf = requestAnimationFrame(frame);
   };
   const finish = async () => {
+    const ack = $("#localack");
+    if (ack) ack.remove();
     WORK("");
     btn.classList.remove("stop");
     btn.innerHTML = SEND_ICON;

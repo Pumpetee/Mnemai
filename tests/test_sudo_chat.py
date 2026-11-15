@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
@@ -128,7 +129,7 @@ class Sudo(unittest.TestCase):
         command = self.sudo_command("echo mnema-sudo-ok")
         script = Script(f'```mnema run_command command="{command}"\n```', "Готово, поставила.")
         owner = self.owner(["secret-123"])
-        r, _ = self._send(v, "Установи nmap", script, owner)
+        r, _ = self._send(v, "Проверь сеть", script, owner)  # not an install: the model asks for the command
         self.assertIn("sudo echo mnema-sudo-ok", owner.asked[0][0])
         self.assertEqual(owner.asked[0][1], False)  # the first card is not the «wrong password» one
         self.assertTrue(self.marker.exists(), "the command must run with the password, not wait for a prompt")
@@ -188,6 +189,29 @@ class Sudo(unittest.TestCase):
         self.assertFalse(TL.needs_sudo("echo sudoku"))
         self.assertFalse(TL.needs_sudo("ls /usr/sbin"))
         self.assertFalse(TL.needs_sudo(""))
+
+    def test_the_install_shortcut_asks_the_password_and_never_the_model(self):
+        v = _vault()
+        owner = self.owner(["secret-123"])
+        calls: list[int] = []
+
+        def fake_script(*a, **k):
+            calls.append(1)
+            raise AssertionError("the model must not be called for an install")
+
+        PR.stream = fake_script
+        with (
+            patch.object(TL, "package_manager", lambda: "dnf"),
+            patch.object(TL, "resolve_package", lambda pm, term: "nmap"),
+            patch.object(TL, "install_command", lambda pm, names: self.sudo_command("echo mnema-install-ok")),
+        ):
+            r = CH.send(v, "установи nmap", model="openai:m1", learn=False, sync=True)
+        self.assertEqual(calls, [])
+        self.assertTrue(self.marker.exists(), "the install must run with the password from the chat card")
+        self.assertEqual(owner.asked[0][1], False)
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        self.assertTrue(any("поставила nmap" in (m.get("text") or "") for m in msgs))
+        self.assertTrue(any("mnema-install-ok" in (m.get("detail") or "") for m in msgs))
 
 
 if __name__ == "__main__":

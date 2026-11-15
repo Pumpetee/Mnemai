@@ -432,3 +432,36 @@ def _is_tools_ok(vault: Vault, tool: str) -> bool:
     if tool == "remember" and not P.memory_on(vault):
         return False
     return True
+
+
+INSTALL_REQUEST = re.compile(
+    r"^\s*(?:установи(?:те)?|поставь(?:те)?|постав|install)\b\s*(?:мне\s+)?(.+?)\s*[.!?]*$", re.I
+)
+INSTALL_WORD = re.compile(r"\b(?:программ\w*|приложени\w*|игр\w*|браузер\w*|что-нибудь|что-то|все|всё|пакеты?)\b", re.I)
+INSTALL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._-]{1,60}$")
+INSTALL_PREFIX = re.compile(r"^(?:пакет|пакеты|программу|программа|приложение)\s+", re.I)
+
+
+def install_call(vault: Vault, text: str) -> dict | None:
+    """A package the owner asked to install, resolved here so no model round-trip (and no terminal window) is needed."""
+    if not TL.enabled(vault):
+        return None
+    m = INSTALL_REQUEST.match((text or "").strip())
+    if not m:
+        return None
+    what = INSTALL_PREFIX.sub("", m.group(1).strip(" .!?«»\"'"))
+    if not what or " " in what or INSTALL_WORD.search(what) or not INSTALL_NAME.match(what):
+        return None
+    pm = TL.package_manager()
+    if not pm:
+        return None
+    name = TL.resolve_package(pm, what)
+    if not name:
+        return None
+    return {
+        "tool": "run_command",
+        "command": TL.install_command(pm, [name]),
+        "timeout": 900,
+        "label": "install",
+        "packages": [name],
+    }

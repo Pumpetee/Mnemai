@@ -520,6 +520,118 @@ def needs_sudo(command: str) -> bool:
     return bool(re.search(r"(?<![\w./-])sudo(?![\w.-])", str(command or "")))
 
 
+# ---------------------------------------------------------------- installing a package, without the model
+PACKAGE_MANAGERS: tuple[tuple[str, str, str], ...] = (  # (program, search command, install command)
+    ("dnf", "dnf search {term}", "sudo dnf install -y {names}"),
+    (
+        "apt-get",
+        "apt-cache search --names-only {term}",
+        "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {names}",
+    ),
+    ("pacman", "pacman -Ss {term}", "sudo pacman -S --noconfirm --needed {names}"),
+    ("zypper", "zypper --quiet search {term}", "sudo zypper --non-interactive install {names}"),
+    ("apk", "apk search {term}", "sudo apk add {names}"),
+)
+ARCH_SUFFIX = re.compile(
+    r"^(?P<name>[A-Za-z0-9][A-Za-z0-9+._-]*)\.(?:x86_64|i[3-6]86|aarch64|armv7hl|noarch|ppc64le|s390x)$"
+)
+BORING_SUFFIX = re.compile(r"-(?:devel|doc|docs|debug\w*|static|libs?|firmware|headers|tools?|examples?)$", re.I)
+PACKAGE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._-]{1,60}$")
+
+
+def package_manager() -> str | None:
+    """The package manager of this system, or None where installing is not our business (Windows, macOS)."""
+    if os.name == "nt" or sys.platform == "darwin":
+        return None
+    for program, _, _ in PACKAGE_MANAGERS:
+        if shutil.which(program):
+            return program
+    return None
+
+
+def install_command(pm: str, names: list[str]) -> str:
+    for program, _, template in PACKAGE_MANAGERS:
+        if program == pm:
+            return template.format(names=" ".join(names))
+    raise ValueError(pm)
+
+
+def _probe(command: str, seconds: float = 10.0) -> str:
+    """A short read-only command whose output only helps us choose a package name."""
+    shell = "/bin/bash" if Path("/bin/bash").exists() else "/bin/sh"
+    try:
+        done = subprocess.run(
+            [shell, "-lc", command],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=seconds,
+            env=os.environ.copy(),
+            start_new_session=True,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return ""
+    return (done.stdout or "") + (done.stderr or "")
+
+
+def _package_candidates(pm: str, term: str, out: str) -> list[str]:
+    names: list[str] = []
+    if pm == "dnf":
+        for line in out.splitlines():
+            for word in line.split():
+                m = ARCH_SUFFIX.match(word)
+                if m:
+                    names.append(m.group("name"))
+    elif pm == "apt-get":
+        for line in out.splitlines():
+            word = line.split(" ", 1)[0].strip()
+            if PACKAGE_NAME.match(word):
+                names.append(word)
+    elif pm == "pacman":
+        for line in out.splitlines():
+            if "/" in line:
+                word = line.split("/", 1)[1].split(" ", 1)[0].strip()
+                if PACKAGE_NAME.match(word):
+                    names.append(word)
+    elif pm in ("zypper", "apk"):
+        for line in out.splitlines():
+            parts = [x.strip() for x in line.split("|")] if "|" in line else line.split()
+            for word in parts:
+                if PACKAGE_NAME.match(word):
+                    names.append(word)
+                    break
+    seen: set[str] = set()
+    return [n for n in names if not (n.lower() in seen or seen.add(n.lower()))]
+
+
+def _best_package(term: str, names: list[str]) -> str | None:
+    """The one package this word means: an exact name, or the only short «term-something» match."""
+    low = term.lower()
+    exact = [n for n in names if n.lower() == low]
+    if exact:
+        return exact[0]
+    starts = [
+        n
+        for n in names
+        if n.lower().startswith(low) and len(n) > len(low) and not n[len(low)].isalnum() and not BORING_SUFFIX.search(n)
+    ]
+    bases = {n.split("-", 1)[0].lower() for n in starts}
+    if starts and len(bases) == 1:
+        return min(starts, key=len)
+    return None
+
+
+def resolve_package(pm: str, term: str) -> str | None:
+    """A package name to install for what the owner typed («aircrack» → «aircrack-ng»), or None to ask the model."""
+    if not PACKAGE_NAME.match(term or ""):
+        return None
+    for program, search, _ in PACKAGE_MANAGERS:
+        if program == pm:
+            return _best_package(term, _package_candidates(pm, term, _probe(search.format(term=term))))
+    return None
+
+
 ASKPASS = """#!/bin/sh
 # sudo has no terminal here: ask for the administrator password in a small desktop window, never store it.
 if command -v kdialog >/dev/null 2>&1; then

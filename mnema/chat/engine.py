@@ -995,11 +995,19 @@ def send(
     from . import intents as IN
 
     call = None
-    if not opener and not chat.get("consortium") and not files and not quote and not chat.get("private"):
+    plain = not opener and not chat.get("consortium") and not files and not quote and not chat.get("private")
+    if plain:
         call = IN.fast_action(vault, text)
+    install = None
+    if plain and call is None:
+        try:
+            install = IN.install_call(vault, text)  # a package name is resolved here, so the install starts at once
+        except Exception:
+            install = None
     fast = call is not None and not P.load(vault).get("tools_ask", False)
     # learn from it right away — in parallel with the answer (unless this chat is private or it is a command)
-    if learn and not chat.get("private") and not fast:
+    quick = call is not None or install is not None
+    if learn and not chat.get("private") and not quick:
         ep = Episode(
             "mnema_chat",
             f"{chat['id']}#{len(chat['messages'])}",
@@ -1023,6 +1031,8 @@ def send(
         ACH.event(vault, "action", tool="open_app")
         _gen[chat["id"]] = {"text": say, "done": True, "error": "", "phase": "", "stop": False}
         return {"chat": chat["id"], "title": chat["title"], "model": model}
+    if install is not None:
+        return _fast_install(vault, chat, install, model, sync)
     if not opener and not sync:
         _add_msg(
             vault,
@@ -1044,6 +1054,51 @@ def send(
         result["offer"] = True
         _offer_after(vault, result["chat"], text, d["offer"], model, web, terms, sync)
     return result
+
+
+def _fast_install(vault: Vault, chat: dict, call: dict, model: str, sync: bool) -> dict:
+    """The owner asked for a package: install it through the usual action (permission, password card, live output),
+    without asking a model first — so nothing waits 40 seconds and no terminal window opens."""
+    g = {
+        "text": "",
+        "done": False,
+        "error": "",
+        "phase": "ставлю пакет",
+        "started": time.time(),
+        "stop": False,
+        "pid": "owner",
+        "who": "",
+    }
+    _gen[chat["id"]] = g
+
+    def work():
+        result = _act(vault, chat["id"], g, call, "owner", model)
+        names = " ".join(str(x) for x in (call.get("packages") or []))
+        if result is None:  # the owner stopped the turn or did not give the password
+            say = ""
+        elif result.startswith("[код 0"):
+            say = f"Готово — поставила {names}."
+        else:
+            say = f"Не получилось поставить {names}: в строке действия есть вывод, посмотри причину."
+        if say:
+
+            def fin(c):
+                c["messages"].append({"role": "assistant", "text": say, "ts": _now(), "model": model})
+                c["updated"] = _now()
+
+            try:
+                modify_chat(vault, chat["id"], fin)
+            except KeyError:  # deleted while installing
+                pass
+        g["text"] = say
+        g["phase"] = ""
+        g["done"] = True
+
+    if sync:
+        work()
+    else:
+        threading.Thread(target=work, daemon=True, name="mnema-install").start()
+    return {"chat": chat["id"], "title": chat["title"], "model": model}
 
 
 def _offer_msg(text: str, before: str, model: str, web: bool, terms: bool) -> dict:

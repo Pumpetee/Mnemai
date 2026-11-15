@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
@@ -109,3 +110,40 @@ class Intents(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_install_requests_are_resolved_before_the_model(self):
+        import mnema.chat.tools as TL
+
+        with (
+            patch.object(TL, "package_manager", lambda: "dnf"),
+            patch.object(TL, "resolve_package", lambda pm, term: "aircrack-ng"),
+        ):
+            call = IN.install_call(self.v, "установи мне aircrack")
+            self.assertEqual(call["tool"], "run_command")
+            self.assertIn("dnf install -y aircrack-ng", call["command"])
+            self.assertEqual(call["packages"], ["aircrack-ng"])
+            self.assertEqual(call["timeout"], 900)
+            self.assertIsNone(IN.install_call(self.v, "установи программу для wifi"))
+            self.assertIsNone(IN.install_call(self.v, "расскажи про aircrack"))
+            self.assertIsNone(IN.install_call(self.v, "установи два пакета"))
+        with (
+            patch.object(TL, "package_manager", lambda: "dnf"),
+            patch.object(TL, "resolve_package", lambda pm, term: None),
+        ):
+            self.assertIsNone(IN.install_call(self.v, "установи airmong"))  # unclear name: the model decides
+
+    def test_installing_a_package_runs_without_a_model(self):
+        import mnema.chat.tools as TL
+
+        with (
+            patch.object(TL, "package_manager", lambda: "dnf"),
+            patch.object(TL, "resolve_package", lambda pm, term: "nmap"),
+            patch.object(TL, "install_command", lambda pm, names: "echo mnema-install-ok"),
+            patch.object(PR, "stream", side_effect=AssertionError("the model must not be called")),
+        ):
+            r = CH.send(self.v, "установи nmap", model="claude_code:sonnet", sync=True, learn=False)
+        chat = CH.load_chat(self.v, r["chat"])
+        text = "\n".join((m.get("text") or "") for m in chat["messages"])
+        detail = "\n".join((m.get("detail") or "") for m in chat["messages"])
+        self.assertIn("поставила nmap", text)
+        self.assertIn("mnema-install-ok", detail)

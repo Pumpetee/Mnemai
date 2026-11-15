@@ -3472,7 +3472,8 @@
 "есть обновление": "an update is available",
 "Доступно обновление Mnemai": "A Mnemai update is available",
 "Напоминание отложено. Проверить можно в шестерёнке.": "Reminder postponed. You can check in the gear menu.",
-"Нажми и Mnemai перезапустится уже новой версией.": "Press it and Mnemai restarts in the new version."
+"Нажми и Mnemai перезапустится уже новой версией.": "Press it and Mnemai restarts in the new version.",
+"Принял. Делаю…": "Got it. Doing…"
 },
 "patterns": {
 "{}Новый разговор": "{}New chat",

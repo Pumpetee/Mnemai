@@ -131,9 +131,9 @@ async function viewChat(id) {
        <input type="file" id="apick" accept="audio/*,video/*,.m4a,.ogg,.opus,.amr" hidden>
        <button class="ib tog ${LS.get("web", true) ? "on" : ""}" id="webchip" title="Интернет — когда вопрос про внешние факты">${ic("globe")}</button>
        <button class="ib" id="plusb" data-menu title="Ещё">${ic("plus")}<i class="pdot" hidden></i></button>
-       <button class="ib" id="planchip" title="${tr("Схема задачи: подобрать ИИ на шаги, время и токены")}">${ic("flow")}</button>
        <button class="cchip" id="privchip" title="Этот разговор не учит память">${ic("eyeoff")}<span>Без обучения</span></button>
        <button class="cchip" id="conschip" title="Несколько ИИ обсуждают вопрос">${ic("users")}<span>Консорциум</span><i class="cgear" id="consgear" title="${tr("Настройки консорциума")}">${ic("gear")}</i></button>
+       <button class="cchip" id="planchip" title="${tr("Схема задачи: подобрать ИИ на шаги, время и токены")}">${ic("flow")}<span>${tr("Схема")}</span></button>
        <span class="cstate" id="cstate"></span>
        <button class="micbig" id="micb" data-menu title="Голос">${ic("mic")}</button><button class="send" id="send" title="Отправить">${SEND_ICON}</button></div></div></div></section>
    </div><aside class="panel drawer" id="panel" hidden></aside>`;

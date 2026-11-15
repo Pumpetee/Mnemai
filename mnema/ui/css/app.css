@@ -20061,3 +20061,17 @@ button.xft:hover {
 .cbox textarea.empty {
   caret-color: transparent;
 }
+
+/* the task constructor is a visible button, next to «Консорциум», not a tiny icon */
+#planchip {
+  color: var(--acc);
+  border-color: color-mix(in srgb, var(--acc) 26%, var(--line));
+  background: color-mix(in srgb, var(--acc) 5%, var(--paper));
+}
+#planchip svg.i {
+  width: 15px;
+  height: 15px;
+}
+#planchip:hover {
+  border-color: var(--acc3);
+}

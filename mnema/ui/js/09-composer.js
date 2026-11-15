@@ -53,6 +53,8 @@ function applyComposer() {
   });
   const mic = $("#micb", bar);
   if (mic) bar.insertBefore(mic, send);
+  const planb = $("#planchip", bar);
+  if (planb) bar.insertBefore(planb, st); // always right after the consortium chip, before the status
   c.order.forEach((k) => {
     const el = $("#" + k, bar);
     if (el) el.hidden = c.off.includes(k);

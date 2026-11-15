@@ -133,6 +133,7 @@ async function viewChat(id) {
        <button class="ib" id="plusb" data-menu title="Ещё">${ic("plus")}<i class="pdot" hidden></i></button>
        <button class="cchip" id="privchip" title="Этот разговор не учит память">${ic("eyeoff")}<span>Без обучения</span></button>
        <button class="cchip" id="conschip" title="Несколько ИИ обсуждают вопрос">${ic("users")}<span>Консорциум</span><i class="cgear" id="consgear" title="${tr("Настройки консорциума")}">${ic("gear")}</i></button>
+       <button class="cchip" id="planchip" title="Схема задачи: подобрать ИИ на шаги, время и токены">${ic("right")}<span>${tr("Схема")}</span></button>
        <span class="cstate" id="cstate"></span>
        <button class="micbig" id="micb" data-menu title="Голос">${ic("mic")}</button><button class="send" id="send" title="Отправить">${SEND_ICON}</button></div></div></div></section>
    </div><aside class="panel drawer" id="panel" hidden></aside>`;
@@ -157,6 +158,7 @@ async function viewChat(id) {
   };
   // the chip opens the simple view, its gear — the full settings
   $("#conschip").onclick = (e) => consortModal(!!e.target.closest("#consgear"));
+  $("#planchip").onclick = () => planOpen();
   drawChips();
   $("#ccfg").onclick = () => compModal();
   $("#chelp").onclick = () => compTour();
@@ -1461,6 +1463,7 @@ function quoteLine(s) {
 }
 function msgHtml(m, last, i, lastAi) {
   if (m.hidden) return "";
+  if (m.kind === "plan") return planCardHTML(m.plan || {}, true); // the schema lives in the conversation
   if (m.kind === "progress") {
     const all = (CHAT.chat && CHAT.chat.messages) || [];
     if (!CHAT.polling) return "";

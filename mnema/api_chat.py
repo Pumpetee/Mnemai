@@ -430,6 +430,29 @@ def post(vault: Vault, path: str, b: dict):
             opener=bool(b.get("opener")),
             private=bool(b["private"]) if "private" in b else None,
         )
+    if path == "/api/plan/propose":  # a schema of steps with executors, estimates and three variants
+        from .chat import planner as PL
+
+        return 200, {"plans": PL.propose(vault, str(b.get("task", "")).strip())}
+    if path == "/api/plan/run":
+        from .chat import planner as PL
+
+        plan = b.get("plan") or {}
+        if not isinstance(plan, dict):
+            raise ValueError("плохой план")
+        cid = str(b.get("chat", "") or "")
+        if not cid:
+            task = " ".join(str(plan.get("task") or "План").split())[:60]
+            chat = {
+                "id": CH.secrets.token_hex(6),
+                "title": task or "План",
+                "created": CH._now(),
+                "session": CH.current_session(vault)["id"],
+                "messages": [],
+            }
+            CH.save_chat(vault, chat)
+            cid = chat["id"]
+        return 200, PL.run(vault, cid, plan)
     if path == "/api/chat/redo":
         return 200, CH.redo(vault, str(b.get("chat", "")), bool(b.get("web", True)))
     if path == "/api/chat/useful":

@@ -1,0 +1,133 @@
+"""The task constructor: three plans with executors, estimates, and a chain that passes work between AIs."""
+
+import os
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
+
+from mnema.chat import engine as CH, planner as PL, providers as PR  # noqa: E402
+from mnema.memory import init_vault  # noqa: E402
+from mnema.vault import Vault  # noqa: E402
+
+STATUS = [
+    {"id": "local", "name": "На этом компьютере", "ready": True, "models": [{"id": "qwen3", "name": "Qwen3 8B"}]},
+    {
+        "id": "harness",
+        "name": "DeepSeek",
+        "ready": True,
+        "models": [{"id": "deepseek-flash", "name": "DeepSeek Flash"}],
+    },
+    {"id": "claude_code", "name": "Claude", "ready": True, "models": [{"id": "haiku", "name": "Claude Haiku"}]},
+    {"id": "openai", "name": "ChatGPT", "ready": False, "models": [{"id": "gpt-6", "name": "GPT-6"}]},
+]
+
+
+def _vault() -> Vault:
+    v = Vault(Path(tempfile.mkdtemp()))
+    init_vault(v)
+    return v
+
+
+class Planner(unittest.TestCase):
+    def test_every_plan_has_executors_and_estimates(self):
+        v = _vault()
+        with patch.object(PR, "status", lambda vault: STATUS):
+            plans = PL.fallback_plans(v, "Сделай отчёт по договорам")
+        self.assertEqual([p["id"] for p in plans], ["fast", "optimal", "quality"])
+        allowed = {"local:qwen3", "harness:deepseek-flash", "claude_code:haiku"}
+        for plan in plans:
+            self.assertTrue(plan["steps"])
+            for step in plan["steps"]:
+                self.assertIn(step["model"], allowed)
+                self.assertGreater(step["est"]["tokens"], 0)
+                self.assertGreater(step["est"]["seconds"], 0)
+            self.assertGreater(plan["estimate"]["tokens"], 0)
+            self.assertGreater(plan["estimate"]["seconds"], 0)
+        self.assertGreater(len(plans[2]["steps"]), len(plans[0]["steps"]))  # «качественно» длиннее «быстро»
+
+    def test_propose_falls_back_when_the_planner_model_fails(self):
+        v = _vault()
+        with (
+            patch.object(PR, "status", lambda vault: STATUS),
+            patch.object(PR, "complete", side_effect=RuntimeError("нет сети")),
+        ):
+            plans = PL.propose(v, "Напиши письмо клиенту")
+        self.assertEqual(len(plans), 3)
+        self.assertEqual(plans[0]["id"], "fast")
+
+    def test_the_chain_passes_work_from_one_ai_to_the_next(self):
+        v = _vault()
+        chat = {
+            "id": "abcdef123456",
+            "title": "План",
+            "created": CH._now(),
+            "session": CH.current_session(v)["id"],
+            "messages": [],
+        }
+        CH.save_chat(v, chat)
+        plan = {
+            "id": "optimal",
+            "title": "Оптимально",
+            "note": "",
+            "task": "Сделай отчёт",
+            "steps": [
+                {
+                    "role": "План",
+                    "instruction": "Составь план",
+                    "out": "план",
+                    "model": "harness:deepseek-flash",
+                    "model_name": "DeepSeek Flash",
+                    "provider": "DeepSeek",
+                },
+                {
+                    "role": "Финал",
+                    "instruction": "Сделай отчёт",
+                    "out": "финал",
+                    "model": "claude_code:haiku",
+                    "model_name": "Claude Haiku",
+                    "provider": "Claude",
+                },
+            ],
+        }
+        calls = []
+
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+            calls.append((pid, model, messages[0]["text"]))
+            return f"результат шага {len(calls)}"
+
+        with (
+            patch.object(PR, "status", lambda vault: STATUS),
+            patch.object(PR, "complete", fake_complete),
+        ):
+            PL.run(v, chat["id"], plan)
+            for _ in range(100):
+                if CH._gen[chat["id"]]["done"]:
+                    break
+                time.sleep(0.05)
+        self.assertEqual([c[0] for c in calls], ["harness", "claude_code"])
+        self.assertIn("результат шага 1", calls[1][2])  # the second AI sees the first answer
+        msgs = CH.load_chat(v, chat["id"])["messages"]
+        self.assertTrue(any(m.get("kind") == "plan" for m in msgs))
+        transcript = [m for m in msgs if m.get("role") == "assistant" and m.get("text")]
+        self.assertTrue(
+            any("Шаг 1" in (m.get("text") or "") and "шаг 2" in (m.get("text") or "").lower() for m in transcript)
+        )
+        ready = next(m for m in msgs if m.get("kind") == "plan")
+        self.assertEqual(ready["plan"]["status"], "done")
+
+    def test_no_connected_models_is_explained(self):
+        v = _vault()
+        with patch.object(PR, "status", lambda vault: []):
+            with self.assertRaises(ValueError) as ctx:
+                PL.fallback_plans(v, "что угодно")
+        self.assertIn("модел", str(ctx.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

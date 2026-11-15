@@ -8,6 +8,18 @@ function planTokRange(e) {
   return lo === hi ? fmtTok(lo, true) : `${fmtTok(lo, true)}–${fmtTok(hi, true)}`;
 }
 
+function planMoney(v) {
+  const n = Number(v) || 0;
+  if (n <= 0) return "$0";
+  return n < 0.01 ? `$${n.toFixed(4).replace(".", ",")}` : `$${n.toFixed(2).replace(".", ",")}`;
+}
+
+function planMoneyRange(e) {
+  const lo = e.cost_min ?? e.cost ?? 0,
+    hi = e.cost_max ?? e.cost ?? 0;
+  return planMoney(lo) === planMoney(hi) ? planMoney(lo) : `${planMoney(lo)}–${planMoney(hi)}`;
+}
+
 function planSecRange(e) {
   const lo = e.seconds_min ?? e.seconds ?? 0,
     hi = e.seconds_max ?? e.seconds ?? 0;
@@ -45,12 +57,14 @@ function planCardHTML(plan, inChat) {
   const status = plan.status === "running" ? `<span class="pstat">идёт</span>` : "";
   const tokens = `${planTokRange(est)}${done ? ` → ${fmtTok(done.tokens || 0, true)}` : ""}`;
   const secs = `${planSecRange(est)}${done ? ` → ${planSecs(done.seconds)}` : ""}`;
+  const money = planMoneyRange(est);
   const ctx = plan.context
     ? `<span class="pctx" title="${tr("В план вошли память о тебе и последние сообщения разговора")}">${ic("mem")}${tr("память + история")}</span>`
     : "";
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
-    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${status}</span></div>
+    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span><span class="ptot ptot-money" title="${tr("Оценка по прайсу API")}">$ ${money}</span>${status}</span></div>
     <div class="pflow ${steps.length > 1 ? "multi" : ""}">${nodes}</div>
+    ${plan.why ? `<div class="pwhy">${esc(plan.why)}</div>` : ""}
     ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
 }
@@ -137,7 +151,9 @@ function renderPlans() {
     out.innerHTML = `<p class="hint">${tr("Не удалось собрать варианты — попробуй ещё раз.")}</p>`;
     return;
   }
-  out.innerHTML = PLAN_PLANS.map((p) => planCardHTML(p, false)).join("");
+  out.innerHTML =
+    PLAN_PLANS.map((p) => planCardHTML(p, false)).join("") +
+    `<p class="planpricenote">${tr("Деньги — ориентир по прайсу API: Claude Code по подписке и локальные модели считаются как $0.")}</p>`;
   $$("[data-plan-run]", out).forEach((b) => {
     b.onclick = () => planAsk(b.dataset.planRun);
   });

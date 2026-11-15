@@ -20361,3 +20361,19 @@ button.xft:hover {
   background: var(--acc);
   color: #fff;
 }
+
+.pwhy {
+  margin-top: 10px;
+  font-size: calc(12px * var(--fs));
+  line-height: 1.45;
+  color: var(--ink2);
+}
+.ptot-money {
+  font-variant-numeric: tabular-nums;
+}
+.planpricenote {
+  margin: 0;
+  font-size: calc(11.5px * var(--fs));
+  line-height: 1.4;
+  color: var(--ink3);
+}

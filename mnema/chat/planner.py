@@ -25,6 +25,74 @@ OUT_CHARS = {"короткий": 700, "план": 1200, "черновик": 3500
 SPEED = {"local": 40.0, "ollama": 45.0, "strata": 60.0}  # chars per second on this computer
 CLOUD_SPEED = 220.0  # chars per second of cloud streaming, a rough but honest order of magnitude
 
+# USD per 1M tokens: an approximate list price, only to compare the variants with each other.
+# Local models are free; Claude Code is covered by the subscription, the price below is the API equivalent.
+PRICE_IN_OUT = {
+    "local": (0.0, 0.0),
+    "ollama": (0.0, 0.0),
+    "strata": (0.0, 0.0),
+    "harness": (0.28, 0.42),
+    "deepseek": (0.28, 0.42),
+    "claude_code": (3.0, 15.0),
+    "anthropic": (3.0, 15.0),
+    "openai": (2.5, 10.0),
+    "gemini": (0.3, 1.2),
+    "openrouter": (0.6, 1.8),
+    "yandex": (0.5, 1.5),
+    "codex": (2.5, 10.0),
+    "cursor": (2.5, 10.0),
+    "opencode_go": (0.5, 1.5),
+}
+
+
+def _price(pid: str, name: str) -> tuple[float, float]:
+    """The cheapest honest thing we can do without a price list per account: a model-name based guide."""
+    name = (name or "").lower()
+    if pid == "claude_code":
+        if "haiku" in name:
+            return (1.0, 5.0)
+        if "opus" in name:
+            return (15.0, 75.0)
+        return (3.0, 15.0)
+    if pid == "openrouter":
+        if "mini" in name or "flash" in name:
+            return (0.2, 0.8)
+        if "sonnet" in name:
+            return (3.0, 15.0)
+        if "gemini" in name:
+            return (0.3, 1.2)
+        if "gpt" in name:
+            return (2.5, 10.0)
+        if "aion-3.5" in name:
+            return (1.0, 3.0)
+        return (0.6, 1.8)
+    return PRICE_IN_OUT.get(pid, (1.0, 3.0))
+
+
+def _money(lo: float, hi: float | None = None) -> str:
+    hi = lo if hi is None else hi
+
+    def one(v: float) -> str:
+        if v <= 0:
+            return "$0"
+        return f"${v:.4f}" if v < 0.01 else f"${v:.2f}"
+
+    return one(lo) if abs(hi - lo) < 1e-9 else f"{one(lo)}–{one(hi)}"
+
+
+def _tokens_text(n: int) -> str:
+    return f"{int(n):,}".replace(",", " ")
+
+
+def _steps_word(n: int) -> str:
+    if 11 <= n % 100 <= 14:
+        return "шагов"
+    if n % 10 == 1:
+        return "шаг"
+    if 2 <= n % 10 <= 4:
+        return "шага"
+    return "шагов"
+
 
 def available(vault: Vault) -> list[dict]:
     """Every model that can answer right now, cheapest/local first."""
@@ -96,6 +164,7 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
     previous = 0
     total_tokens = total_tokens_hi = 0.0
     total_seconds = total_seconds_hi = 0.0
+    total_cost = total_cost_hi = 0.0
     for step in plan.get("steps") or []:
         instruction = str(step.get("instruction") or "")
         input_chars = 500 + context_chars + _est_chars(task) + previous + _est_chars(instruction)
@@ -106,6 +175,8 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
         tokens = round(input_chars / 3.2 + out_chars / 3.2)
         tokens_hi = round(tokens * 2.0)  # a real chain came out 1.6× the point estimate
         seconds_hi = round(seconds * 2.2, 1)  # and the real time was about 2×
+        price_in, price_out = _price(pid, step.get("model_name") or step.get("model") or "")
+        cost = (input_chars / 3.2) * price_in / 1e6 + (out_chars / 3.2) * price_out / 1e6
         step["est"] = {
             "tokens": tokens,
             "tokens_min": tokens,
@@ -115,11 +186,16 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
             "seconds_max": seconds_hi,
             "in": round(input_chars / 3.2),
             "out": round(out_chars / 3.2),
+            "cost": round(cost, 6),
+            "cost_min": round(cost, 6),
+            "cost_max": round(cost * 2.0, 6),
         }
         total_tokens += tokens
         total_tokens_hi += tokens_hi
         total_seconds += seconds
         total_seconds_hi += seconds_hi
+        total_cost += cost
+        total_cost_hi += cost * 2.0
         previous += out_chars
     plan["estimate"] = {
         "tokens": round(total_tokens),
@@ -128,8 +204,49 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
         "seconds": round(total_seconds),
         "seconds_min": round(total_seconds),
         "seconds_max": round(total_seconds_hi, 1),
+        "cost": round(total_cost, 6),
+        "cost_min": round(total_cost, 6),
+        "cost_max": round(total_cost_hi, 6),
     }
     return plan
+
+
+def _justify(plans: list[dict]) -> list[dict]:
+    """Every variant gets one sentence: what it costs and why next to the most economical one."""
+    if not plans:
+        return plans
+    base = min(plans, key=lambda p: int((p.get("estimate") or {}).get("tokens_min") or 0))
+    base_est = base.get("estimate") or {}
+    base_steps = len(base.get("steps") or [])
+    base_title = base.get("title") or "Быстро"
+    for plan in plans:
+        est = plan.get("estimate") or {}
+        steps = len(plan.get("steps") or [])
+        tokens = f"{_tokens_text(est.get('tokens_min') or 0)}–{_tokens_text(est.get('tokens_max') or 0)}"
+        money = _money(float(est.get("cost_min") or 0), float(est.get("cost_max") or 0))
+        if plan is base:
+            plan["why"] = (
+                f"Самый экономный по токенам: {steps} {_steps_word(steps)}, {tokens} токенов, {money}. "
+                "Чем меньше шагов, тем меньше контекста уходит модели."
+            )
+            continue
+        extra_tokens = max(0, int(est.get("tokens_min") or 0) - int(base_est.get("tokens_min") or 0))
+        extra_cost = float(est.get("cost_min") or 0) - float(base_est.get("cost_min") or 0)
+        if extra_cost > 0.00005:
+            money_part = f" и {_money(extra_cost)}"
+            lead = "Дороже"
+        elif extra_cost < -0.00005:
+            money_part = f", но деньги ниже на {_money(-extra_cost)} за счёт локальных или дешёвых моделей"
+            lead = "Больше по токенам"
+        else:
+            money_part = ", деньги примерно те же"
+            lead = "Дороже по токенам"
+        plan["why"] = (
+            f"{lead} «{base_title}» на ~{_tokens_text(extra_tokens)} токенов{money_part}: "
+            f"{steps} {_steps_word(steps)} вместо {base_steps}. Каждый следующий шаг получает ответы "
+            "предыдущих, поэтому вход растёт."
+        )
+    return plans
 
 
 def _step(rows: list[dict], used: set[str], role: str, out: str, instruction: str, want: int = 2) -> dict | None:
@@ -179,7 +296,7 @@ def fallback_plans(vault: Vault, task: str, context_chars: int = 0) -> list[dict
         {"id": "optimal", "title": "Оптимально", "note": "План → работа → проверка", "steps": balanced},
         {"id": "quality", "title": "Качественно", "note": "Несколько ИИ дорабатывают друг друга", "steps": quality},
     ]
-    return [estimate(p, task, context_chars=context_chars) for p in plans if p["steps"]]
+    return _justify([estimate(p, task, context_chars=context_chars) for p in plans if p["steps"]])
 
 
 PLAN_PROMPT = """Ты — планировщик цепочки ИИ. Владелец даст задачу, а ты разложи её на шаги и подбери исполнителей
@@ -288,7 +405,7 @@ def propose(vault: Vault, task: str, chat_id: str = "") -> list[dict]:
         p.setdefault("note", "")
         p["context"] = context_info
         estimate(p, task, context_chars=context_chars)
-    return plans
+    return _justify(plans)
 
 
 def _prompt_for(plan: dict, index: int, task: str, previous: list[str]) -> str:

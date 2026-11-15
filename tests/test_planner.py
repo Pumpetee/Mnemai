@@ -57,6 +57,9 @@ class Planner(unittest.TestCase):
             self.assertGreaterEqual(plan["estimate"]["tokens_max"], plan["estimate"]["tokens"])
             self.assertLessEqual(plan["estimate"]["seconds_min"], plan["estimate"]["seconds"])
             self.assertGreaterEqual(plan["estimate"]["seconds_max"], plan["estimate"]["seconds"])
+            self.assertLessEqual(plan["estimate"]["cost_min"], plan["estimate"]["cost"])
+            self.assertGreaterEqual(plan["estimate"]["cost_max"], plan["estimate"]["cost"])
+            self.assertTrue(plan["why"])  # the difference is explained, not just priced
         self.assertGreater(len(plans[2]["steps"]), len(plans[0]["steps"]))  # «качественно» длиннее «быстро»
 
     def test_propose_falls_back_when_the_planner_model_fails(self):

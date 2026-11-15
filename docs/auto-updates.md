@@ -59,8 +59,9 @@ Mnemai is closed, or launch with `MNEMA_NO_UPDATE=1`. This is checked again befo
 handing off an installation. Existing AppImage update metadata continues to work
 independently.
 
-Maintainers: push a `vX.Y.Z` tag — the build workflow produces the versioned
-packages and publishes the release automatically, with GitHub's generated notes.
+Maintainers: push an annotated `vX.Y.Z` tag — the build workflow produces the
+versioned packages and publishes the release automatically, taking the tag's text as
+the release notes.
 The in-app Update button must first reach users in a manually installed release (or
 through the silent Windows path); it cannot retrofit a copy that predates it. Every
 newer published release can then update automatically.

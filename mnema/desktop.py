@@ -1080,6 +1080,14 @@ class App:
             text_select=True,
         )
         self.window.events.closing += self.on_closing
+
+        def fit_default_window():  # KWin/Session restore can bring an old small size back after create_window
+            try:
+                self.window.resize(1360, 900)
+            except Exception:  # noqa: BLE001 — a lost size is not a reason to fail the launch
+                pass
+
+        self.window.events.loaded += fit_default_window
         self.build_tray()
         from .updater import Checker, Updater
 

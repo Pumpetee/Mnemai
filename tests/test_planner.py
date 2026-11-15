@@ -104,12 +104,14 @@ class Planner(unittest.TestCase):
         with (
             patch.object(PR, "status", lambda vault: STATUS),
             patch.object(PR, "complete", fake_complete),
+            patch.object(CH, "_drain_queue") as drain,
         ):
             PL.run(v, chat["id"], plan)
             for _ in range(100):
                 if CH._gen[chat["id"]]["done"]:
                     break
                 time.sleep(0.05)
+        drain.assert_called_once()  # a correction typed during the chain starts the next turn
         self.assertEqual([c[0] for c in calls], ["harness", "claude_code"])
         self.assertIn("результат шага 1", calls[1][2])  # the second AI sees the first answer
         msgs = CH.load_chat(v, chat["id"])["messages"]

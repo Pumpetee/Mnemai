@@ -13,19 +13,23 @@ function planSecs(sec) {
 function planCardHTML(plan, inChat) {
   const steps = plan.steps || [];
   const est = plan.estimate || {};
-  const flow = steps
+  const tone = ["fast", "optimal", "quality"].includes(plan.id) ? plan.id : "optimal";
+  const nodes = steps
     .map((s, i) => {
       const e = s.est || {};
-      return `<div class="pnode"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${fmtTok(e.tokens || 0, true)} · ${planSecs(e.seconds)}</span></div>`;
+      return `<div class="pnode"><div class="phead"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span></div><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${fmtTok(e.tokens || 0, true)} · ${planSecs(e.seconds)}</span></div>`;
     })
     .join('<span class="parrow">→</span>');
   const status =
-    plan.status === "running" ? ` · <b>идёт</b>` : plan.actual ? ` · ${planSecs(plan.actual.seconds)}` : "";
-  return `<div class="plancard ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
-    <div class="planh"><b>${esc(plan.title || "План")}</b><small>${esc(plan.note || "")}</small></div>
-    <div class="pflow">${flow}</div>
-    <div class="ptotals">${ic("clock")}≈ ${planSecs(est.seconds)} ${ic("coin")}≈ ${fmtTok(est.tokens || 0, true)}${status}</div>
-    ${inChat ? "" : `<div class="row" style="justify-content:flex-end"><button class="btn sm" data-plan-run="${esc(plan.id || "")}">Запустить</button></div>`}
+    plan.status === "running"
+      ? `<span class="pstat">идёт</span>`
+      : plan.actual
+        ? `<span class="pstat">${planSecs(plan.actual.seconds)}</span>`
+        : "";
+  return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
+    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small><span class="ptotals"><span class="ptot">${ic("clock")}${planSecs(est.seconds)}</span><span class="ptot">${ic("coin")}${fmtTok(est.tokens || 0, true)}</span>${status}</span></div>
+    <div class="pflow">${nodes}</div>
+    ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка примерная: цифры зависят от ответов моделей")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
 }
 
@@ -58,11 +62,14 @@ function planOpen() {
 
 async function planPropose() {
   const task = ($("#plantask") || {}).value?.trim() || "";
+  const out = $("#planout");
   if (!task) return toast(tr("Напиши задачу"));
   const b = $("#plango");
-  b.disabled = true;
   const was = b.textContent;
+  b.disabled = true;
   b.textContent = tr("Подбираю…");
+  if (out)
+    out.innerHTML = `<div class="planwait"><i class="planspin"></i><span>${tr("Подбираю исполнителей из подключённых ИИ…")}</span></div>`;
   try {
     const r = await post("/api/plan/propose", { task });
     PLAN_TASK = task;
@@ -70,6 +77,7 @@ async function planPropose() {
     renderPlans();
   } catch (e) {
     toast(e.message);
+    if (out) out.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
   } finally {
     b.disabled = false;
     b.textContent = was;
@@ -79,6 +87,10 @@ async function planPropose() {
 function renderPlans() {
   const out = $("#planout");
   if (!out) return;
+  if (!PLAN_PLANS.length) {
+    out.innerHTML = `<p class="hint">${tr("Не удалось собрать варианты — попробуй ещё раз.")}</p>`;
+    return;
+  }
   out.innerHTML = PLAN_PLANS.map((p) => planCardHTML(p, false)).join("");
   $$("[data-plan-run]", out).forEach((b) => {
     b.onclick = () => planRun(b.dataset.planRun);
@@ -88,6 +100,13 @@ function renderPlans() {
 async function planRun(id) {
   const plan = PLAN_PLANS.find((p) => p.id === id);
   if (!plan) return;
+  const now = ($("#plantask") || {}).value?.trim() || "";
+  if (now && now !== PLAN_TASK) {
+    // the task was edited after the variants were built: rebuild them instead of running the old scheme
+    await planPropose();
+    toast(tr("Задача изменилась — варианты обновлены"));
+    return;
+  }
   plan.task = PLAN_TASK;
   const b = document.querySelector(`[data-plan-run="${id}"]`);
   if (b) {

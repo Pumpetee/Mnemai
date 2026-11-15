@@ -333,6 +333,10 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         finally:
             g["phase"] = ""
             g["done"] = True
+            try:
+                CH._drain_queue(vault, cid)  # a correction typed during the chain becomes the next turn
+            except Exception:  # noqa: BLE001 — the queue is a bonus, never a reason to lose the chat
+                pass
 
     threading.Thread(target=work, daemon=True, name="mnema-plan").start()
     return {"chat": cid, "plan": plan}

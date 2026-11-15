@@ -2128,7 +2128,18 @@ function poll() {
   btn.classList.add("stop");
   btn.innerHTML = '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
   const cid = CHAT.id;
-  const T = { target: "", shown: 0, phase: "думаю", done: false, error: "", raf: 0, last: "", seq: -1, speaker: "" };
+  const T = {
+    target: "",
+    shown: 0,
+    phase: "думаю",
+    done: false,
+    error: "",
+    raf: 0,
+    last: "",
+    seq: -1,
+    speaker: "",
+    run: null,
+  };
   const frame = () => {
     const live = $("#live");
     if (!live || CHAT.id !== cid) {
@@ -2137,7 +2148,7 @@ function poll() {
     }
     const left = T.target.length - T.shown;
     if (left > 0) T.shown += Math.max(1, Math.ceil(left / (T.done ? 6 : 18)));
-    const key = T.shown + "|" + T.phase;
+    const key = T.shown + "|" + T.phase + "|" + (T.run ? (T.run.tail || "").slice(-400) : "");
     if (key !== T.last) {
       T.last = key;
       const shown = T.target.slice(0, T.shown);
@@ -2156,6 +2167,10 @@ function poll() {
           av.textContent = spkGlyph(T.ref, T.speaker);
         }
       } else if (sp && T.speaker) sp.lastChild.textContent = T.speaker;
+      const run =
+        T.run && (T.run.tail || T.run.command)
+          ? `<pre class="runtail">${esc((T.run.tail || "").trim() || T.run.command || "")}</pre>`
+          : "";
       $(".md", live).innerHTML =
         (shown ? md(shown, false) : "") +
         (!shown
@@ -2163,7 +2178,8 @@ function poll() {
             ? TYPING
             : `<span class="phase"><i></i>${esc(T.phase)}</span>`
           : "") +
-        (T.phase === "проверяю ответ" && shown ? '<span class="phase"><i></i>проверяю ответ</span>' : "");
+        (T.phase === "проверяю ответ" && shown ? '<span class="phase"><i></i>проверяю ответ</span>' : "") +
+        run;
       const m = $("#msgs");
       if (m && m.scrollHeight - m.scrollTop - m.clientHeight < 200) scrollEnd();
     }
@@ -2248,6 +2264,7 @@ function poll() {
     if (st.text.length < T.shown) T.shown = 0;
     T.target = st.text;
     T.phase = st.phase;
+    T.run = st.run || null;
     T.error = st.error;
     WORK(st.done ? "" : st.phase || "думаю");
     actionAsk(cid, st.pending);

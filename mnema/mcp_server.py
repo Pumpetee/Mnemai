@@ -383,13 +383,13 @@ TOOLS = [
         "name": "pc_run",
         "description": "Выполнить команду в терминале этого компьютера и вернуть вывод, код возврата и время. "
         "Это настоящий доступ к системе (процессы, железо, сеть, git, файлы вне папок памяти). "
-        "Одна команда за раз, таймаут по умолчанию 120 с, максимум 300 с.",
+        "Одна команда за раз, таймаут по умолчанию 120 с, максимум 900 с; вывод идёт в чат.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "command": {"type": "string"},
                 "cwd": {"type": "string"},
-                "timeout": {"type": "integer", "minimum": 1, "maximum": 300, "default": 120},
+                "timeout": {"type": "integer", "minimum": 1, "maximum": 900, "default": 120},
                 "terminal": {
                     "type": "boolean",
                     "description": "Показать команду в видимом терминале (только для интерактивных программ; sudo и установка идут без окна).",
@@ -491,7 +491,7 @@ ACTION_TOOLS = [
             "properties": {
                 "command": {"type": "string"},
                 "cwd": {"type": "string"},
-                "timeout": {"type": "integer", "minimum": 1, "maximum": 300, "default": 120},
+                "timeout": {"type": "integer", "minimum": 1, "maximum": 900, "default": 120},
                 "terminal": {
                     "type": "boolean",
                     "description": "Показать команду в видимом терминале (только интерактивным программам).",

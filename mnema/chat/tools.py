@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import signal
+import threading
 import subprocess
 import sys
 import tempfile
@@ -56,7 +57,7 @@ DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
 MAX_READ = 60_000
 MAX_STEPS = 12
 MAX_OUTPUT = 24_000
-MAX_COMMAND_SECONDS = 300
+MAX_COMMAND_SECONDS = 900
 DEFAULT_COMMAND_SECONDS = 120
 BLOCK_RE = re.compile(r"```mnema\s+(\w+)([^\n]*)\n?(.*?)(?:```|\Z)", re.S)
 ARG_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
@@ -109,14 +110,15 @@ do="rotate" — повернуть pages на angle="90", "180" или "270"; do
 TERMINAL_RULE = """```mnema run_command command="одна команда терминала" cwd="полный путь к папке" timeout="120"
 ```
 (выполняет команду в терминале этого компьютера и возвращает вывод и код возврата; cwd — где выполнять, по умолчанию
-домашняя папка; timeout — секунды, по умолчанию 120, максимум 300. Так можно смотреть процессы, железо, сеть, git,
+домашняя папка; timeout — секунды, по умолчанию 120, максимум 900. Вывод виден в чате по ходу выполнения.
+Так можно смотреть процессы, железо, сеть, git,
 запускать программы, ставить пакеты, работать с файлами вне рабочих папок — всё, что делает терминал.
 Если команда сложная, пиши её в теле блока: ```mnema run_command cwd="…"``` и следующей строкой саму команду.
 Терминал работает по всему компьютеру, а не только в папках памяти и рабочих папках. sudo разрешён: пароль
 администратора Mnemai сама спросит прямо в чате — не открывай для этого терминал и не пиши пароль в команде.
-Видимое окно терминала нужно только интерактивным программам, которым нужен экран; для sudo и установки пакетов
-terminal не указывай — Mnemai выполнит команду без окна и покажет ход в чате. Ставить пакеты можно, когда
-владелец об этом просит.
+Видимое окно терминала нужно только интерактивным программам, которым нужен экран; для sudo, установки пакетов и
+скриптов terminal не указывай — Mnemai выполнит команду без окна и покажет вывод в чате. Ставить пакеты можно,
+когда владелец об этом просит.
 
 ```mnema open_app name="chrome"
 ```
@@ -752,6 +754,8 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     if root:
         # the password is asked in the chat; a visible terminal would ask it a second time, so sudo never opens one
         visible = False
+    if INSTALL_COMMAND.search(command):
+        visible = False  # installing runs in the chat too: the output streams there, the owner watches nothing
     pw = ""
     if root:
         pw = str(call.get("sudo_password") or "") or sudo_cached(vault)
@@ -795,9 +799,34 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
             env=env,
             start_new_session=True,
         )
+    out_parts: list[str] = []
+    err_parts: list[str] = []
+    on_line = call.get("progress") if callable(call.get("progress")) else None
+
+    def pump(stream, sink: list[str]) -> None:
+        try:
+            while True:
+                line = stream.readline()
+                if not line:
+                    return
+                sink.append(line)
+                if on_line:  # the chat shows the tail of the command while it runs
+                    try:
+                        on_line(line)
+                    except Exception:  # noqa: BLE001 — the live view must never break the command itself
+                        pass
+        except (OSError, ValueError, AttributeError):
+            return
+
+    readers = [
+        threading.Thread(target=pump, args=(proc.stdout, out_parts), daemon=True, name="mnema-out"),
+        threading.Thread(target=pump, args=(proc.stderr, err_parts), daemon=True, name="mnema-err"),
+    ]
+    for reader in readers:
+        reader.start()
     timed_out = False
     try:
-        out, err = proc.communicate(timeout=timeout)
+        proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         timed_out = True
         try:
@@ -808,9 +837,17 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
         except (OSError, ProcessLookupError):
             pass
         try:
-            out, err = proc.communicate(timeout=5)
+            proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            out, err = "", ""
+            pass
+    for reader in readers:
+        reader.join(timeout=3)
+    for stream in (proc.stdout, proc.stderr):
+        try:
+            stream.close()
+        except (OSError, AttributeError):
+            pass
+    out, err = "".join(out_parts), "".join(err_parts)
     if ask_dir:
         shutil.rmtree(ask_dir, ignore_errors=True)
     seconds = time.time() - started

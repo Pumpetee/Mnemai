@@ -8,6 +8,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
 
@@ -297,6 +298,49 @@ class ActionsTest(unittest.TestCase):
         r, owner = self._send(v, "Запусти долгую команду", s, ["yes"])
         msgs = CH.load_chat(v, r["chat"])["messages"]
         self.assertTrue(any("таймаут" in (m.get("text") or "").lower() for m in msgs))
+
+    def test_installing_never_opens_a_terminal_even_when_asked(self):
+        v = _vault(self.work)
+        bindir = self.work / "bin-install"
+        bindir.mkdir()
+        fake = bindir / "dnf"
+        fake.write_text('#!/bin/sh\necho "fake-install-ok"\n', encoding="utf-8")
+        fake.chmod(0o755)
+        old_path = os.environ["PATH"]
+        os.environ["PATH"] = str(bindir) + os.pathsep + old_path
+        try:
+            command = f"PATH='{bindir}':$PATH dnf install -y nmap"
+            with patch.object(TL, "_run_in_terminal", side_effect=AssertionError("installs run in the chat")):
+                text, line, _ = TL.run(v, {"tool": "run_command", "command": command, "terminal": True})
+        finally:
+            os.environ["PATH"] = old_path
+        self.assertIn("fake-install-ok", text)
+
+    def test_the_chat_sees_the_output_while_the_command_runs(self):
+        v = _vault(self.work)
+        got: list[str] = []
+        TL.run(
+            v,
+            {"tool": "run_command", "command": "printf 'first-line\\nsecond-line\\n'", "progress": got.append},
+        )
+        blob = "".join(got)
+        self.assertIn("first-line", blob)
+        self.assertIn("second-line", blob)
+
+    def test_the_window_sees_the_running_command(self):
+        CH._gen["aaaabbbbcccc"] = {
+            "text": "",
+            "done": False,
+            "error": "",
+            "phase": "делаю",
+            "stop": False,
+            "run": {"command": "dnf install -y nmap", "tail": "downloading"},
+        }
+        try:
+            st = CH.state("aaaabbbbcccc")
+        finally:
+            CH._gen.pop("aaaabbbbcccc", None)
+        self.assertEqual(st["run"]["tail"], "downloading")
 
 
 if __name__ == "__main__":

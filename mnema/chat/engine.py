@@ -551,6 +551,7 @@ def state(cid: str) -> dict:
             "phase": _phase(g),
             **({"pending": g["pending"]} if g.get("pending") else {}),
             **({"sudo": g["sudo"]} if g.get("sudo") else {}),
+            **({"run": g["run"]} if g.get("run") else {}),
         }
         if g
         else {"text": "", "done": True, "error": "", "phase": ""}
@@ -735,6 +736,18 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
         },
     )
     g["phase"] = "делаю: " + desc
+    if call.get("tool") == "run_command":
+        g["run"] = {"command": str(call.get("command") or "")[:400], "tail": ""}
+
+    def live(chunk: str) -> None:
+        run = g.get("run")
+        if not isinstance(run, dict):
+            return
+        text = str(chunk).replace("\r\n", "\n").replace("\r", "\n")
+        run["tail"] = ((run.get("tail") or "") + text)[-2000:]
+        run["updated"] = time.time()
+
+    call = {**call, "progress": live}
     try:
         from .. import mcp_server as MC
 
@@ -753,6 +766,8 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
             },
         )
         return f"Не получилось: {e}"
+    finally:
+        g.pop("run", None)
     view = _action_view(call, line, path, result)
     _update_msg(vault, cid, mid, {**view, "pending": False})
     from .. import achievements as ACH

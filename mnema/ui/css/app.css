@@ -19789,3 +19789,23 @@ button.xft:hover {
   background: #8b5cf6;
   transition: width 0.3s;
 }
+
+/* the command that runs without a terminal window: its output streams right in the answer */
+.runtail {
+  margin: 10px 0 0;
+  max-height: 220px;
+  overflow: hidden;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--ink2);
+  font:
+    12px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

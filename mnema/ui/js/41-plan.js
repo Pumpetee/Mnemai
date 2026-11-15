@@ -14,6 +14,13 @@ function planSecRange(e) {
   return lo === hi ? planSecs(lo) : `${planSecs(lo)}–${planSecs(hi)}`;
 }
 
+function planStepsWord(n) {
+  const m = n % 10,
+    h = n % 100;
+  if (h >= 11 && h <= 14) return "шагов";
+  return m === 1 ? "шаг" : m >= 2 && m <= 4 ? "шага" : "шагов";
+}
+
 function planSecs(sec) {
   const s = Math.max(1, Math.round(Number(sec) || 0));
   if (s < 60) return s + " с";
@@ -132,22 +139,72 @@ function renderPlans() {
   }
   out.innerHTML = PLAN_PLANS.map((p) => planCardHTML(p, false)).join("");
   $$("[data-plan-run]", out).forEach((b) => {
-    b.onclick = () => planRun(b.dataset.planRun);
+    b.onclick = () => planAsk(b.dataset.planRun);
   });
 }
 
-async function planRun(id) {
+function planCloseAsk() {
+  const q = $("#planq");
+  if (q) q.remove();
+}
+
+function planAsk(id) {
   const plan = PLAN_PLANS.find((p) => p.id === id);
   if (!plan) return;
   const now = ($("#plantask") || {}).value?.trim() || "";
   if (now && now !== PLAN_TASK) {
-    // the task was edited after the variants were built: rebuild them instead of running the old scheme
-    await planPropose();
-    toast(tr("Задача изменилась — варианты обновлены"));
+    // the task was edited after the variants were built: rebuild them instead of asking about the old one
+    planPropose();
+    toast(tr("Задача изменилась — варианты обновляются"));
     return;
   }
+  planCloseAsk();
+  const tone = ["fast", "optimal", "quality"].includes(plan.id) ? plan.id : "optimal";
+  const steps = plan.steps || [];
+  const names = [...new Set(steps.map((s) => s.model_name || s.model).filter(Boolean))].join(" → ");
+  const chatName = esc((CHAT.chat && CHAT.chat.title) || tr("новый разговор"));
+  const est = plan.estimate || {};
+  const pop = document.createElement("div");
+  pop.className = "modal planq";
+  pop.id = "planq";
+  pop.innerHTML = `<div class="card pqcard tone-${tone}">
+    <button class="lmx" data-qx title="${tr("Закрыть")}">×</button>
+    <div class="pqhead"><span class="pqic">${ic("flow")}</span><div><h2>${tr("Применить схему к чату?")}</h2><p class="hint">${tr("Схема готова. Можно сразу применить её в этом разговоре, переделать или отменить.")}</p></div></div>
+    <div class="pqsum">
+      <div class="pqrow"><span class="planbadge">${esc(plan.title || tr("План"))}</span><span class="pqmeta">${steps.length} ${planStepsWord(steps.length)} · ${esc(names)}</span></div>
+      <div class="pqrow pqmeta"><span>${ic("clock")}${planSecRange(est)}</span><span>${ic("coin")}${planTokRange(est)}</span>${plan.context ? `<span>${ic("mem")}${tr("память + история")}</span>` : ""}</div>
+    </div>
+    <p class="hint pqnote">${tr("План выполнится прямо в разговоре «") + chatName + tr("»; его можно остановить в любой момент.")}</p>
+    <div class="pqact">
+      <button class="btn g" data-pq="cancel">${tr("Отменить")}</button>
+      <button class="btn l" data-pq="redo">${tr("Переделать")}</button>
+      <button class="btn" data-pq="apply">${tr("Применить к чату")}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(pop);
+  $("[data-qx]", pop).onclick = planCloseAsk;
+  pop.onclick = (e) => {
+    if (e.target === pop) planCloseAsk();
+  };
+  $$("[data-pq]", pop).forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.pq === "cancel") {
+        planCloseAsk();
+        planClose();
+      } else if (b.dataset.pq === "redo") {
+        planCloseAsk();
+        planPropose();
+      } else {
+        planCloseAsk();
+        planApply(plan);
+      }
+    };
+  });
+}
+
+async function planApply(plan) {
   plan.task = PLAN_TASK;
-  const b = document.querySelector(`[data-plan-run="${id}"]`);
+  const b = document.querySelector(`[data-plan-run="${plan.id}"]`);
   if (b) {
     b.disabled = true;
     b.textContent = tr("Запускаю…");

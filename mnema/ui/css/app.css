@@ -20273,3 +20273,86 @@ button.xft:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* the polite question after the scheme is ready: apply / redo / cancel */
+.planq {
+  z-index: 90;
+  backdrop-filter: blur(5px);
+}
+.planq .pqcard {
+  position: relative;
+  width: 560px;
+  max-width: 93vw;
+  border-radius: 16px;
+  border-top: 3px solid var(--acc);
+  padding: 20px 22px;
+}
+.planq .lmx {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+.pqhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-right: 24px;
+}
+.pqic {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--okb);
+  color: var(--ok);
+}
+.pqic svg.i {
+  width: 21px;
+  height: 21px;
+}
+.pqhead h2 {
+  margin: 1px 0 4px;
+  font-size: calc(18px * var(--fs));
+}
+.pqhead .hint {
+  margin: 0;
+}
+.pqsum {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.pqrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pqmeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: calc(12px * var(--fs));
+  color: var(--ink3);
+}
+.pqmeta svg.i {
+  width: 13px;
+  height: 13px;
+}
+.pqnote {
+  margin: 0 0 14px;
+}
+.pqact {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}

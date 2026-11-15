@@ -944,13 +944,25 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     deadline = started + timeout
 
     def kill() -> None:
-        try:
-            if os.name == "nt":
-                proc.kill()
-            else:
+        if os.name == "nt":
+            # a Windows shell is killed alone, its child (python, dnf…) would keep the pipes open: kill the tree
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    capture_output=True,
+                    timeout=5,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except (OSError, subprocess.SubprocessError):
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+        else:
+            try:
                 os.killpg(proc.pid, signal.SIGTERM)
-        except (OSError, ProcessLookupError):
-            pass
+            except (OSError, ProcessLookupError):
+                pass
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:

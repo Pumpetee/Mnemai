@@ -47,8 +47,16 @@ class Planner(unittest.TestCase):
                 self.assertIn(step["model"], allowed)
                 self.assertGreater(step["est"]["tokens"], 0)
                 self.assertGreater(step["est"]["seconds"], 0)
+                self.assertLessEqual(step["est"]["tokens_min"], step["est"]["tokens"])
+                self.assertGreaterEqual(step["est"]["tokens_max"], step["est"]["tokens"])
+                self.assertLessEqual(step["est"]["seconds_min"], step["est"]["seconds"])
+                self.assertGreaterEqual(step["est"]["seconds_max"], step["est"]["seconds"])
             self.assertGreater(plan["estimate"]["tokens"], 0)
             self.assertGreater(plan["estimate"]["seconds"], 0)
+            self.assertLessEqual(plan["estimate"]["tokens_min"], plan["estimate"]["tokens"])
+            self.assertGreaterEqual(plan["estimate"]["tokens_max"], plan["estimate"]["tokens"])
+            self.assertLessEqual(plan["estimate"]["seconds_min"], plan["estimate"]["seconds"])
+            self.assertGreaterEqual(plan["estimate"]["seconds_max"], plan["estimate"]["seconds"])
         self.assertGreater(len(plans[2]["steps"]), len(plans[0]["steps"]))  # «качественно» длиннее «быстро»
 
     def test_propose_falls_back_when_the_planner_model_fails(self):

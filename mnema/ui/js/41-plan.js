@@ -2,6 +2,18 @@
 let PLAN_PLANS = [],
   PLAN_TASK = "";
 
+function planTokRange(e) {
+  const lo = e.tokens_min ?? e.tokens ?? 0,
+    hi = e.tokens_max ?? e.tokens ?? 0;
+  return lo === hi ? fmtTok(lo, true) : `${fmtTok(lo, true)}–${fmtTok(hi, true)}`;
+}
+
+function planSecRange(e) {
+  const lo = e.seconds_min ?? e.seconds ?? 0,
+    hi = e.seconds_max ?? e.seconds ?? 0;
+  return lo === hi ? planSecs(lo) : `${planSecs(lo)}–${planSecs(hi)}`;
+}
+
 function planSecs(sec) {
   const s = Math.max(1, Math.round(Number(sec) || 0));
   if (s < 60) return s + " с";
@@ -19,19 +31,19 @@ function planCardHTML(plan, inChat) {
       const e = s.est || {},
         a = s.actual;
       const fact = a
-        ? ` title="прогноз ${fmtTok(e.tokens || 0, true)} · ${planSecs(e.seconds)} / факт ${fmtTok(a.tokens || 0, true)} · ${planSecs(a.seconds)}"`
+        ? ` title="прогноз ${planTokRange(e)} · ${planSecRange(e)} / факт ${fmtTok(a.tokens || 0, true)} · ${planSecs(a.seconds)}"`
         : "";
-      return `<div class="pnode"${fact}><div class="phead"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span></div><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${fmtTok(e.tokens || 0, true)} · ${planSecs(e.seconds)}</span></div>`;
+      return `<div class="pnode"${fact}><div class="phead"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span></div><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${planTokRange(e)} · ${planSecRange(e)}</span></div>`;
     })
     .join('<span class="parrow">→</span>');
   const done = plan.actual;
   const status = plan.status === "running" ? `<span class="pstat">идёт</span>` : "";
-  const tokens = `${fmtTok(est.tokens || 0, true)}${done ? ` → ${fmtTok(done.tokens || 0, true)}` : ""}`;
-  const secs = `${planSecs(est.seconds)}${done ? ` → ${planSecs(done.seconds)}` : ""}`;
+  const tokens = `${planTokRange(est)}${done ? ` → ${fmtTok(done.tokens || 0, true)}` : ""}`;
+  const secs = `${planSecRange(est)}${done ? ` → ${planSecs(done.seconds)}` : ""}`;
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
     <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small><span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${status}</span></div>
     <div class="pflow">${nodes}</div>
-    ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка — нижняя граница: по факту токенов и времени обычно в 1,5–2 раза больше")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
+    ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
 }
 

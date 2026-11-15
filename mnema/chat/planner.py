@@ -65,7 +65,8 @@ def _est_chars(text: str) -> int:
 def estimate(plan: dict, task: str) -> dict:
     """Where the numbers come from: input chars of task+previous answers+instruction, output by role, speed by provider."""
     previous = 0
-    total_tokens = total_seconds = 0.0
+    total_tokens = total_tokens_hi = 0.0
+    total_seconds = total_seconds_hi = 0.0
     for step in plan.get("steps") or []:
         instruction = str(step.get("instruction") or "")
         input_chars = 500 + _est_chars(task) + previous + _est_chars(instruction)
@@ -74,16 +75,31 @@ def estimate(plan: dict, task: str) -> dict:
         speed = SPEED.get(pid, CLOUD_SPEED)
         seconds = 2.5 + out_chars / speed + 1.2
         tokens = round(input_chars / 3.2 + out_chars / 3.2)
+        tokens_hi = round(tokens * 2.0)  # a real chain came out 1.6× the point estimate
+        seconds_hi = round(seconds * 2.2, 1)  # and the real time was about 2×
         step["est"] = {
             "tokens": tokens,
+            "tokens_min": tokens,
+            "tokens_max": tokens_hi,
             "seconds": round(seconds, 1),
+            "seconds_min": round(seconds, 1),
+            "seconds_max": seconds_hi,
             "in": round(input_chars / 3.2),
             "out": round(out_chars / 3.2),
         }
         total_tokens += tokens
+        total_tokens_hi += tokens_hi
         total_seconds += seconds
+        total_seconds_hi += seconds_hi
         previous += out_chars
-    plan["estimate"] = {"tokens": round(total_tokens), "seconds": round(total_seconds)}
+    plan["estimate"] = {
+        "tokens": round(total_tokens),
+        "tokens_min": round(total_tokens),
+        "tokens_max": round(total_tokens_hi),
+        "seconds": round(total_seconds),
+        "seconds_min": round(total_seconds),
+        "seconds_max": round(total_seconds_hi, 1),
+    }
     return plan
 
 

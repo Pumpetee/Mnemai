@@ -48,6 +48,35 @@ def available(vault: Vault) -> list[dict]:
     return rows
 
 
+def _memory(vault: Vault, pid: str) -> str:
+    """What Mnemai knows about the owner, as this AI is allowed to see it."""
+    try:
+        from ..memory import context_for
+
+        text, _ = context_for(vault, pid, log=False)
+        return text or ""
+    except Exception:  # noqa: BLE001 — a plan must work even if the memory is locked
+        return ""
+
+
+def _history(vault: Vault, cid: str, limit: int = 8, per: int = 1400) -> list[str]:
+    """The last messages of this conversation, so a plan does not ask what the owner already said."""
+    if not cid:
+        return []
+    try:
+        chat = CH.load_chat(vault, cid)
+    except KeyError:
+        return []
+    out = []
+    for m in chat.get("messages") or []:
+        text = str(m.get("text") or "").strip()
+        if not text or m.get("kind") in ("progress", "action", "plan"):
+            continue
+        who = "Владелец" if m.get("role") == "user" else "Mnemai"
+        out.append(f"{who}: {text[:per]}")
+    return out[-limit:]
+
+
 def _pick(rows: list[dict], want: int, used: set[str]) -> dict | None:
     for row in rows:
         if row["tier"] == want and row["model"] not in used:
@@ -62,14 +91,14 @@ def _est_chars(text: str) -> int:
     return max(1, int(len(text or "") * 1.1))
 
 
-def estimate(plan: dict, task: str) -> dict:
-    """Where the numbers come from: input chars of task+previous answers+instruction, output by role, speed by provider."""
+def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
+    """Where the numbers come from: memory+history+task+previous answers+instruction, output by role, speed by provider."""
     previous = 0
     total_tokens = total_tokens_hi = 0.0
     total_seconds = total_seconds_hi = 0.0
     for step in plan.get("steps") or []:
         instruction = str(step.get("instruction") or "")
-        input_chars = 500 + _est_chars(task) + previous + _est_chars(instruction)
+        input_chars = 500 + context_chars + _est_chars(task) + previous + _est_chars(instruction)
         out_chars = OUT_CHARS.get(str(step.get("out") or "ответ"), 1500)
         pid = str(step.get("model") or "").split(":", 1)[0]
         speed = SPEED.get(pid, CLOUD_SPEED)
@@ -118,7 +147,7 @@ def _step(rows: list[dict], used: set[str], role: str, out: str, instruction: st
     }
 
 
-def fallback_plans(vault: Vault, task: str) -> list[dict]:
+def fallback_plans(vault: Vault, task: str, context_chars: int = 0) -> list[dict]:
     rows = available(vault)
     if not rows:
         raise ValueError("нет подключённых моделей: подключи хотя бы одну в Настройках → ИИ и модели")
@@ -150,7 +179,7 @@ def fallback_plans(vault: Vault, task: str) -> list[dict]:
         {"id": "optimal", "title": "Оптимально", "note": "План → работа → проверка", "steps": balanced},
         {"id": "quality", "title": "Качественно", "note": "Несколько ИИ дорабатывают друг друга", "steps": quality},
     ]
-    return [estimate(p, task) for p in plans if p["steps"]]
+    return [estimate(p, task, context_chars=context_chars) for p in plans if p["steps"]]
 
 
 PLAN_PROMPT = """Ты — планировщик цепочки ИИ. Владелец даст задачу, а ты разложи её на шаги и подбери исполнителей
@@ -197,7 +226,7 @@ def _parse_plans(text: str, rows: list[dict]) -> list[dict]:
     return plans
 
 
-def propose(vault: Vault, task: str) -> list[dict]:
+def propose(vault: Vault, task: str, chat_id: str = "") -> list[dict]:
     """Ask a cheap connected AI to choose the roles and executors; fall back to the built-in schemes."""
     task = (task or "").strip()
     if not task:
@@ -219,10 +248,25 @@ def propose(vault: Vault, task: str) -> list[dict]:
         "openrouter",
     )
     cheapest = next((r for pid_ in order for r in rows if r["pid"] == pid_), rows[0])
+    memory = _memory(vault, cheapest["pid"])
+    history = _history(vault, chat_id)
+    context_chars = min(len(memory), 8000) + sum(len(line) for line in history)
+    context_info = {
+        "memory_chars": len(memory),
+        "history_msgs": len(history),
+        "history_chars": sum(len(line) for line in history),
+    }
     try:
         pid, mname = CH.split_model(cheapest["model"])
         listing = "\n".join(f"- {r['model']} — {r['name']} ({r['provider']})" for r in rows[:40])
-        system = PLAN_PROMPT + "\n\nДоступные модели:\n" + listing
+        system = PLAN_PROMPT
+        if memory:
+            system += (
+                "\n\nПамять о владельце (кто он, его правила, проекты — учитывай при выборе шагов):\n" + memory[-8000:]
+            )
+        if history:
+            system += "\n\nПоследние сообщения разговора:\n" + "\n".join(history)
+        system += "\n\nДоступные модели:\n" + listing
         usage: dict = {}
         answer = PR.complete(
             vault,
@@ -237,12 +281,13 @@ def propose(vault: Vault, task: str) -> list[dict]:
     except Exception:  # noqa: BLE001 — a plan must always be offered, even if the planner model is down
         plans = []
     if len(plans) < 3:
-        plans = (plans + fallback_plans(vault, task))[:3]
+        plans = (plans + fallback_plans(vault, task, context_chars=context_chars))[:3]
     ids = ["fast", "optimal", "quality"]
     for i, p in enumerate(plans):
         p["id"] = ids[i] if i < len(ids) else f"plan{i}"
         p.setdefault("note", "")
-        estimate(p, task)
+        p["context"] = context_info
+        estimate(p, task, context_chars=context_chars)
     return plans
 
 
@@ -273,7 +318,16 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
     plan = json.loads(json.dumps(plan))
     plan["task"] = task
     plan["status"] = "running"
-    estimate(plan, task)
+    first_pid = CH.split_model(steps[0]["model"])[0]
+    memory = _memory(vault, first_pid)
+    history = _history(vault, cid)
+    context_chars = min(len(memory), 8000) + sum(len(line) for line in history)
+    plan["context"] = {
+        "memory_chars": len(memory),
+        "history_msgs": len(history),
+        "history_chars": sum(len(line) for line in history),
+    }
+    estimate(plan, task, context_chars=context_chars)
     mid = secrets.token_hex(4)
     CH._add_msg(
         vault,
@@ -309,13 +363,20 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     f"Ты — исполнитель шага {i + 1} из {len(steps)} в цепочке ИИ. Твоя роль: {step['role']}. "
                     "Работай только над своим шагом и верни его результат."
                 )
+                step_memory = _memory(vault, pid)
+                user = ""
+                if step_memory:
+                    user += "Память о владельце (используй, если относится к делу):\n" + step_memory[:8000] + "\n\n"
+                if history:
+                    user += "Последние сообщения разговора:\n" + "\n".join(history) + "\n\n"
+                user += _prompt_for(plan, i, task, made)
                 try:
                     answer = PR.complete(
                         vault,
                         pid,
                         mname,
                         system,
-                        [{"role": "user", "text": _prompt_for(plan, i, task, made)}],
+                        [{"role": "user", "text": user}],
                         usage=step_usage,
                         meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
                     ).strip()

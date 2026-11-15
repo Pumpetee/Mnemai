@@ -40,8 +40,11 @@ function planCardHTML(plan, inChat) {
   const status = plan.status === "running" ? `<span class="pstat">идёт</span>` : "";
   const tokens = `${planTokRange(est)}${done ? ` → ${fmtTok(done.tokens || 0, true)}` : ""}`;
   const secs = `${planSecRange(est)}${done ? ` → ${planSecs(done.seconds)}` : ""}`;
+  const ctx = plan.context
+    ? `<span class="pctx" title="${tr("В план вошли память о тебе и последние сообщения разговора")}">${ic("mem")}${tr("память + история")}</span>`
+    : "";
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
-    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small><span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${status}</span></div>
+    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${status}</span></div>
     <div class="pflow">${nodes}</div>
     ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
@@ -85,7 +88,7 @@ async function planPropose() {
   if (out)
     out.innerHTML = `<div class="planwait"><i class="planspin"></i><span>${tr("Подбираю исполнителей из подключённых ИИ…")}</span></div>`;
   try {
-    const r = await post("/api/plan/propose", { task });
+    const r = await post("/api/plan/propose", { task, chat: CHAT.id || "" });
     PLAN_TASK = task;
     PLAN_PLANS = r.plans || [];
     renderPlans();

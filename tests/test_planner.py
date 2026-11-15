@@ -69,6 +69,18 @@ class Planner(unittest.TestCase):
         self.assertEqual(len(plans), 3)
         self.assertEqual(plans[0]["id"], "fast")
 
+    def test_propose_gives_the_planner_memory_and_history(self):
+        v = _vault()
+        with (
+            patch.object(PR, "status", lambda vault: STATUS),
+            patch.object(PL, "_memory", lambda vault, pid: "ПАМЯТЬ: владелец на Fedora"),
+            patch.object(PL, "_history", lambda vault, cid: ["Владелец: мы делаем Mnemai"]),
+            patch.object(PR, "complete", side_effect=RuntimeError("нет сети")),
+        ):
+            plans = PL.propose(v, "Обнови план", "abcdef123456")
+        self.assertTrue(all(p["context"]["memory_chars"] > 0 for p in plans))
+        self.assertEqual(plans[0]["context"]["history_msgs"], 1)
+
     def test_the_chain_passes_work_from_one_ai_to_the_next(self):
         v = _vault()
         chat = {

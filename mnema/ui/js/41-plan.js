@@ -15,6 +15,7 @@ function planMoney(v) {
 }
 
 function planMoneyRange(e) {
+  if (e.cost_min == null && e.cost == null) return ""; // old cards have no prices
   const lo = e.cost_min ?? e.cost ?? 0,
     hi = e.cost_max ?? e.cost ?? 0;
   return planMoney(lo) === planMoney(hi) ? planMoney(lo) : `${planMoney(lo)}–${planMoney(hi)}`;
@@ -58,11 +59,12 @@ function planCardHTML(plan, inChat) {
   const tokens = `${planTokRange(est)}${done ? ` → ${fmtTok(done.tokens || 0, true)}` : ""}`;
   const secs = `${planSecRange(est)}${done ? ` → ${planSecs(done.seconds)}` : ""}`;
   const money = planMoneyRange(est);
+  const moneyPill = money ? `<span class="ptot ptot-money" title="${tr("Оценка по прайсу API")}">${money}</span>` : "";
   const ctx = plan.context
     ? `<span class="pctx" title="${tr("В план вошли память о тебе и последние сообщения разговора")}">${ic("mem")}${tr("память + история")}</span>`
     : "";
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
-    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span><span class="ptot ptot-money" title="${tr("Оценка по прайсу API")}">$ ${money}</span>${status}</span></div>
+    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${moneyPill}${status}</span></div>
     <div class="pflow ${steps.length > 1 ? "multi" : ""}">${nodes}</div>
     ${plan.why ? `<div class="pwhy">${esc(plan.why)}</div>` : ""}
     ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
@@ -139,7 +141,7 @@ function renderPlans() {
   }
   out.innerHTML =
     PLAN_PLANS.map((p) => planCardHTML(p, false)).join("") +
-    `<p class="planpricenote">${tr("Деньги — ориентир по прайсу API: Claude Code по подписке и локальные модели считаются как $0.")}</p>`;
+    `<p class="planpricenote">${tr("Деньги — ориентир по прайсу API: Claude Code показан по API-цене для сравнения, по подписке он $0; локальные модели $0.")}</p>`;
   $$("[data-plan-run]", out).forEach((b) => {
     b.onclick = () => planAsk(b.dataset.planRun);
   });

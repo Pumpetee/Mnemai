@@ -1477,6 +1477,8 @@ def _generate(
                     for piece in PR.stream(
                         vault, pid, mname, system, msgs, stop=lambda: g["stop"], usage=usage, meta=meta
                     ):
+                        if len(piece) >= 8 and g["text"].endswith(piece):
+                            continue  # a model or relay that repeats the same chunk: one copy is enough
                         g["text"] += piece
                 except Exception as e:
                     # no internet: the built-in model answers instead, if one is on this computer
@@ -1499,6 +1501,8 @@ def _generate(
                     for piece in PR.stream(
                         vault, pid, mname, system, msgs, stop=lambda: g["stop"], usage=usage, meta=meta
                     ):
+                        if len(piece) >= 8 and g["text"].endswith(piece):
+                            continue
                         g["text"] += piece
                 call = TL.parse(strip_thinking(g["text"])) if acts and not g["stop"] else None
                 if not call:

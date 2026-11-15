@@ -2154,6 +2154,10 @@ function poll() {
     }
     const left = T.target.length - T.shown;
     if (left > 0) T.shown += Math.max(1, Math.ceil(left / (T.done ? 6 : 18)));
+    if (T.shown > 0) {
+      const ack = $("#localack"); // one «Принял. Делаю…» is enough: the answer itself is on screen now
+      if (ack) ack.remove();
+    }
     const key = T.shown + "|" + T.phase + "|" + (T.run ? (T.run.tail || "").slice(-400) : "");
     if (key !== T.last) {
       T.last = key;

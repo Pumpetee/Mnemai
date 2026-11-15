@@ -107,10 +107,6 @@ class Intents(unittest.TestCase):
         finally:
             PR.stream = old_stream
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_install_requests_are_resolved_before_the_model(self):
         import mnema.chat.tools as TL
 
@@ -162,3 +158,19 @@ if __name__ == "__main__":
         self.assertTrue(st.get("done"), "the chat must never stay in the «thinking» state")
         chat = CH.load_chat(self.v, r["chat"])
         self.assertTrue(any("Не получилось поставить nmap: boom" in (m.get("text") or "") for m in chat["messages"]))
+
+    def test_a_repeated_stream_chunk_is_kept_once(self):
+        class Repeating:
+            def __call__(self, *a, **k):
+                for _ in range(5):
+                    yield "Принял, делаю."
+
+        with patch.object(PR, "stream", Repeating()):
+            r = CH.send(self.v, "просто ответь", model="claude_code:sonnet", sync=True, learn=False)
+        msgs = CH.load_chat(self.v, r["chat"])["messages"]
+        text = [m.get("text") for m in msgs if m.get("role") == "assistant" and m.get("text")][-1]
+        self.assertEqual(text, "Принял, делаю.")
+
+
+if __name__ == "__main__":
+    unittest.main()

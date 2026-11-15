@@ -544,6 +544,7 @@ class NoticeTest(unittest.TestCase):
                 opened.assert_called_once()
                 self.assertTrue(state["opened"])
                 self.assertFalse(state.get("restart"))
+                self.assertTrue(c.state()["opened"], "the window knows the image is already open")
 
     def test_apply_restarts_into_a_windows_installer(self):
         with tempfile.TemporaryDirectory() as root, patch.object(U.sys, "platform", "win32"):
@@ -569,7 +570,9 @@ class NoticeTest(unittest.TestCase):
             c.info = {"version": "2.5.0", "kind": "appimage", "digest": DIGEST}
             c.file = new
             with patch.dict(os.environ, {"APPIMAGE": str(current)}):
-                self.assertTrue(c.apply()["restart"])
+                applied = c.apply()
+                self.assertTrue(applied["restart"])
+                self.assertEqual(applied["relaunch"], str(current), "the desktop starts the new AppImage")
             self.assertEqual(current.read_bytes(), b"new")
             # no APPIMAGE (a folder install, a source run): the file is shown, never swapped
             new.write_bytes(b"new")
@@ -584,6 +587,25 @@ class NoticeTest(unittest.TestCase):
             c.start()
             thread.assert_not_called()
             self.assertFalse(c.state()["auto"])
+
+    def test_a_download_for_a_replaced_release_is_dropped(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(U.sys, "platform", "linux"):
+            c = U.Checker(Path(root), lambda: {})
+            old = {
+                "name": "Mnemai-2.5.0-x86_64.AppImage",
+                "size": len(DATA),
+                "digest": DIGEST,
+                "tag": "v2.5.0",
+                "version": "2.5.0",
+                "kind": "appimage",
+            }
+            target = Path(root) / old["name"]
+            target.write_bytes(DATA)
+            c.info = old
+            with patch.object(U, "download", return_value=target):
+                c.info = {"version": "2.6.0", "kind": "appimage"}  # a newer check replaced it meanwhile
+                c._download(old)
+            self.assertFalse(c.state()["ready"])
 
 
 class ForcedInstallTest(unittest.TestCase):

@@ -14,6 +14,7 @@ import os
 import re
 import time
 import socket
+import subprocess
 import sys
 import threading
 import urllib.request
@@ -692,8 +693,21 @@ class App:
             return checker.set_auto(bool(body.get("on", True)))
         if action == "apply":
             state = checker.apply()
-            if state.get("restart"):  # the silent updater installs after this normal exit
-                self.quit_api()
+            target = str(state.get("relaunch") or "")
+            if target:  # a replaced AppImage: start the new file, then let this old process go
+                try:
+                    subprocess.Popen(
+                        [target],
+                        cwd=str(Path(target).parent),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                        env={**os.environ, "APPIMAGE": target},
+                    )
+                except OSError:
+                    target = ""
+            if state.get("restart") and not (state.get("relaunch") and not target):
+                self.quit_api()  # the silent updater installs after this normal exit
             return state
         return checker.state()
 

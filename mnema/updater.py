@@ -147,7 +147,7 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def download(asset: dict, digest: str, cache: Path, stop: threading.Event) -> Path:
+def download(asset: dict, digest: str, cache: Path, stop: threading.Event, progress=None) -> Path:
     cache.mkdir(parents=True, exist_ok=True)
     target = cache / asset["name"]
     if target.is_file() and target.stat().st_size == asset["size"] and sha256(target) == digest:
@@ -163,6 +163,11 @@ def download(asset: dict, digest: str, cache: Path, stop: threading.Event) -> Pa
                 if size > asset["size"]:
                     raise ValueError("Installer exceeds published size")
                 f.write(chunk)
+                if progress:
+                    try:
+                        progress(min(1.0, size / max(1, asset["size"])))
+                    except Exception:  # noqa: BLE001 — a progress bar never breaks a download
+                        pass
         if size != asset["size"] or sha256(partial) != digest:
             raise ValueError("Installer size or SHA-256 mismatch")
         partial.replace(target)
@@ -349,6 +354,7 @@ class Checker:
         self.status = "idle"  # idle | checking | downloading | ready | error
         self.error = ""
         self.progress = 0.0
+        self.opened = False  # a dmg was opened for the owner's hand
 
     # -- what the window shows
     def state(self) -> dict:
@@ -372,6 +378,7 @@ class Checker:
             "error": error,
             "file": file_ready,
             "ready": bool(file_ready),
+            "opened": self.opened,
         }
 
     def dismissed(self) -> bool:
@@ -410,7 +417,9 @@ class Checker:
             fresh = found and (not self.info or found["version"] != self.info.get("version"))
             self.info = found
             if fresh:
-                self.file, self.progress = None, 0.0
+                self.file, self.progress, self.opened = None, 0.0, False
+            if not found:  # the newer release is gone (yanked): do not keep offering it
+                self.file, self.progress, self.status, self.opened = None, 0.0, "idle", False
             self.status = "ready" if self.file else "idle"
         return self.state()
 
@@ -437,18 +446,25 @@ class Checker:
                 "size": info["size"],
                 "browser_download_url": f"https://github.com/{REPO}/releases/download/{info['tag']}/{info['name']}",
             }
-            path = download(asset, info["digest"], self.home / "updates", self.stop)
+            path = download(asset, info["digest"], self.home / "updates", self.stop, self._set_progress)
         except Exception as e:  # a broken download leaves the old version running
             with self.lock:
                 self.status, self.error = "error", type(e).__name__
             return
         with self.lock:
+            if info is not self.info:  # a newer check replaced the release while this download ran
+                return
             self.file, self.progress, self.status = path, 1.0, "ready"
+            self.opened = False
         if sys.platform == "win32" and installed_dir() and self.on_installer:
             try:
                 self.on_installer(path, info["digest"])
             except Exception:  # the silent updater is a bonus; the button still works
                 pass
+
+    def _set_progress(self, value: float) -> None:
+        with self.lock:
+            self.progress = max(0.0, min(1.0, float(value)))
 
     def later(self) -> dict:
         version_ = (self.info or {}).get("version", "")
@@ -477,13 +493,18 @@ class Checker:
             return {**self.state(), "restart": True}
         if info["kind"] == "dmg":
             osapi.open_path(path)
+            with self.lock:
+                self.opened = True
             return {**self.state(), "opened": True}
         if info["kind"] == "appimage":
             target = Path(os.environ.get("APPIMAGE", "") or "")
             if target.is_file():
                 try:
                     os.replace(path, target)
-                    return {**self.state(), "restart": True}
+                    with self.lock:
+                        self.file, self.status = None, "ready"
+                    # the desktop starts this file again and exits: the new version runs without the owner's hand
+                    return {**self.state(), "restart": True, "relaunch": str(target)}
                 except OSError:  # a read-only place: show the downloaded file instead
                     pass
         osapi.reveal(path)

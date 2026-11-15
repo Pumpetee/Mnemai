@@ -329,6 +329,22 @@ class ActionsTest(unittest.TestCase):
         self.assertIn("first-line", blob)
         self.assertIn("second-line", blob)
 
+    @unittest.skipIf(os.name == "nt", "sleep is a POSIX program")
+    def test_stop_stops_the_command_itself(self):
+        v = _vault(self.work)
+        stop = {"now": False}
+        timer = threading.Timer(0.5, lambda: stop.__setitem__("now", True))
+        timer.start()
+        started = time.time()
+        try:
+            text, line, _ = TL.run(v, {"tool": "run_command", "command": "sleep 20", "stop": lambda: stop["now"]})
+        finally:
+            timer.cancel()
+        took = time.time() - started
+        self.assertLess(took, 6, "the command must not keep running after «Стоп»")
+        self.assertIn("остановлена", text)
+        self.assertIn("Остановила команду", line)
+
     def test_the_window_sees_the_running_command(self):
         CH._gen["aaaabbbbcccc"] = {
             "text": "",

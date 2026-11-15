@@ -147,3 +147,18 @@ if __name__ == "__main__":
         detail = "\n".join((m.get("detail") or "") for m in chat["messages"])
         self.assertIn("поставила nmap", text)
         self.assertIn("mnema-install-ok", detail)
+
+    def test_a_broken_install_still_ends_the_turn(self):
+        import mnema.chat.tools as TL
+
+        with (
+            patch.object(TL, "package_manager", lambda: "dnf"),
+            patch.object(TL, "resolve_package", lambda pm, term: "nmap"),
+            patch.object(TL, "install_command", lambda pm, names: "echo ok"),
+            patch.object(CH, "_act", side_effect=RuntimeError("boom")),
+        ):
+            r = CH.send(self.v, "установи nmap", model="claude_code:sonnet", sync=True, learn=False)
+        st = CH.state(r["chat"])
+        self.assertTrue(st.get("done"), "the chat must never stay in the «thinking» state")
+        chat = CH.load_chat(self.v, r["chat"])
+        self.assertTrue(any("Не получилось поставить nmap: boom" in (m.get("text") or "") for m in chat["messages"]))

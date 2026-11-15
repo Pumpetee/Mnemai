@@ -747,7 +747,7 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
         run["tail"] = ((run.get("tail") or "") + text)[-2000:]
         run["updated"] = time.time()
 
-    call = {**call, "progress": live}
+    call = {**call, "progress": live, "stop": lambda: bool(g.get("stop"))}
     try:
         from .. import mcp_server as MC
 
@@ -1072,27 +1072,35 @@ def _fast_install(vault: Vault, chat: dict, call: dict, model: str, sync: bool) 
     _gen[chat["id"]] = g
 
     def work():
-        result = _act(vault, chat["id"], g, call, "owner", model)
         names = " ".join(str(x) for x in (call.get("packages") or []))
-        if result is None:  # the owner stopped the turn or did not give the password
-            say = ""
-        elif result.startswith("[код 0"):
-            say = f"Готово — поставила {names}."
-        else:
-            say = f"Не получилось поставить {names}: в строке действия есть вывод, посмотри причину."
-        if say:
+        say = ""
+        try:
+            result = _act(vault, chat["id"], g, call, "owner", model)
+            if result is None:
+                # the owner pressed Stop or did not give the administrator password: the action line says which
+                say = "Остановила установку." if g.get("stop") else f"Установка {names} не выполнена: нужен пароль."
+            elif result.startswith("[код 0"):
+                say = f"Готово — поставила {names}."
+            elif result.startswith("[остановлена"):
+                say = "Остановила установку."
+            else:
+                say = f"Не получилось поставить {names}: в строке действия есть вывод, посмотри причину."
+        except Exception as e:  # a failed install must end the turn honestly, never leave the chat polling
+            say = f"Не получилось поставить {names}: {e}"
+        finally:
+            if say:
 
-            def fin(c):
-                c["messages"].append({"role": "assistant", "text": say, "ts": _now(), "model": model})
-                c["updated"] = _now()
+                def fin(c):
+                    c["messages"].append({"role": "assistant", "text": say, "ts": _now(), "model": model})
+                    c["updated"] = _now()
 
-            try:
-                modify_chat(vault, chat["id"], fin)
-            except KeyError:  # deleted while installing
-                pass
-        g["text"] = say
-        g["phase"] = ""
-        g["done"] = True
+                try:
+                    modify_chat(vault, chat["id"], fin)
+                except KeyError:  # deleted while installing
+                    pass
+            g["text"] = say
+            g["phase"] = ""
+            g["done"] = True
 
     if sync:
         work()

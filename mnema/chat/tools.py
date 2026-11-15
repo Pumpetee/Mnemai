@@ -838,7 +838,7 @@ def _run_in_terminal(
 def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
     """Run one command in the owner's shell and turn its stdout/stderr/exit code into a short answer for the model.
 
-    The terminal is a real PC access, so: a hard timeout (1–300 s), a process group killed on timeout, a bounded
+    The terminal is a real PC access, so: a hard timeout (1–900 s), a process group killed on timeout, a bounded
     output, and every run in the journal («История»)."""
     from ..journal import log_event
 
@@ -914,6 +914,10 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     out_parts: list[str] = []
     err_parts: list[str] = []
     on_line = call.get("progress") if callable(call.get("progress")) else None
+    if pw and on_line:
+        raw_line = on_line
+        on_line = lambda text: raw_line(text.replace(pw, "•••"))  # the live view never shows the password
+    stop = call.get("stop") if callable(call.get("stop")) else None
 
     def pump(stream, sink: list[str]) -> None:
         try:
@@ -936,11 +940,10 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     ]
     for reader in readers:
         reader.start()
-    timed_out = False
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
+    timed_out = stopped = False
+    deadline = started + timeout
+
+    def kill() -> None:
         try:
             if os.name == "nt":
                 proc.kill()
@@ -951,7 +954,31 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            pass
+            try:
+                if os.name == "nt":
+                    proc.kill()
+                else:
+                    os.killpg(proc.pid, signal.SIGKILL)  # a command that ignores SIGTERM still stops
+            except (OSError, ProcessLookupError):
+                pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+
+    while True:
+        try:
+            proc.wait(timeout=0.25)
+            break
+        except subprocess.TimeoutExpired:
+            if stop and stop():  # «Стоп» stops the command itself, not only the answer
+                stopped = True
+                kill()
+                break
+            if time.time() >= deadline:
+                timed_out = True
+                kill()
+                break
     for reader in readers:
         reader.join(timeout=3)
     for stream in (proc.stdout, proc.stderr):
@@ -970,7 +997,9 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
         if re.search(r"incorrect password|try again|попробуйте (?:ещ[её] )?раз|неверн\w* парол", blob):
             sudo_forget(vault)  # stale or mistyped: the next sudo asks again, in the chat
     head = f"[код {code} · {seconds:.1f} с · {work}]"
-    if timed_out:
+    if stopped:
+        head = f"[остановлена кнопкой «Стоп» · {seconds:.1f} с · {work}]"
+    elif timed_out:
         head = f"[остановлена по таймауту {timeout} с · {work}]"
     parts = [head]
     if out.strip():
@@ -989,6 +1018,8 @@ def _run_command(vault: Vault, call: dict, client: str = "owner") -> tuple[str, 
     shown = (out.strip() or err.strip()).splitlines()[:3]
     snippet = " · ".join(x.strip() for x in shown)[:300] if shown else ("код " + str(code))
     line = f"Выполнила команду: {command[:120]} → {snippet}"
+    if stopped:
+        line = f"Остановила команду: {command[:120]}"
     if pw:
         line = line.replace(pw, "•••")
     return text, line, str(work)

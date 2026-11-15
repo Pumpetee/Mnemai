@@ -707,6 +707,23 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
     if call.get("tool") == "run_command" and TL.needs_sudo(str(call.get("command") or "")):
         # sudo needs the administrator password: it is asked here in the chat, once, and the command runs without a
         # terminal window — so the owner never types it twice and never leaves the conversation
+        blocked = TL.sudo_blocked()
+        if blocked:
+            _add_msg(
+                vault,
+                cid,
+                {
+                    "role": "assistant",
+                    "kind": "action",
+                    "ts": _now(),
+                    "text": f"Не выполнено: sudo здесь недоступен — {blocked}",
+                    "failed": True,
+                },
+            )
+            return (
+                f"sudo в этой среде недоступен ({blocked}) — команда не выполнена. Предложи способ без sudo "
+                "или попроси владельца запустить Mnemai обычным окном, а не во встроенном просмотре."
+            )
         pw = _sudo_password_in_chat(vault, cid, g, str(call.get("command") or ""))
         if pw is None:
             return None  # stopped while waiting for the password

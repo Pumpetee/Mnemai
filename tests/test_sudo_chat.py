@@ -98,6 +98,10 @@ class Sudo(unittest.TestCase):
         fake = self.bindir / "sudo"
         fake.write_text(
             "#!/bin/sh\n"
+            'if [ "$1" = "-n" ]; then\n'  # «can sudo work here»: a password is required, not a blocked container
+            "  echo 'sudo: a password is required' >&2\n"
+            "  exit 1\n"
+            "fi\n"
             'if [ "$1" = "-S" ]; then\n'  # the password check: sudo -S -k -v
             "  read -r pw\n"
             '  [ "$pw" = "$MNEMA_SUDO_PW" ] && exit 0\n'
@@ -212,6 +216,15 @@ class Sudo(unittest.TestCase):
         msgs = CH.load_chat(v, r["chat"])["messages"]
         self.assertTrue(any("поставила nmap" in (m.get("text") or "") for m in msgs))
         self.assertTrue(any("mnema-install-ok" in (m.get("detail") or "") for m in msgs))
+
+    def test_a_container_without_privileges_is_explained_without_a_password_card(self):
+        v = _vault()
+        script = Script(f'```mnema run_command command="{self.sudo_command("echo never")}"\n```', "Готово.")
+        with patch.object(TL, "sudo_blocked", lambda: "контейнер без новых привилегий"):
+            r, _ = self._send(v, "Проверь сеть", script, self.owner([]))
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        self.assertTrue(any("недоступен" in (m.get("text") or "") for m in msgs))
+        self.assertFalse(self.marker.exists(), "the command must not run in a blocked environment")
 
 
 if __name__ == "__main__":

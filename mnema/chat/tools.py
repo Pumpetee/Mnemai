@@ -698,6 +698,22 @@ def sudo_check(pw: str) -> bool:
     return r.returncode == 0
 
 
+def sudo_blocked() -> str:
+    """Why sudo cannot work in this environment (a container without privileges), or "" when it can be asked."""
+    if os.name == "nt":
+        return "здесь нет sudo"
+    try:
+        r = subprocess.run(["sudo", "-n", "true"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return "sudo не запускается"
+    blob = (r.stderr or "") + (r.stdout or "")
+    if re.search(r"новых привилег|no new privileges|new privileges", blob, re.I):
+        return "контейнер без новых привилегий"
+    if re.search(r"not in the sudoers|не входит в файл sudoers", blob, re.I):
+        return "у пользователя нет прав sudo"
+    return ""
+
+
 def sudo_remember(vault: Vault, pw: str) -> None:
     """Keep a password the owner typed in the chat: this process and the system secret store, never a chat file."""
     if not pw:

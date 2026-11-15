@@ -17108,32 +17108,68 @@ body.wlc-on .tour {
 
 /* actions in the chat: the permission card and the line each action leaves */
 .actask {
-  margin: 8px 0 12px 44px;
-  padding: 12px 14px;
-  border: 1px solid var(--acc3, #d9d6ff);
-  border-radius: 14px;
-  background: var(--card);
+  margin: 10px 0 14px 44px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: var(--sh1);
+  color: var(--ink);
   max-width: 640px;
+  box-sizing: border-box;
 }
 .actaskh {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 11px;
+  font-size: 13.5px;
+}
+.actaskh b {
+  font-weight: 600;
+}
+.actaskh svg.i {
+  width: 16px;
+  height: 16px;
+  color: var(--acc);
+  flex: 0 0 auto;
 }
 .actwhat {
-  font-size: 13.5px;
+  font:
+    12.5px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  padding: 9px 11px;
+  margin: 0 0 12px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--ink2);
   word-break: break-all;
-  margin: 2px 0 10px;
+  max-height: 90px;
+  overflow: auto;
+}
+.actask .inp {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 2px 0 4px;
 }
 .actask .row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+.actask .row .btn:first-child {
+  min-width: 128px;
 }
 .actask .hint {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   font-size: 12px;
+  color: var(--ink3);
 }
 .actline {
   position: relative;

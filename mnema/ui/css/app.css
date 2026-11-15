@@ -20167,28 +20167,6 @@ button.xft:hover {
   box-shadow: 0 0 0 3px var(--acc2);
   background: var(--paper);
 }
-.planex {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  font-size: calc(12px * var(--fs));
-  color: var(--ink3);
-}
-.exchip {
-  border: 1px solid var(--line);
-  background: var(--paper);
-  color: var(--ink2);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: calc(12px * var(--fs));
-  cursor: pointer;
-}
-.exchip:hover {
-  border-color: var(--acc3);
-  color: var(--acc);
-}
 .planfoot {
   display: flex;
   align-items: center;

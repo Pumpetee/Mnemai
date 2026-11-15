@@ -90,12 +90,6 @@ function planOpen() {
     </div>
     <div class="planbox">
       <textarea id="plantask" class="planinp" rows="4" placeholder="${tr("Например: разбери договоры в папке, найди риски и сделай короткий отчёт")}"></textarea>
-      <div class="planex">
-        <span>${tr("Примеры")}</span>
-        <button type="button" class="exchip" data-ex="${tr("Разбери договоры в папке, найди риски и сделай короткий отчёт")}">${tr("Договоры")}</button>
-        <button type="button" class="exchip" data-ex="${tr("Сравни поставщиков по цене и надёжности, дай рекомендацию")}">${tr("Поставщики")}</button>
-        <button type="button" class="exchip" data-ex="${tr("Спланируй миграцию данных без простоя")}">${tr("Миграция")}</button>
-      </div>
     </div>
     <div class="planfoot">
       <div class="plannote">${ic("mem")}${tr("учтём память и историю разговора")} · ${ic("users")}${tr("исполнители из подключённых ИИ")}</div>
@@ -109,14 +103,6 @@ function planOpen() {
     if (e.target === pop) planClose();
   };
   $("#plango", pop).onclick = planPropose;
-  $$("[data-ex]", pop).forEach(
-    (b) =>
-      (b.onclick = () => {
-        const t = $("#plantask", pop);
-        t.value = b.dataset.ex;
-        t.focus();
-      }),
-  );
   setTimeout(() => $("#plantask", pop).focus(), 60);
 }
 

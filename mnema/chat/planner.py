@@ -883,6 +883,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     pass
                 if stop_reason:
                     break
+            g["phase"] = "собираю итог"  # the last step is done; the result card is being written
             if stop_at >= 0:
                 for later in steps[stop_at + 1 :]:
                     later["status"] = "stopped"

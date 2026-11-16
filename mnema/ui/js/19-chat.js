@@ -1550,7 +1550,7 @@ function msgHtml(m, last, i, lastAi) {
       const replan = `<button class="pdocc preplan" data-replan data-task="${esc(pm.task || "")}">${ic("redo")}${tr("Пересобрать")}</button>`;
       return `<div class="planres planresstop"><div class="planresh stop">${ic(stop.icon)}<b>${esc(stop.title)}</b><span>${esc(stop.hint)}</span><span class="planresacts">${replan}${doc}</span></div><div class="md">${md(m.text, false)}</div></div>`;
     }
-    return `<div class="planres"><div class="planresh">${ic("check")}<b>${tr("Результат схемы")}</b><span>${esc(pm.title || "")}${pm.steps ? " · " + esc(String(pm.steps)) + " " + tr("шагов") : ""}</span>${doc}</div><div class="md">${md(m.text, false)}</div></div>`;
+    return `<div class="planres"><div class="planresh">${ic("check")}<b>${tr("Результат схемы")}</b><span>${esc(pm.title || "")}${pm.steps ? " · " + esc(String(pm.steps)) + " " + planStepsWord(Number(pm.steps) || 0) : ""}</span>${doc}</div><div class="md">${md(m.text, false)}</div></div>`;
   }
   if (m.kind === "progress") {
     const all = (CHAT.chat && CHAT.chat.messages) || [];

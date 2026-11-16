@@ -1848,6 +1848,8 @@ async function askSettings(anchor) {
   ]);
 }
 function renderChat(c) {
+  const liveEl = $("#live"); // keep this exact node: a re-created live answer makes the avatar blink
+  if (liveEl) liveEl.remove();
   CHAT.chat = c;
   CHAT.cons = c.consortium || null;
   drawModelLabel();
@@ -1875,6 +1877,7 @@ function renderChat(c) {
       })
       .join("") +
     [learnAsksHtml(c), costTipHtml(c)].map((h) => (h ? `<div class="msg lwrap">${h}</div>` : "")).join("");
+  if (liveEl && CHAT.polling) $("#msgs").appendChild(liveEl); // still streaming: put the same node back
   bindMsg();
   bindCostTip();
   if (stick) scrollEnd();
@@ -2319,6 +2322,8 @@ function poll() {
   const finish = async () => {
     const ack = $("#localack");
     if (ack) ack.remove();
+    const liveNow = $("#live");
+    if (liveNow) liveNow.remove();
     WORK("");
     btn.classList.remove("stop");
     btn.innerHTML = SEND_ICON;
@@ -2403,6 +2408,8 @@ function poll() {
       CHAT.polling = null;
       T.done = true;
       if (st.error) refreshProviders().catch(() => {}); // an AI out of money or signed out leaves the list at once
+      const ghost = $("#live");
+      if (ghost) setTimeout(() => ghost.remove(), 2500); // a late finish must not leave an empty Mnemai avatar
     }
     if (!T.raf) T.raf = requestAnimationFrame(frame);
   }, 200);

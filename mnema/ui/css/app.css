@@ -20410,3 +20410,45 @@ button.xft:hover {
 .cbox textarea {
   padding-top: calc(14px * var(--den));
 }
+
+/* the plan result is the answer: framed, accented, with the document next to it */
+.planres {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--acc);
+  border-radius: 14px;
+  background: var(--paper);
+  padding: 14px 18px;
+  margin: 8px auto 14px;
+  max-width: 780px;
+}
+.planresh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--ink2);
+}
+.planresh b {
+  color: var(--ink);
+}
+.planresh span {
+  font-size: calc(12px * var(--fs));
+  color: var(--ink3);
+}
+.pdocc {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink2);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: calc(11.5px * var(--fs));
+  cursor: pointer;
+}
+.pdocc:hover {
+  border-color: var(--acc3);
+  color: var(--acc);
+}

@@ -14,6 +14,7 @@ import re
 import secrets
 import threading
 import time
+from pathlib import Path
 
 from ..vault import Vault
 from . import engine as CH, providers as PR
@@ -253,6 +254,88 @@ def _justify(plans: list[dict]) -> list[dict]:
     return plans
 
 
+def _slug(text: str) -> str:
+    out = re.sub(r"[^\w\-]+", "-", (text or "").lower(), flags=re.UNICODE).strip("-")
+    return out[:48] or "план"
+
+
+def _save_plan_document(vault: Vault, task: str, plans: list[dict], context: dict) -> str:
+    """A Markdown document with the schema, next to the other notes: the owner asked for a file, not only a card."""
+    try:
+        folder = vault.root / "00 Inbox" / "Схемы"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%d_%H-%M")
+        path = folder / f"{stamp}-{_slug(task)}.md"
+        lines = [
+            "# Схема задачи",
+            "",
+            f"**Задача:** {task}",
+            f"**Создана:** {time.strftime('%d.%m.%Y %H:%M')}",
+            f"**Контекст:** память {context.get('memory_chars', 0)} знаков, "
+            f"история {context.get('history_msgs', 0)} сообщений",
+            "",
+            "## Варианты",
+            "",
+        ]
+        for plan in plans:
+            est = plan.get("estimate") or {}
+            lines += [
+                f"### {plan.get('title')} — {plan.get('note') or ''}".rstrip(),
+                "",
+                "| # | роль | модель | токены | время |",
+                "|---|---|---|---|---|",
+            ]
+            for i, step in enumerate(plan.get("steps") or [], 1):
+                e = step.get("est") or {}
+                lines.append(
+                    f"| {i} | {step.get('role') or ''} | {step.get('model_name') or step.get('model') or ''} | "
+                    f"{e.get('tokens_min', 0)}–{e.get('tokens_max', 0)} | "
+                    f"{e.get('seconds_min', 0)}–{e.get('seconds_max', 0)} с |"
+                )
+            lines += [
+                "",
+                f"**Прогноз:** {est.get('tokens_min', 0)}–{est.get('tokens_max', 0)} токенов · "
+                f"{est.get('seconds_min', 0)}–{est.get('seconds_max', 0)} с · {_money(est.get('cost_min', 0), est.get('cost_max', 0))}",
+                "",
+                f"**Почему так:** {plan.get('why') or ''}",
+                "",
+            ]
+        path.write_text("\n".join(lines), encoding="utf-8")
+        return str(path)
+    except OSError:
+        return ""
+
+
+def _append_plan_result(vault: Vault, plan: dict) -> None:
+    """Put the real step results into the schema document, so the chat can stay compact."""
+    raw = str(plan.get("doc") or "")
+    if not raw:
+        return
+    try:
+        path = Path(raw).resolve()
+        if not path.is_relative_to(vault.root.resolve()):
+            return
+        actual = plan.get("actual") or {}
+        lines = [
+            "",
+            "## Результат",
+            "",
+            f"**Статус:** {plan.get('status')} · {len(plan.get('steps') or [])} шагов · "
+            f"{actual.get('seconds', '—')} с · {actual.get('tokens', '—')} токенов",
+            "",
+        ]
+        for i, step in enumerate(plan.get("steps") or [], 1):
+            lines += [
+                f"### Шаг {i} · {step.get('role') or ''} · {step.get('model_name') or ''}",
+                "",
+                str(step.get("output") or "—"),
+                "",
+            ]
+        path.write_text(path.read_text(encoding="utf-8") + "\n".join(lines), encoding="utf-8")
+    except (OSError, ValueError):
+        pass
+
+
 def _step(rows: list[dict], used: set[str], role: str, out: str, instruction: str, want: int = 2) -> dict | None:
     row = _pick(rows, want, used)
     if not row:
@@ -409,7 +492,12 @@ def propose(vault: Vault, task: str, chat_id: str = "") -> list[dict]:
         p.setdefault("note", "")
         p["context"] = context_info
         estimate(p, task, context_chars=context_chars)
-    return _justify(plans)
+    result = _justify(plans)
+    doc = _save_plan_document(vault, task, result, context_info)
+    if doc:
+        for p in result:
+            p["doc"] = doc
+    return result
 
 
 def _prompt_for(plan: dict, index: int, task: str, previous: list[str]) -> str:
@@ -437,6 +525,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
     if not cid:
         raise ValueError("план запускается в разговоре")
     plan = json.loads(json.dumps(plan))
+    steps = plan["steps"]  # the copy, not the request object: outputs must be saved in the plan message
     plan["task"] = task
     plan["status"] = "running"
     first_pid = CH.split_model(steps[0]["model"])[0]
@@ -472,18 +561,27 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         tokens = 0
         started = time.time()
         try:
+            from . import tools as TL
+
+            tools_on = TL.enabled(vault)
+            tool_rule = TL.rule(vault) if tools_on else ""
             for i, step in enumerate(steps):
                 if g["stop"]:
-                    g["text"] += "\n\n_Остановлено владельцем._"
                     break
                 step_started = time.time()
                 step_usage: dict = {}
                 g["phase"] = f"шаг {i + 1} из {len(steps)}: {step['role']}"
                 pid, mname = CH.split_model(step["model"])
+                client = PR.PROVIDERS[pid]["client"]
                 system = (
                     f"Ты — исполнитель шага {i + 1} из {len(steps)} в цепочке ИИ. Твоя роль: {step['role']}. "
-                    "Работай только над своим шагом и верни его результат."
+                    "Работай только над своим шагом, не повторяй работу предыдущих и верни его результат."
                 )
+                if tools_on:
+                    system += (
+                        "\n\nЕсли для шага нужны инструменты, вызывай их действиями Mnemai. Не выдумывай "
+                        "результаты инструментов: настоящий результат придёт тебе следующим сообщением.\n\n" + tool_rule
+                    )
                 step_memory = _memory(vault, pid)
                 user = ""
                 if step_memory:
@@ -491,41 +589,87 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 if history:
                     user += "Последние сообщения разговора:\n" + "\n".join(history) + "\n\n"
                 user += _prompt_for(plan, i, task, made)
-                try:
-                    answer = PR.complete(
-                        vault,
-                        pid,
-                        mname,
-                        system,
-                        [{"role": "user", "text": user}],
-                        usage=step_usage,
-                        meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
-                    ).strip()
-                except Exception as e:  # noqa: BLE001 — one broken step must not lose the whole chain
-                    answer = f"_(шаг не выполнен: {type(e).__name__}: {str(e)[:160]})_"
+                messages = [{"role": "user", "text": user}]
+                answer = ""
+                for attempt in range(2):
+                    for _round in range(5):
+                        if g["stop"]:
+                            break
+                        raw = PR.complete(
+                            vault,
+                            pid,
+                            mname,
+                            system,
+                            messages,
+                            usage=step_usage,
+                            meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
+                        )
+                        clean = CH.strip_thinking(raw)
+                        call = TL.parse(clean) if tools_on else None
+                        if call:
+                            said = TL.before(clean, call)
+                            result = CH._act(vault, cid, g, call, client, step["model"])
+                            if result is None:
+                                g["stop"] = True
+                                break
+                            if said.strip():
+                                messages.append({"role": "assistant", "text": said.strip()})
+                            messages.append({"role": "user", "text": "[Результат действия Mnemai]\n" + result})
+                            continue
+                        answer = CH.strip_tool_markup(clean).strip()
+                        break
+                    if answer or g["stop"]:
+                        break
+                    messages.append(
+                        {"role": "user", "text": "Ты не вернул результат шага. Выполни его и верни текст результата."}
+                    )
+                if not answer.strip() and not g["stop"]:
+                    answer = "_Шаг не дал текста._"
+                    step["empty"] = True
                 step_tokens = sum(int(val) for val in step_usage.values() if isinstance(val, (int, float)))
                 tokens += step_tokens
                 step["actual"] = {"tokens": step_tokens, "seconds": round(time.time() - step_started, 1)}
+                step["output"] = answer
                 made.append(answer)
-                g["text"] += f"### Шаг {i + 1} · {step['role']} · {step['model_name']}\n\n{answer.strip()}\n\n"
+                preview = answer.strip()
+                if len(preview) > 280:
+                    preview = preview[:280].rsplit(" ", 1)[0] + "…"
+                g["text"] += f"### Шаг {i + 1} · {step['role']} · {step['model_name']}\n\n{preview}\n\n"
             plan["status"] = "done" if not g["stop"] else "stopped"
             plan["actual"] = {"seconds": round(time.time() - started, 1), "tokens": tokens}
+            _append_plan_result(vault, plan)
             CH._update_msg(vault, cid, mid, {"plan": plan})
-            if made:
-                CH._add_msg(
-                    vault,
-                    cid,
-                    {
-                        "role": "assistant",
-                        "text": g["text"].strip(),
-                        "ts": CH._now(),
-                        "model": "plan",
+            outputs = [str(s.get("output") or "") for s in steps]
+            final = next((o for o in reversed(outputs) if o and not o.startswith("_Шаг не дал")), "")
+            empties = [str(i + 1) for i, s in enumerate(steps) if s.get("empty")]
+            if empties:
+                final = f"_Шаги {', '.join(empties)} не вернули текста; подробности — в документе схемы._\n\n" + final
+            if g["stop"]:
+                final = "_Остановлено владельцем._\n\n" + final
+            if not final.strip():
+                final = "_План завершён, но ни один шаг не вернул текст. Открой документ схемы, чтобы увидеть детали._"
+            CH._add_msg(
+                vault,
+                cid,
+                {
+                    "role": "assistant",
+                    "kind": "plan_result",
+                    "text": final.strip(),
+                    "ts": CH._now(),
+                    "model": "plan",
+                    "plan": {
+                        "title": plan.get("title"),
+                        "steps": len(steps),
+                        "doc": plan.get("doc"),
+                        "status": plan.get("status"),
                     },
-                )
+                },
+            )
         except Exception as e:  # noqa: BLE001 — the chat always ends honestly
             g["error"] = f"План остановлен: {type(e).__name__}: {str(e)[:200]}"
             plan["status"] = "failed"
             try:
+                _append_plan_result(vault, plan)
                 CH._update_msg(vault, cid, mid, {"plan": plan})
             except Exception:
                 pass

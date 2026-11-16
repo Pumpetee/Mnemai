@@ -67,7 +67,7 @@ function planCardHTML(plan, inChat) {
     <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${moneyPill}${status}</span></div>
     <div class="pflow ${steps.length > 1 ? "multi" : ""}">${nodes}</div>
     ${plan.why ? `<div class="pwhy">${esc(plan.why)}</div>` : ""}
-    ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span><button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
+    ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span>${plan.doc ? `<button class="btn g sm" data-fopen="${esc(plan.doc)}">${ic("file")}${tr("Документ")}</button>` : ""}<button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
 }
 
@@ -214,9 +214,12 @@ async function planApply(plan) {
     b.textContent = tr("Запускаю…");
   }
   try {
+    CHAT.reading = false;
     const r = await post("/api/plan/run", { chat: CHAT.id || "", plan });
     planClose();
     if (r.chat && CHAT.id !== r.chat) await viewChat(r.chat);
+    CHAT.reading = false;
+    scrollEnd();
     poll();
   } catch (e) {
     toast(e.message);

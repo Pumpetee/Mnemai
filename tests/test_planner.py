@@ -83,6 +83,9 @@ class Planner(unittest.TestCase):
             plans = PL.propose(v, "Обнови план", "abcdef123456")
         self.assertTrue(all(p["context"]["memory_chars"] > 0 for p in plans))
         self.assertEqual(plans[0]["context"]["history_msgs"], 1)
+        doc = plans[0].get("doc")
+        self.assertTrue(doc and Path(doc).is_file())  # the schema is also a Markdown document
+        self.assertIn("Схема задачи", Path(doc).read_text(encoding="utf-8"))
 
     def test_the_chain_passes_work_from_one_ai_to_the_next(self):
         v = _vault()
@@ -139,12 +142,12 @@ class Planner(unittest.TestCase):
         self.assertIn("результат шага 1", calls[1][2])  # the second AI sees the first answer
         msgs = CH.load_chat(v, chat["id"])["messages"]
         self.assertTrue(any(m.get("kind") == "plan" for m in msgs))
-        transcript = [m for m in msgs if m.get("role") == "assistant" and m.get("text")]
-        self.assertTrue(
-            any("Шаг 1" in (m.get("text") or "") and "шаг 2" in (m.get("text") or "").lower() for m in transcript)
-        )
         ready = next(m for m in msgs if m.get("kind") == "plan")
         self.assertEqual(ready["plan"]["status"], "done")
+        self.assertEqual(ready["plan"]["steps"][0]["output"], "результат шага 1")
+        self.assertEqual(ready["plan"]["steps"][1]["output"], "результат шага 2")
+        result = next(m for m in msgs if m.get("kind") == "plan_result")
+        self.assertEqual(result["text"], "результат шага 2")  # the answer is the final step, not a wall of text
 
     def test_no_connected_models_is_explained(self):
         v = _vault()

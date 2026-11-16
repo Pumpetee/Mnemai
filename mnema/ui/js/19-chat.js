@@ -1487,6 +1487,13 @@ function quoteLine(s) {
 function msgHtml(m, last, i, lastAi) {
   if (m.hidden) return "";
   if (m.kind === "plan") return planCardHTML(m.plan || {}, true); // the schema lives in the conversation
+  if (m.kind === "plan_result") {
+    const pm = m.plan || {};
+    const doc = pm.doc
+      ? `<button class="pdocc" data-fopen="${esc(pm.doc)}">${ic("file")}${tr("Документ")}</button>`
+      : "";
+    return `<div class="planres"><div class="planresh">${ic("check")}<b>${tr("Результат схемы")}</b><span>${esc(pm.title || "")}${pm.steps ? " · " + esc(String(pm.steps)) + " " + tr("шагов") : ""}</span>${doc}</div><div class="md">${md(m.text, false)}</div></div>`;
+  }
   if (m.kind === "progress") {
     const all = (CHAT.chat && CHAT.chat.messages) || [];
     if (!CHAT.polling) return "";

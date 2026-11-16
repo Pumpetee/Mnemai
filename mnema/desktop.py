@@ -20,6 +20,11 @@ import threading
 import urllib.request
 from pathlib import Path
 
+# QtWebEngine's GPU process has crashed twice on this Fedora box after a long plan, leaving a black window.
+# Rendering the UI in software is a little slower but does not take the window down with the GPU process.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu")
+
 import webview
 from PIL import Image, ImageDraw
 

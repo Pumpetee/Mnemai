@@ -91,6 +91,8 @@ class Planner(unittest.TestCase):
     def test_a_full_mcp_sweep_is_recognised(self):
         self.assertTrue(PL._is_mcp_sweep("Проверь MCP: пройди ВСЕ инструменты из tools/list, каждый вызови"))
         self.assertFalse(PL._is_mcp_sweep("Проверь один инструмент memory_context"))
+        self.assertTrue(PL._is_mcp_readonly_sweep("Проверь все инструменты MCP: хранилище только читаем, tools/list"))
+        self.assertFalse(PL._is_mcp_readonly_sweep("Проверь все инструменты MCP, tools/list"))
 
     def test_every_plan_has_executors_and_estimates(self):
         v = _vault()

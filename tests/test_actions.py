@@ -344,6 +344,15 @@ class ActionsTest(unittest.TestCase):
         self.assertIn("memory_context", text)
         self.assertIn("все инструменты", line)
 
+    def test_readonly_mcp_smoke_is_one_action(self):
+        call = TL.parse("```mnema mcp_smoke_readonly\n```")
+        self.assertEqual(call["tool"], "mcp_smoke_readonly")
+        v = _vault()
+        with patch("mnema.chat.mcpsmoke.run_readonly", lambda vault: "| memory_context | ok |"):
+            text, line, _ = TL.run(v, call)
+        self.assertIn("memory_context", text)
+        self.assertIn("все инструменты", line)
+
     def test_mcp_desktop_control_still_needs_the_owner(self):
         v = _vault()
         call = TL.parse('```mnema mcp_call name="pc_click"\n{"x": 1, "y": 2}\n```')

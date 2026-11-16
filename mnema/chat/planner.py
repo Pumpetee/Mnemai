@@ -567,7 +567,8 @@ def propose(vault: Vault, task: str, chat_id: str = "", planner: str = "auto") -
         p["context"] = context_info
         estimate(p, task, context_chars=context_chars)
     result = _justify(plans)
-    doc = _save_plan_document(vault, task, result, context_info, chosen)
+    # a read-only MCP sweep must not leave even a scheme document in the vault
+    doc = "" if _is_mcp_readonly_sweep(task) else _save_plan_document(vault, task, result, context_info, chosen)
     if doc:
         for p in result:
             p["doc"] = doc
@@ -626,6 +627,20 @@ def _stop_text(plan: dict, steps: list[dict], index: int, reason: str) -> str:
         else f"модель сделала {_actions_count(actions)}, но не сформулировала итог"
     )
     return f"План остановлен на {where}: {what}, поэтому следующие шаги не запускались. {advice}"
+
+
+def _is_mcp_readonly_sweep(task: str) -> bool:
+    """The owner asks for the whole MCP catalog with a strictly read-only vault."""
+    t = (task or "").lower()
+    readonly = any(
+        marker in t
+        for marker in ("только чита", "ничего не записывай", "не записывай в память", "read-only", "readonly")
+    )
+    return (
+        readonly
+        and "mcp" in t
+        and any(marker in t for marker in ("tools/list", "все инструменты", "всех инструментов", "каждый инструмент"))
+    )
 
 
 def _is_mcp_sweep(task: str) -> bool:
@@ -771,9 +786,14 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 # deterministic full sweep: every tool once, table, cleanup — no model improvisation
                 from . import mcpsmoke
 
-                g["phase"] = "MCP smoke: прохожу весь tools/list"
+                readonly = _is_mcp_readonly_sweep(task)
+                g["phase"] = (
+                    "MCP smoke: прохожу весь tools/list (только чтение)"
+                    if readonly
+                    else "MCP smoke: прохожу весь tools/list"
+                )
                 g["text"] = "Прохожу все инструменты MCP-сервера…"
-                table = mcpsmoke.run(vault)
+                table = mcpsmoke.run_readonly(vault) if readonly else mcpsmoke.run(vault)
                 now = round(time.time() - started, 1)
                 for j, step in enumerate(steps):
                     step["actions"] = 0

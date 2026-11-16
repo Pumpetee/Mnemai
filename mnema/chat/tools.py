@@ -52,6 +52,7 @@ TOOLS = (
     "open_app",
     "mcp_call",
     "mcp_smoke",
+    "mcp_smoke_readonly",
 )
 WRITES = {
     "write_file",
@@ -63,6 +64,7 @@ WRITES = {
     "open_app",
     "mcp_call",
     "mcp_smoke",
+    "mcp_smoke_readonly",
 }
 TEXT_EXT = {".md", ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".log", ".ini", ".tsv"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
@@ -217,6 +219,9 @@ pc_scroll, pc_open_app, open_app) без отдельного разрешени
 Если задача просит проверить ВСЕ инструменты MCP-сервера (или весь tools/list), не вызывай их по одному
 вручную: вызови ```mnema mcp_smoke``` — Mnemai сама пройдёт каждый инструмент, соберёт таблицу
 «инструмент | вызван | результат | замечание», уберёт тестовую папку, память и вернёт буфер обмена.
+Если владелец требует режим «хранилище только читаем», вызови ```mnema mcp_smoke_readonly```:
+он ничего не пишет в память, списки и задачи, файлы проверяет только в /tmp, а управление
+рабочим столом пропускает.
 """
 
 
@@ -464,7 +469,7 @@ def what(vault: Vault, call: dict) -> str:
         exists = False
     if t == "mcp_call":
         return f"вызвать MCP-инструмент {call.get('name', '')}"
-    if t == "mcp_smoke":
+    if t in ("mcp_smoke", "mcp_smoke_readonly"):
         return "пройти все инструменты локального MCP-сервера"
     return {
         "read_file": f"прочитать файл {path}",
@@ -1443,10 +1448,10 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
     t = call["tool"]
     if t == "mcp_call":
         return _mcp_run(vault, call)
-    if t == "mcp_smoke":
+    if t in ("mcp_smoke", "mcp_smoke_readonly"):
         from . import mcpsmoke
 
-        text = mcpsmoke.run(vault)
+        text = mcpsmoke.run_readonly(vault) if t == "mcp_smoke_readonly" else mcpsmoke.run(vault)
         return text, "Проверила все инструменты MCP", ""
     if t == "remember":
         from ..agent import profile as P

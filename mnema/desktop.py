@@ -1010,7 +1010,6 @@ class App:
                 if page is not self._renderer_page:
                     self._renderer_page = page
                     signal.connect(recover)
-                    _note("renderer: вотчдог подключён")
                 elif self._renderer_crashes:
                     _note("renderer: интерфейс восстановлен")
             except Exception as exc:  # noqa: BLE001 — the watchdog must never break the window
@@ -1057,10 +1056,6 @@ class App:
                 elif verdict == "ok":
                     warned = False
 
-        _note(
-            f"renderer: сторож памяти запущен (раз в {RENDERER_MEMORY_CHECK_S} с, "
-            f"порог {RENDERER_MEMORY_WARN_MB}/{RENDERER_MEMORY_RELOAD_MB} МБ)"
-        )
         threading.Thread(target=monitor, daemon=True, name="ui-memory").start()
 
     def build_tray(self):

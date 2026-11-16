@@ -90,6 +90,18 @@ class _Events:
         self.loaded = _LoadedEvent()
 
 
+class _Url:
+    def __init__(self, url):
+        self._url = url
+
+    def toString(self):
+        return self._url
+
+
+class _FakeCore:
+    QUrl = _Url
+
+
 class _Window:
     def __init__(self, page):
         self.native = _Native(page)
@@ -113,10 +125,13 @@ class RendererWatchdog(unittest.TestCase):
             D, "_renderer_schedule", side_effect=lambda delay, callback: self.scheduled.append((delay, callback))
         )
         self.note_patch = mock.patch.object(D, "_note", side_effect=self.notes.append)
+        self.core_patch = mock.patch.object(D, "_renderer_qtcore", return_value=_FakeCore())
         self.schedule_patch.start()
         self.note_patch.start()
+        self.core_patch.start()
         self.addCleanup(self.schedule_patch.stop)
         self.addCleanup(self.note_patch.stop)
+        self.addCleanup(self.core_patch.stop)
         self.app._watch_renderer()
 
     def _load(self):
@@ -125,7 +140,9 @@ class RendererWatchdog(unittest.TestCase):
     def test_watchdog_attaches_when_the_page_is_ready(self):
         self._load()
         self.assertEqual(len(self.page.renderProcessTerminated.slots), 1)
-        self.assertIn("renderer: вотчдог подключён", self.notes)
+        self.assertEqual(
+            self.notes, []
+        )  # a clean start writes nothing to app.log: the GUI smoke test demands a clean log
 
     def test_renderer_crash_schedules_a_reload_and_logs_it(self):
         self._load()

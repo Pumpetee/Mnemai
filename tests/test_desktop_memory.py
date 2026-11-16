@@ -106,7 +106,7 @@ class MemoryWatch(unittest.TestCase):
             app._watch_memory()
         self.assertEqual(started[0]["name"], "ui-memory")
         self.assertTrue(started[0]["daemon"])
-        self.assertTrue(any("сторож памяти запущен" in str(c.args[0]) for c in note.call_args_list))
+        note.assert_not_called()  # a clean start writes nothing to app.log: the GUI smoke test demands a clean log
 
     def test_monitor_warns_once_and_reloads_at_the_cap(self):
         app = D.App.__new__(D.App)

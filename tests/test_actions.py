@@ -250,7 +250,11 @@ class ActionsTest(unittest.TestCase):
         s = Script('Проверю систему.\n```mnema run_command command="echo mnema-pc-ok"\n```', 'Команда сработала.')
         r, owner = self._send(v, "Проверь терминал", s, ["yes"])
         self.assertTrue(any("терминал" in w or "команд" in w for w in owner.asked))
-        self.assertIn("mnema-pc-ok", str(s.seen[-1][1]))  # the result came back to the model
+        # the result comes back to the model, and a chat-title call may race in after it: look at every call
+        self.assertTrue(
+            any("mnema-pc-ok" in str(messages) for _, messages in s.seen),
+            "the command output must reach the model",
+        )
         msgs = CH.load_chat(v, r["chat"])["messages"]
         action = next(m for m in msgs if m.get("kind") == "action")
         self.assertIn("mnema-pc-ok", action.get("detail") or "")  # the full command/result lives in the hover table

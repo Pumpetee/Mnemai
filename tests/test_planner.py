@@ -87,6 +87,25 @@ class Planner(unittest.TestCase):
         self.assertTrue(doc and Path(doc).is_file())  # the schema is also a Markdown document
         self.assertIn("Схема задачи", Path(doc).read_text(encoding="utf-8"))
 
+    def test_the_owner_can_choose_who_picks_the_executors(self):
+        v = _vault()
+
+        def run_with(planner):
+            with (
+                patch.object(PR, "status", lambda vault: STATUS),
+                patch.object(PL, "_memory", lambda vault, pid: ""),
+                patch.object(PL, "_history", lambda vault, cid: []),
+                patch.object(PR, "complete", side_effect=RuntimeError("нет сети")),
+            ):
+                return PL.propose(v, "Сделай отчёт", "", planner)
+
+        self.assertEqual(run_with("local")[0]["planner"]["model"], "local:qwen3")
+        self.assertEqual(run_with("strong")[0]["planner"]["model"], "claude_code:haiku")
+        self.assertEqual(run_with("harness:deepseek-flash")[0]["planner"]["model"], "harness:deepseek-flash")
+        with patch.object(PR, "status", lambda vault: STATUS):
+            with self.assertRaises(ValueError):
+                PL.propose(v, "Сделай отчёт", "", "no-such:model")
+
     def test_the_chain_passes_work_from_one_ai_to_the_next(self):
         v = _vault()
         chat = {

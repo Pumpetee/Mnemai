@@ -20452,3 +20452,74 @@ button.xft:hover {
   border-color: var(--acc3);
   color: var(--acc);
 }
+
+/* who picks the executors: three clear choices plus any connected model */
+.planwho {
+  margin-top: 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+}
+.planwhoh {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 9px;
+}
+.planwhoh span {
+  font-size: calc(13px * var(--fs));
+  font-weight: 650;
+}
+.planwhoh small {
+  font-size: calc(11.5px * var(--fs));
+  color: var(--ink3);
+}
+.planwhoopts {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pwopt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 118px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  color: var(--ink2);
+  text-align: left;
+  cursor: pointer;
+}
+.pwopt b {
+  font-size: calc(12.5px * var(--fs));
+  font-weight: 650;
+  color: var(--ink);
+}
+.pwopt small {
+  font-size: calc(11px * var(--fs));
+  color: var(--ink3);
+}
+.pwopt.on {
+  border-color: var(--acc3);
+  background: var(--acc2);
+  box-shadow: 0 0 0 2px var(--acc2);
+}
+.planwhosel {
+  max-width: 230px;
+  min-width: 170px;
+  margin-left: auto;
+  align-self: center;
+}
+.planwhoinfo {
+  margin-top: 7px;
+  font-size: calc(11.5px * var(--fs));
+  color: var(--ink3);
+}
+.planwhoinfo:empty {
+  display: none;
+}

@@ -119,6 +119,36 @@ def available(vault: Vault) -> list[dict]:
     return rows
 
 
+def _planner(rows: list[dict], wanted: str) -> dict:
+    """Who chooses the executors: the cheapest ready model (auto), a strong one, a local one or an exact model."""
+    wanted = (wanted or "").strip()
+    if wanted and wanted not in ("auto", "strong", "local"):
+        row = next((r for r in rows if r["model"] == wanted), None)
+        if not row:
+            raise ValueError("эта модель не подключена")
+        return row
+    if wanted == "local":
+        row = next((r for r in rows if r["free"]), None)
+        if not row:
+            raise ValueError("нет локальной модели — выбери другого планировщика")
+        return row
+    if wanted == "strong":
+        return max(rows, key=lambda r: (r["tier"], not r["free"]))
+    order = (
+        "harness",
+        "local",
+        "ollama",
+        "strata",
+        "deepseek",
+        "gemini",
+        "openai",
+        "anthropic",
+        "claude_code",
+        "openrouter",
+    )
+    return next((r for pid in order for r in rows if r["pid"] == pid), rows[0])
+
+
 def _memory(vault: Vault, pid: str) -> str:
     """What Mnemai knows about the owner, as this AI is allowed to see it."""
     try:
@@ -259,7 +289,7 @@ def _slug(text: str) -> str:
     return out[:48] or "план"
 
 
-def _save_plan_document(vault: Vault, task: str, plans: list[dict], context: dict) -> str:
+def _save_plan_document(vault: Vault, task: str, plans: list[dict], context: dict, planner: dict | None = None) -> str:
     """A Markdown document with the schema, next to the other notes: the owner asked for a file, not only a card."""
     try:
         folder = vault.root / "00 Inbox" / "Схемы"
@@ -273,6 +303,8 @@ def _save_plan_document(vault: Vault, task: str, plans: list[dict], context: dic
             f"**Создана:** {time.strftime('%d.%m.%Y %H:%M')}",
             f"**Контекст:** память {context.get('memory_chars', 0)} знаков, "
             f"история {context.get('history_msgs', 0)} сообщений",
+            f"**Исполнителей подбирал:** {planner.get('name') if planner else '—'}",
+            "",
             "",
             "## Варианты",
             "",
@@ -430,7 +462,7 @@ def _parse_plans(text: str, rows: list[dict]) -> list[dict]:
     return plans
 
 
-def propose(vault: Vault, task: str, chat_id: str = "") -> list[dict]:
+def propose(vault: Vault, task: str, chat_id: str = "", planner: str = "auto") -> list[dict]:
     """Ask a cheap connected AI to choose the roles and executors; fall back to the built-in schemes."""
     task = (task or "").strip()
     if not task:
@@ -439,20 +471,8 @@ def propose(vault: Vault, task: str, chat_id: str = "") -> list[dict]:
     if not rows:
         raise ValueError("нет подключённых моделей: подключи хотя бы одну в Настройках → ИИ и модели")
     plans: list[dict] = []
-    order = (
-        "harness",
-        "local",
-        "ollama",
-        "strata",
-        "deepseek",
-        "gemini",
-        "openai",
-        "anthropic",
-        "claude_code",
-        "openrouter",
-    )
-    cheapest = next((r for pid_ in order for r in rows if r["pid"] == pid_), rows[0])
-    memory = _memory(vault, cheapest["pid"])
+    chosen = _planner(rows, planner)
+    memory = _memory(vault, chosen["pid"])
     history = _history(vault, chat_id)
     context_chars = min(len(memory), 8000) + sum(len(line) for line in history)
     context_info = {
@@ -461,7 +481,7 @@ def propose(vault: Vault, task: str, chat_id: str = "") -> list[dict]:
         "history_chars": sum(len(line) for line in history),
     }
     try:
-        pid, mname = CH.split_model(cheapest["model"])
+        pid, mname = CH.split_model(chosen["model"])
         listing = "\n".join(f"- {r['model']} — {r['name']} ({r['provider']})" for r in rows[:40])
         system = PLAN_PROMPT
         if memory:
@@ -493,10 +513,12 @@ def propose(vault: Vault, task: str, chat_id: str = "") -> list[dict]:
         p["context"] = context_info
         estimate(p, task, context_chars=context_chars)
     result = _justify(plans)
-    doc = _save_plan_document(vault, task, result, context_info)
+    doc = _save_plan_document(vault, task, result, context_info, chosen)
     if doc:
         for p in result:
             p["doc"] = doc
+    for p in result:
+        p["planner"] = {"model": chosen["model"], "name": chosen["name"], "provider": chosen["provider"]}
     return result
 
 

@@ -433,7 +433,14 @@ def post(vault: Vault, path: str, b: dict):
     if path == "/api/plan/propose":  # a schema of steps with executors, estimates and three variants
         from .chat import planner as PL
 
-        return 200, {"plans": PL.propose(vault, str(b.get("task", "")).strip(), str(b.get("chat", "") or ""))}
+        return 200, {
+            "plans": PL.propose(
+                vault,
+                str(b.get("task", "")).strip(),
+                str(b.get("chat", "") or ""),
+                str(b.get("planner", "") or "auto"),
+            )
+        }
     if path == "/api/plan/run":
         from .chat import planner as PL
 

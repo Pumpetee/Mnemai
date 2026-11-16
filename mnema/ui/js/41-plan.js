@@ -1,6 +1,7 @@
 // Схема задачи: несколько ИИ по шагам, с оценкой времени и токенов — и три варианта на выбор.
 let PLAN_PLANS = [],
-  PLAN_TASK = "";
+  PLAN_TASK = "",
+  PLAN_WHO = LS.get("plan_who", "auto");
 
 function planTokRange(e) {
   const lo = e.tokens_min ?? e.tokens ?? 0,
@@ -92,6 +93,7 @@ function planOpen() {
     </div>
     <div class="planbox">
       <textarea id="plantask" class="planinp" rows="4" placeholder="${tr("Например: разбери договоры в папке, найди риски и сделай короткий отчёт")}"></textarea>
+      ${planWhoHTML()}
     </div>
     <div class="planfoot">
       <div class="plannote">${ic("mem")}${tr("учтём память и историю разговора")} · ${ic("users")}${tr("исполнители из подключённых ИИ")}</div>
@@ -105,6 +107,7 @@ function planOpen() {
     if (e.target === pop) planClose();
   };
   $("#plango", pop).onclick = planPropose;
+  planWhoWire(pop);
   setTimeout(() => $("#plantask", pop).focus(), 60);
 }
 
@@ -119,9 +122,12 @@ async function planPropose() {
   if (out)
     out.innerHTML = `<div class="planwait"><i class="planspin"></i><span>${tr("Подбираю исполнителей из подключённых ИИ…")}</span></div>`;
   try {
-    const r = await post("/api/plan/propose", { task, chat: CHAT.id || "" });
+    const r = await post("/api/plan/propose", { task, chat: CHAT.id || "", planner: PLAN_WHO });
     PLAN_TASK = task;
     PLAN_PLANS = r.plans || [];
+    const info = $("#planwhoinfo");
+    const who = PLAN_PLANS[0] && PLAN_PLANS[0].planner;
+    if (info && who) info.textContent = `${tr("Подобрал")}: ${who.name} · ${who.provider}`;
     renderPlans();
   } catch (e) {
     toast(e.message);
@@ -145,6 +151,64 @@ function renderPlans() {
   $$("[data-plan-run]", out).forEach((b) => {
     b.onclick = () => planAsk(b.dataset.planRun);
   });
+}
+
+function planWhoList() {
+  return (CHAT.providers || [])
+    .filter((p) => p.ready)
+    .flatMap((p) =>
+      (p.models || []).map((m) => ({
+        v: p.id + ":" + m.id,
+        pid: p.id,
+        label: (p.id === "local" ? "На компьютере · " : p.name + " · ") + m.name,
+      })),
+    );
+}
+
+function planWhoHTML() {
+  const models = planWhoList();
+  if (!["auto", "strong", "local"].includes(PLAN_WHO) && !models.some((m) => m.v === PLAN_WHO)) PLAN_WHO = "auto";
+  const hasLocal = models.some((m) => ["local", "ollama", "strata"].includes(m.pid));
+  const chip = (v, title, sub) =>
+    `<button type="button" class="pwopt ${PLAN_WHO === v ? "on" : ""}" data-pw="${v}"><b>${tr(title)}</b><small>${tr(sub)}</small></button>`;
+  const opts = models
+    .map((m) => `<option value="${esc(m.v)}"${PLAN_WHO === m.v ? " selected" : ""}>${esc(m.label)}</option>`)
+    .join("");
+  return `<div class="planwho">
+    <div class="planwhoh"><span>${tr("Исполнителей подбирает")}</span><small>${tr("от планировщика зависят качество, время и цена схемы")}</small></div>
+    <div class="planwhoopts">
+      ${chip("auto", "Авто", "дешёвая и быстрая")}
+      ${chip("strong", "Сильная", "умнее план")}
+      ${hasLocal ? chip("local", "Локально", "без оплаты") : ""}
+      <select id="planwhosel" class="planwhosel" title="${tr("Выбрать другую модель")}"><option value="">${tr("Другая модель…")}</option>${opts}</select>
+    </div>
+    <div class="planwhoinfo" id="planwhoinfo"></div>
+  </div>`;
+}
+
+function planWhoWire(pop) {
+  $$("[data-pw]", pop).forEach(
+    (b) =>
+      (b.onclick = () => {
+        PLAN_WHO = b.dataset.pw;
+        LS.set("plan_who", PLAN_WHO);
+        const sel = $("#planwhosel", pop);
+        if (sel) sel.value = "";
+        $$("[data-pw]", pop).forEach((x) => x.classList.toggle("on", x === b));
+        const info = $("#planwhoinfo", pop);
+        if (info) info.textContent = "";
+      }),
+  );
+  const sel = $("#planwhosel", pop);
+  if (sel)
+    sel.onchange = () => {
+      if (!sel.value) return;
+      PLAN_WHO = sel.value;
+      LS.set("plan_who", PLAN_WHO);
+      $$("[data-pw]", pop).forEach((x) => x.classList.remove("on"));
+      const info = $("#planwhoinfo", pop);
+      if (info) info.textContent = "";
+    };
 }
 
 function planCloseAsk() {

@@ -1060,7 +1060,7 @@ class App:
         killed = 0
         for pid in pids:
             try:
-                os.kill(pid, signal.SIGKILL)
+                os.kill(pid, _SIGKILL)
                 killed += 1
             except OSError:  # noqa: PERF203 — the renderer may have exited between the scan and the kill
                 continue
@@ -1368,6 +1368,7 @@ def _env_number(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+_SIGKILL = getattr(signal, "SIGKILL", 9)  # Linux/macOS have it; Windows only imports this module, never sends it
 RENDERER_MEMORY_CHECK_S = _env_number("MNEMA_RENDERER_MEM_CHECK_S", 30)  # how often the native memory is looked at
 RENDERER_MEMORY_WARN_MB = _env_number("MNEMA_RENDERER_MEM_WARN_MB", 1500)  # one line in app.log above this
 RENDERER_MEMORY_RELOAD_MB = _env_number("MNEMA_RENDERER_MEM_RELOAD_MB", 3000)  # reload the page above this

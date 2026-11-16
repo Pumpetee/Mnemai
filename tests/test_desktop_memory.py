@@ -128,7 +128,7 @@ class RendererRestart(unittest.TestCase):
             mock.patch.object(D, "_note") as note,
         ):
             app._restart_renderer()
-        self.assertEqual(kill.call_args_list, [mock.call(11, D.signal.SIGKILL), mock.call(22, D.signal.SIGKILL)])
+        self.assertEqual(kill.call_args_list, [mock.call(11, D._SIGKILL), mock.call(22, D._SIGKILL)])
         self.assertTrue(any("перезапускаю процесс рендерера (2)" in str(c.args[0]) for c in note.call_args_list))
         self.assertEqual(app._renderer_crashes, [])
         app._reload_ui.assert_not_called()

@@ -353,6 +353,21 @@ class ActionsTest(unittest.TestCase):
         self.assertIn("memory_context", text)
         self.assertIn("все инструменты", line)
 
+    def test_all_write_smoke_switches_the_safe_sweep_to_writes(self):
+        call = TL.parse("```mnema mcp_smoke_all\n```")
+        self.assertEqual(call["tool"], "mcp_smoke_all")
+        v = _vault()
+        seen = {}
+
+        def fake_sweep(vault, allow_writes=False):
+            seen["w"] = allow_writes
+            return "| memory_remember | ok |"
+
+        with patch("mnema.chat.mcpsmoke.run_readonly", fake_sweep):
+            text, line, _ = TL.run(v, call)
+        self.assertTrue(seen.get("w"))
+        self.assertIn("memory_remember", text)
+
     def test_mcp_desktop_control_still_needs_the_owner(self):
         v = _vault()
         call = TL.parse('```mnema mcp_call name="pc_click"\n{"x": 1, "y": 2}\n```')

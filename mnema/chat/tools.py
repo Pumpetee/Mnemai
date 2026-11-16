@@ -53,6 +53,7 @@ TOOLS = (
     "mcp_call",
     "mcp_smoke",
     "mcp_smoke_readonly",
+    "mcp_smoke_all",
 )
 WRITES = {
     "write_file",
@@ -65,6 +66,7 @@ WRITES = {
     "mcp_call",
     "mcp_smoke",
     "mcp_smoke_readonly",
+    "mcp_smoke_all",
 }
 TEXT_EXT = {".md", ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".log", ".ini", ".tsv"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
@@ -221,7 +223,9 @@ pc_scroll, pc_open_app, open_app) без отдельного разрешени
 «инструмент | вызван | результат | замечание», уберёт тестовую папку, память и вернёт буфер обмена.
 Если владелец требует режим «хранилище только читаем», вызови ```mnema mcp_smoke_readonly```:
 он ничего не пишет в память, списки и задачи, файлы проверяет только в /tmp, а управление
-рабочим столом пропускает.
+рабочим столом пропускает. Если владелец разрешил проверять и запись, вызови
+```mnema mcp_smoke_all```: тестовые записи памяти, дел и задач создаются с пометкой и удаляются,
+файлы остаются в /tmp, рабочий стол не трогается.
 """
 
 
@@ -469,7 +473,7 @@ def what(vault: Vault, call: dict) -> str:
         exists = False
     if t == "mcp_call":
         return f"вызвать MCP-инструмент {call.get('name', '')}"
-    if t in ("mcp_smoke", "mcp_smoke_readonly"):
+    if t in ("mcp_smoke", "mcp_smoke_readonly", "mcp_smoke_all"):
         return "пройти все инструменты локального MCP-сервера"
     return {
         "read_file": f"прочитать файл {path}",
@@ -1448,10 +1452,15 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
     t = call["tool"]
     if t == "mcp_call":
         return _mcp_run(vault, call)
-    if t in ("mcp_smoke", "mcp_smoke_readonly"):
+    if t in ("mcp_smoke", "mcp_smoke_readonly", "mcp_smoke_all"):
         from . import mcpsmoke
 
-        text = mcpsmoke.run_readonly(vault) if t == "mcp_smoke_readonly" else mcpsmoke.run(vault)
+        if t == "mcp_smoke_all":
+            text = mcpsmoke.run_readonly(vault, allow_writes=True)
+        elif t == "mcp_smoke_readonly":
+            text = mcpsmoke.run_readonly(vault)
+        else:
+            text = mcpsmoke.run(vault)
         return text, "Проверила все инструменты MCP", ""
     if t == "remember":
         from ..agent import profile as P

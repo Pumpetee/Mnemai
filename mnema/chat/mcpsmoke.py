@@ -295,14 +295,16 @@ READONLY_SKIP = {
 }
 
 
-def run_readonly(vault: Vault) -> str:
-    """The same catalogue, but the vault is strictly read-only and every file test lives in /tmp."""
+def run_readonly(vault: Vault, allow_writes: bool = False) -> str:
+    """The same catalogue; files live in /tmp. With allow_writes the memory/todo/task write tools are tested too,
+    using marked records and removing them afterwards."""
     import tempfile
 
     from ..mcp_server import Server, TOOLS
 
     server = Server(vault, "local")
     folder = Path(tempfile.gettempdir()) / f"mnemai-mcp-smoke-{date.today().isoformat()}"
+    marker = "MCP-SMOKE-" + time.strftime("%H%M%S")
     from ..agent import profile as profile_mod
 
     profile = profile_mod.load(vault)
@@ -312,6 +314,8 @@ def run_readonly(vault: Vault) -> str:
     if "tools/list" not in expected:
         expected.insert(0, "tools/list")
     notes: dict[str, str] = {}
+    skip = {} if allow_writes else READONLY_SKIP
+    write_ids: list[tuple[str, str]] = []  # (action, id) for todo/task cleanup
 
     def call(name: str, args: dict | None = None) -> str | None:
         try:
@@ -341,6 +345,29 @@ def run_readonly(vault: Vault) -> str:
         call("task_list")
         call("clients_list")
         call("journal_tail", {"limit": 5})
+
+        if allow_writes:
+            # write tools are tested with uniquely marked records and cleaned in finally
+            mem = call("memory_remember", {"fact": f"{marker} write test; удалить", "where": "inbox"})
+            if mem:
+                call("memory_update", {"query": marker, "text": f"{marker} write test updated"})
+            undo_mem = call("memory_remember", {"fact": f"{marker}-undo write test", "where": "inbox"})
+            if undo_mem:
+                call("memory_undo", {"id": _id(undo_mem)})
+            todo = call("todo_add", {"text": f"{marker} todo", "priority": "normal"})
+            if todo:
+                write_ids.append(("todo", _id(todo)))
+                call("todo_update", {"id": _id(todo), "text": f"{marker} todo updated"})
+                call("todo_done", {"id": _id(todo)})
+                call("todo_remove", {"id": _id(todo)})
+            task = call("task_add", {"text": f"{marker} task", "priority": "normal", "auto": False})
+            if task:
+                write_ids.append(("task", _id(task)))
+                call("task_update", {"id": _id(task), "text": f"{marker} task updated"})
+                call("task_run", {"id": _id(task)})
+                call("task_done", {"id": _id(task)})
+                call("task_remove", {"id": _id(task)})
+            call("memory_forget", {"query": marker})  # cleanup is repeated in finally as a safety net
 
         # files: /tmp only
         if folder.exists():
@@ -450,6 +477,16 @@ def run_readonly(vault: Vault) -> str:
         except Exception:  # noqa: BLE001
             pass
         try:
+            if allow_writes:
+                server.call("memory_forget", {"query": marker}, strict=True)
+        except Exception:  # noqa: BLE001
+            pass
+        for kind, item_id in write_ids:
+            try:
+                server.call("todo_remove" if kind == "todo" else "task_remove", {"id": item_id}, strict=True)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
             if folder.exists():
                 shutil.rmtree(folder)
         except Exception:  # noqa: BLE001
@@ -473,7 +510,7 @@ def run_readonly(vault: Vault) -> str:
         "pc_clipboard_get",
     }
     lines = [
-        f"# MCP smoke Mnemai · read-only vault · {date.today().isoformat()}",
+        f"# MCP smoke Mnemai · {'write test allowed' if allow_writes else 'read-only vault'} · {date.today().isoformat()}",
         "",
         f"Инструментов в каталоге: {len(expected)} · тестовая папка: {folder} (удалена)",
         "",
@@ -482,8 +519,8 @@ def run_readonly(vault: Vault) -> str:
     ]
     ok = failed = skipped = partial = 0
     for name in expected:
-        if name in DESKTOP or name in READONLY_SKIP:
-            why = "нужно отдельное «да» владельца" if name in DESKTOP else READONLY_SKIP[name]
+        if name in DESKTOP or name in skip:
+            why = "нужно отдельное «да» владельца" if name in DESKTOP else skip[name]
             lines.append(f"| {name} | нет | пропущен | {why} |")
             skipped += 1
             continue
@@ -524,7 +561,11 @@ def run_readonly(vault: Vault) -> str:
     lines += [
         "",
         f"Итог: ок {ok} · частично {partial} · ошибок {failed} · пропущено {skipped}.",
-        "Записи в память и списки не вызывались; буфер обмена восстановлен; /tmp-папка удалена."
+        (
+            "Тестовые записи памяти, дел и задач созданы и удалены; буфер обмена восстановлен; /tmp-папка удалена."
+            if allow_writes
+            else "Записи в память и списки не вызывались; буфер обмена восстановлен; /tmp-папка удалена."
+        )
         if not folder.exists()
         else "ВНИМАНИЕ: /tmp-папка не удалена.",
     ]

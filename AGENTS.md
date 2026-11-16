@@ -42,7 +42,7 @@ Cursor и любые другие. Перед работой прочитай е
 
 - Ветка `main`, HEAD `12cffe5`; последний выпущенный тег — `v2.5.6` (`2b3bda1`). После тега **49 коммитов
   не выпущено**; версию, тег и релиз не поднимать без прямой просьбы владельца.
-- Тесты: `python3 -m unittest discover -s tests -p "test_*.py"` — **615**, падают только 3 известных
+- Тесты: `python3 -m unittest discover -s tests -p "test_*.py"` — **626**, падают только 3 известных
   средовых теста: `test_local.test_status_shape`, `test_providers_state...switching_off`,
   `test_qa_1022.FirstRun.test_no_model_is_said_plainly`. Линтеры: `ruff check`, `ruff format --check`,
   `prettier --check` — чисто.
@@ -75,3 +75,7 @@ Cursor и любые другие. Перед работой прочитай е
 - Linux: QtWebEngine с `--disable-gpu`; при падении рендерера вотчдог сам перезагружает страницу
   (400/1500/4000/15000 мс, затем раз в минуту) и пишет это в `app.log`; неотправленный текст
   восстанавливается из draft.
+- Linux: сторож памяти рендерера проверяет нативный RSS дерева процессов раз в 30 с; выше 1500 МБ —
+  одна строка в `app.log`, выше 3000 МБ — перезагрузка страницы (рендерер начинается с нуля; чат живёт
+  на сервере, draft не теряется). Пороги и интервал можно переопределить переменными
+  `MNEMA_RENDERER_MEM_WARN_MB`, `MNEMA_RENDERER_MEM_RELOAD_MB`, `MNEMA_RENDERER_MEM_CHECK_S`.

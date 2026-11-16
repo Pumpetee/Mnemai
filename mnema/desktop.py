@@ -1018,6 +1018,51 @@ class App:
 
         self.window.events.loaded += on_loaded
 
+    def _reload_ui(self) -> None:
+        """Reload the page from a background thread: a fresh renderer releases whatever the old one held."""
+        try:
+            self.window.evaluate_js("location.reload()")
+        except Exception as exc:  # noqa: BLE001 — recovery must never end the program
+            _note(f"renderer: перезагрузка страницы не удалась: {exc}")
+
+    def _watch_memory(self):
+        """Cap the renderer's native memory: a black window is worse than a page reload.
+
+        JS heap metrics stay at a few MB while the Blink/compositor side of the renderer can grow to gigabytes
+        (a huge answer, a long live table, an engine leak). Then Linux' OOM killer takes the renderer away and the
+        window goes black. The chat lives on the server and an unsent draft survives a reload, so a fresh renderer
+        costs only a blink.
+        """
+        if not OS.IS_LINUX:
+            return
+
+        def monitor():
+            warned = False
+            while not self.quitting:
+                threading.Event().wait(RENDERER_MEMORY_CHECK_S)
+                if self.quitting or not self.window:
+                    return
+                rss = _descendants_rss_mb(os.getpid())
+                verdict = _memory_action(rss)
+                if verdict == "reload":
+                    _note(
+                        f"renderer: память окна {rss:.0f} МБ ≥ {RENDERER_MEMORY_RELOAD_MB} МБ — "
+                        "перезагружаю страницу, чтобы рендерер начал с нуля"
+                    )
+                    self._reload_ui()
+                    warned = False
+                elif verdict == "warn" and not warned:
+                    _note(f"renderer: память окна {rss:.0f} МБ — выше обычного, слежу")
+                    warned = True
+                elif verdict == "ok":
+                    warned = False
+
+        _note(
+            f"renderer: сторож памяти запущен (раз в {RENDERER_MEMORY_CHECK_S} с, "
+            f"порог {RENDERER_MEMORY_WARN_MB}/{RENDERER_MEMORY_RELOAD_MB} МБ)"
+        )
+        threading.Thread(target=monitor, daemon=True, name="ui-memory").start()
+
     def build_tray(self):
         """pystray on Windows and macOS. On Linux the window runs on Qt, so the tray is Qt's own (qt_tray, started
         with the window). A tray that can't start never stops the program: closing the window then quits."""
@@ -1168,6 +1213,7 @@ class App:
 
         self.window.events.loaded += fit_default_window
         self._watch_renderer()
+        self._watch_memory()
         self.build_tray()
         from .updater import Checker, Updater
 
@@ -1269,6 +1315,67 @@ def _renderer_schedule(delay_ms: int, callback) -> None:
     core = _renderer_qtcore()
     if core is not None:
         core.QTimer.singleShot(delay_ms, callback)
+
+
+def _env_number(name: str, default: int) -> int:
+    """A positive integer from the environment, or the default (used by tests and by low-memory machines)."""
+    try:
+        value = int(os.environ.get(name, ""))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+RENDERER_MEMORY_CHECK_S = _env_number("MNEMA_RENDERER_MEM_CHECK_S", 30)  # how often the native memory is looked at
+RENDERER_MEMORY_WARN_MB = _env_number("MNEMA_RENDERER_MEM_WARN_MB", 1500)  # one line in app.log above this
+RENDERER_MEMORY_RELOAD_MB = _env_number("MNEMA_RENDERER_MEM_RELOAD_MB", 3000)  # reload the page above this
+
+
+def _proc_children(pid: int) -> list[int]:
+    """Direct children of a process from /proc (Linux); empty when the kernel does not expose them."""
+    try:
+        text = Path(f"/proc/{pid}/task/{pid}/children").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return [int(part) for part in text.split() if part.isdigit()]
+
+
+def _rss_mb(pid: int) -> float:
+    """Resident memory of one process in MB; 0 when it is gone."""
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) / 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0.0
+
+
+def _descendants_rss_mb(pid: int) -> float:
+    """Native RSS of the process subtree below pid: the QtWebEngine renderer is a child of the app.
+
+    JS heap metrics cannot see the Blink/compositor side of the renderer, so this is the number to watch.
+    """
+    total = 0.0
+    stack, seen = [pid], set()
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if current != pid:
+            total += _rss_mb(current)
+        stack.extend(_proc_children(current))
+    return total
+
+
+def _memory_action(rss_mb: float) -> str:
+    """What to do about the renderer's native memory: ok, warn once, or reload the page."""
+    if rss_mb >= RENDERER_MEMORY_RELOAD_MB:
+        return "reload"
+    if rss_mb >= RENDERER_MEMORY_WARN_MB:
+        return "warn"
+    return "ok"
 
 
 WEBVIEW2 = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"

@@ -20721,3 +20721,84 @@ button.xft:hover {
 .planres .planresh {
   min-width: 0;
 }
+
+/* a step reports how it ended: a tick for a normal one, a loud mark for an empty, timed-out or stopped one */
+.psts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: calc(11px * var(--fs));
+  white-space: nowrap;
+}
+.psts svg.i {
+  width: 12px;
+  height: 12px;
+}
+.psts.ok {
+  color: var(--ok);
+  background: var(--okb);
+}
+.psts.bad {
+  color: var(--bad);
+  background: var(--badb);
+  font-weight: 600;
+}
+.psts.warn {
+  color: var(--warn);
+  background: var(--warnb);
+  font-weight: 600;
+}
+.pstep.bad {
+  border-radius: 9px;
+  background: var(--badb);
+}
+.pstep.warn {
+  border-radius: 9px;
+  background: var(--warnb);
+}
+.pstepnote {
+  color: var(--bad);
+  white-space: normal;
+}
+.pstep.warn .pstepnote {
+  color: var(--warn);
+}
+.pstat.bad {
+  color: var(--bad);
+}
+
+/* a stopped plan result: the headline names the cause, the two actions stay on the right */
+.planresstop {
+  border-left-color: var(--bad);
+}
+.planresh.stop {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  color: var(--bad);
+}
+.planresh.stop b {
+  color: var(--bad);
+}
+.planresh.stop span {
+  color: var(--ink2);
+}
+.planresacts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex: none;
+}
+.planresacts .pdocc {
+  margin-left: 0;
+}
+.preplan {
+  color: var(--acc);
+  border-color: var(--acc3);
+}
+.preplan:hover {
+  color: var(--acc-d);
+}

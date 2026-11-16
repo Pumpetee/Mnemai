@@ -6,12 +6,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
 
-from mnema.chat import engine as CH, planner as PL, providers as PR  # noqa: E402
+from mnema.chat import engine as CH, planner as PL, providers as PR, tools as TL  # noqa: E402
 from mnema.memory import init_vault  # noqa: E402
 from mnema.vault import Vault  # noqa: E402
 
@@ -32,6 +33,58 @@ def _vault() -> Vault:
     v = Vault(Path(tempfile.mkdtemp()))
     init_vault(v)
     return v
+
+
+def _chat(v: Vault) -> dict:
+    chat = {
+        "id": "abcdef123456",
+        "title": "План",
+        "created": CH._now(),
+        "session": CH.current_session(v)["id"],
+        "messages": [],
+    }
+    CH.save_chat(v, chat)
+    return chat
+
+
+def _schema_doc(v: Vault, task: str) -> str:
+    """A real schema document in the vault: the plan result appends its report to it."""
+    folder = v.root / "00 Inbox" / "Схемы"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "plan.md"
+    path.write_text(f"# Схема задачи\n\n**Задача:** {task}\n", encoding="utf-8")
+    return str(path)
+
+
+def _plan(v: Vault, task: str, steps: list[tuple[str, str, str, str]], doc: bool = True) -> dict:
+    """A ready-to-run plan; every step is (model, model_name, role, instruction)."""
+    plan = {"id": "optimal", "title": "Оптимально", "note": "", "task": task, "steps": []}
+    for model, model_name, role, instruction in steps:
+        plan["steps"].append(
+            {
+                "role": role,
+                "instruction": instruction,
+                "out": "ответ",
+                "model": model,
+                "model_name": model_name,
+                "provider": model_name,
+            }
+        )
+    if doc:
+        plan["doc"] = _schema_doc(v, task)
+    return plan
+
+
+def _wait(chat_id: str, tries: int = 200) -> None:
+    for _ in range(tries):
+        if (CH._gen.get(chat_id) or {}).get("done"):
+            return
+        time.sleep(0.02)
+    raise AssertionError("план не завершился за отведённое время")
+
+
+def _messages(v: Vault, chat_id: str) -> list[dict]:
+    return CH.load_chat(v, chat_id)["messages"]
 
 
 class Planner(unittest.TestCase):
@@ -179,6 +232,13 @@ class Planner(unittest.TestCase):
         self.assertEqual(ready["plan"]["steps"][1]["output"], "результат шага 2")
         result = next(m for m in msgs if m.get("kind") == "plan_result")
         self.assertEqual(result["text"], "результат шага 2")  # the answer is the final step, not a wall of text
+        for step in ready["plan"]["steps"]:
+            self.assertEqual(step["status"], "ok")
+            self.assertEqual(step["actions"], 0)
+            self.assertEqual(step["note"], "")
+        self.assertNotIn("stop_reason", ready["plan"])  # a finished chain has nothing to stop
+        self.assertEqual(result["plan"]["task"], "Сделай отчёт")
+        self.assertIsNone(result["plan"]["stop_reason"])
 
     def test_no_connected_models_is_explained(self):
         v = _vault()
@@ -186,6 +246,185 @@ class Planner(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 PL.fallback_plans(v, "что угодно")
         self.assertIn("модел", str(ctx.exception))
+
+    def test_empty_step_stops_the_plan_and_says_why(self):
+        v = _vault()
+        chat = _chat(v)
+        plan = _plan(
+            v,
+            "Сделай отчёт",
+            [
+                ("harness:deepseek-flash", "DeepSeek Flash", "План", "Составь план отчёта"),
+                ("claude_code:haiku", "Claude Haiku", "Финал", "Собери отчёт"),
+            ],
+        )
+        calls = []
+
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+            calls.append(pid)
+            return ""
+
+        with (
+            patch.object(PR, "status", lambda vault: STATUS),
+            patch.object(PR, "complete", fake_complete),
+            patch.object(CH, "_drain_queue"),
+        ):
+            PL.run(v, chat["id"], plan)
+            _wait(chat["id"])
+
+        messages = _messages(v, chat["id"])
+        ready = next(m for m in messages if m.get("kind") == "plan")["plan"]
+        result = next(m for m in messages if m.get("kind") == "plan_result")
+        self.assertEqual(len(calls), 2)  # two honest attempts of step 1, no call for step 2
+        self.assertEqual(ready["status"], "stopped")
+        self.assertEqual(ready["stop_reason"], "empty_step")
+        self.assertEqual(ready["steps"][0]["status"], "empty")
+        self.assertEqual(ready["steps"][0]["actions"], 0)
+        self.assertTrue(ready["steps"][0]["note"])
+        self.assertEqual(ready["steps"][1]["status"], "stopped")  # the rest is not run
+        self.assertIn("не выполнялся", ready["steps"][1]["note"])
+        self.assertIn("шаге 1 из 2", result["text"])
+        self.assertIn("План", result["text"])  # the role is named
+        self.assertIn("модель не вызвала инструменты", result["text"])
+        self.assertFalse(result["text"].startswith("_"))  # no literal markdown underscores in the owner's chat
+        self.assertIn("Открой документ", result["text"])
+        self.assertIn("пересобери схему", result["text"])
+        self.assertNotIn("Шаг не дал текста", result["text"])  # a bare complaint is never enough
+        self.assertEqual(result["plan"]["task"], "Сделай отчёт")
+        self.assertEqual(result["plan"]["stop_reason"], "empty_step")
+        doc = Path(plan["doc"]).read_text(encoding="utf-8")
+        self.assertIn("**Задача:** Сделай отчёт", doc)
+        self.assertIn("empty_step", doc)
+        self.assertIn("статус: empty", doc)
+        self.assertIn("действий: 0", doc)
+        self.assertIn("**Что случилось:**", doc)
+
+    def test_tool_using_empty_step_gets_one_summary_call_without_tools(self):
+        v = _vault()
+        chat = _chat(v)
+        plan = _plan(
+            v, "Прочитай заметки", [("harness:deepseek-flash", "DeepSeek Flash", "Чтение", "Прочитай документ")]
+        )
+        calls = []
+
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+            calls.append({"system": system, "messages": messages})
+            if len(calls) == 1:
+                return "```mnema read_file path=notes.md```"
+            if len(calls) == 2:
+                return ""
+            return "Итог: в документе пять пунктов."
+
+        def fake_parse(text):
+            if "mnema" in text:
+                return {"tool": "read_file", "path": "notes.md", "start": 0, "end": len(text)}
+            return None
+
+        with (
+            patch.object(PR, "status", lambda vault: STATUS),
+            patch.object(PR, "complete", fake_complete),
+            patch.object(TL, "enabled", lambda vault: True),
+            patch.object(TL, "rule", lambda vault, small=False: "ПРАВИЛО ИНСТРУМЕНТОВ"),
+            patch.object(TL, "parse", fake_parse),
+            patch.object(TL, "before", lambda text, call: ""),
+            patch.object(CH, "_act", lambda *args, **kwargs: "документ прочитан"),
+            patch.object(CH, "_drain_queue"),
+        ):
+            PL.run(v, chat["id"], plan)
+            _wait(chat["id"])
+
+        self.assertEqual(len(calls), 3)  # the action call, the empty answer, and ONE summary call
+        self.assertEqual(calls[-1]["messages"][-1]["text"], PL.SUMMARY_ASK)
+        self.assertIn("Инструменты", calls[-1]["messages"][-1]["text"])
+        self.assertIn(PL.TOOLS_FORBIDDEN, calls[-1]["system"])
+        messages = _messages(v, chat["id"])
+        ready = next(m for m in messages if m.get("kind") == "plan")["plan"]
+        result = next(m for m in messages if m.get("kind") == "plan_result")
+        self.assertEqual(ready["status"], "done")
+        self.assertEqual(ready["steps"][0]["status"], "ok")
+        self.assertEqual(ready["steps"][0]["actions"], 1)
+        self.assertEqual(ready["steps"][0]["output"], "Итог: в документе пять пунктов.")
+        self.assertEqual(result["text"], "Итог: в документе пять пунктов.")
+        self.assertIsNone(result["plan"]["stop_reason"])
+
+    def test_owner_stop_is_reported_as_such(self):
+        v = _vault()
+        chat = _chat(v)
+        plan = _plan(
+            v,
+            "Сделай отчёт",
+            [
+                ("harness:deepseek-flash", "DeepSeek Flash", "План", "Составь план"),
+                ("claude_code:haiku", "Claude Haiku", "Финал", "Собери отчёт"),
+            ],
+        )
+
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+            CH._gen[chat["id"]]["stop"] = True  # the owner pressed Escape while the step was running
+            return ""
+
+        with (
+            patch.object(PR, "status", lambda vault: STATUS),
+            patch.object(PR, "complete", fake_complete),
+            patch.object(CH, "_drain_queue"),
+        ):
+            PL.run(v, chat["id"], plan)
+            _wait(chat["id"])
+
+        messages = _messages(v, chat["id"])
+        ready = next(m for m in messages if m.get("kind") == "plan")["plan"]
+        result = next(m for m in messages if m.get("kind") == "plan_result")
+        self.assertEqual(ready["status"], "stopped")
+        self.assertEqual(ready["stop_reason"], "owner")
+        self.assertEqual(ready["steps"][0]["status"], "stopped")
+        self.assertEqual(ready["steps"][1]["status"], "stopped")
+        self.assertIn("Остановлено владельцем", result["text"])
+        self.assertEqual(result["plan"]["stop_reason"], "owner")
+
+    def test_timeout_stops_the_plan_and_does_not_run_later_steps(self):
+        v = _vault()
+        chat = _chat(v)
+        plan = _plan(
+            v,
+            "Сделай отчёт",
+            [
+                ("harness:deepseek-flash", "DeepSeek Flash", "План", "Составь план"),
+                ("claude_code:haiku", "Claude Haiku", "Финал", "Собери отчёт"),
+            ],
+        )
+        clock = {"now": 1000.0}
+        calls = []
+
+        def fake_time():
+            return clock["now"]
+
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+            calls.append(pid)
+            clock["now"] += 95.0  # the step exceeded the 90 s cap
+            return "результат шага 1"
+
+        with (
+            patch.object(PR, "status", lambda vault: STATUS),
+            patch.object(PR, "complete", fake_complete),
+            patch.object(PL, "time", SimpleNamespace(time=fake_time, strftime=time.strftime)),
+            patch.object(CH, "_drain_queue"),
+        ):
+            PL.run(v, chat["id"], plan)
+            _wait(chat["id"])
+
+        self.assertEqual(len(calls), 1)  # the second step was not started
+        messages = _messages(v, chat["id"])
+        ready = next(m for m in messages if m.get("kind") == "plan")["plan"]
+        result = next(m for m in messages if m.get("kind") == "plan_result")
+        self.assertEqual(ready["status"], "stopped")
+        self.assertEqual(ready["stop_reason"], "timeout")
+        self.assertEqual(ready["steps"][0]["status"], "timeout")
+        self.assertTrue(ready["steps"][0]["note"])
+        self.assertEqual(ready["steps"][1]["status"], "stopped")
+        self.assertIn("лимиту времени", result["text"])
+        self.assertIn("шаге 1 из 2", result["text"])
+        self.assertIn("результат шага 1", result["text"])  # what the step did manage to say is kept
+        self.assertEqual(result["plan"]["stop_reason"], "timeout")
 
 
 if __name__ == "__main__":

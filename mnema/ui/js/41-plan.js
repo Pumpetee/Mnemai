@@ -35,6 +35,34 @@ function planStepsWord(n) {
   return m === 1 ? "шаг" : m >= 2 && m <= 4 ? "шага" : "шагов";
 }
 
+function planActionsWord(n) {
+  const m = n % 10,
+    h = n % 100;
+  if (h >= 11 && h <= 14) return "действий";
+  return m === 1 ? "действие" : m >= 2 && m <= 4 ? "действия" : "действий";
+}
+
+// a step says how it ended: a normal one gets a tick, an empty, timed-out or stopped one — a visible mark
+const PLAN_STEP_MARKS = {
+  ok: ["check", "готово", "ok"],
+  empty: ["x", "нет текста", "bad"],
+  timeout: ["clock", "ошибка", "bad"],
+  stopped: ["pause", "стоп", "warn"],
+};
+
+function planStepMark(status) {
+  const key = String(status || "").trim();
+  return key ? PLAN_STEP_MARKS[key] || ["x", key, "bad"] : null;
+}
+
+function planStepStatusHTML(s, mark) {
+  const acts = Math.max(0, Math.round(Number(s.actions) || 0));
+  const tip = [tr(mark[1]), acts ? `${acts} ${planActionsWord(acts)}` : "", String(s.note || "").trim()]
+    .filter(Boolean)
+    .join(" · ");
+  return `<span class="psts ${mark[2]}" title="${esc(tip)}">${ic(mark[0])}${esc(tr(mark[1]))}</span>`;
+}
+
 function planSecs(sec) {
   const s = Math.max(1, Math.round(Number(sec) || 0));
   if (s < 60) return s + " с";
@@ -50,13 +78,28 @@ function planCardHTML(plan, inChat) {
   const nodes = steps
     .map((s, i) => {
       const e = s.est || {},
-        a = s.actual;
+        a = s.actual,
+        mark = planStepMark(s.status);
       const title = `прогноз ${planTokRange(e)} · ${planSecRange(e)}${a ? ` / факт ${fmtTok(a.tokens || 0, true)} · ${planSecs(a.seconds)}` : ""}`;
-      return `<div class="pstep" title="${title}"><span class="pnum">${i + 1}</span><span class="pst"><b>${esc(s.role || "Шаг")}</b><small>${esc(s.model_name || s.model || "")}</small></span><span class="pest">≈ ${planTokRange(e)} · ${planSecRange(e)}</span></div>`;
+      const acts = Math.max(0, Math.round(Number(s.actions) || 0));
+      const note =
+        String(s.note || "").trim() || (mark && mark[2] !== "ok" && acts ? `${acts} ${planActionsWord(acts)}` : "");
+      return `<div class="pstep${mark ? " " + mark[2] : ""}" title="${esc(title)}"><span class="pnum">${i + 1}</span><span class="pst"><b>${esc(s.role || "Шаг")}</b><small>${esc(s.model_name || s.model || "")}</small>${note ? `<small class="pstepnote">${esc(note)}</small>` : ""}</span>${mark ? planStepStatusHTML(s, mark) : ""}<span class="pest">≈ ${planTokRange(e)} · ${planSecRange(e)}</span></div>`;
     })
     .join("");
   const done = plan.actual;
-  const status = plan.status === "running" ? `<span class="pstat">идёт</span>` : "";
+  const running = plan.status === "running" ? `<span class="pstat">${tr("идёт")}</span>` : "";
+  const stopName = {
+    empty_step: "шаг не дал текста",
+    timeout: "превышен лимит времени",
+    owner: "остановлено владельцем",
+    failed: "ошибка",
+  };
+  const stopped =
+    plan.status === "stopped" || plan.status === "failed"
+      ? `<span class="pstat bad"${plan.stop_reason ? ` title="${esc(stopName[plan.stop_reason] || plan.stop_reason)}"` : ""}>${tr(plan.status === "failed" ? "ошибка" : "остановлено")}</span>`
+      : "";
+  const status = running + stopped;
   const tokens = `${planTokRange(est)}${done ? ` → ${fmtTok(done.tokens || 0, true)}` : ""}`;
   const secs = `${planSecRange(est)}${done ? ` → ${planSecs(done.seconds)}` : ""}`;
   const money = planMoneyRange(est);
@@ -77,7 +120,7 @@ function planClose() {
   if (m) m.remove();
 }
 
-function planOpen() {
+function planOpen(prefill = "") {
   planClose();
   const pop = document.createElement("div");
   pop.className = "modal planm";
@@ -113,7 +156,13 @@ function planOpen() {
   $("#planrecalc", pop).onclick = planPropose;
   planWhoWire(pop);
   loadPlanModels();
-  setTimeout(() => $("#plantask", pop).focus(), 60);
+  const task = typeof prefill === "string" ? prefill.trim() : "";
+  const inp = $("#plantask", pop);
+  if (inp && task) inp.value = task; // rebuild from the result card: pre-filled, nothing runs by itself
+  setTimeout(() => {
+    const f = $("#plantask", pop);
+    if (f) f.focus();
+  }, 60);
 }
 
 async function planPropose() {

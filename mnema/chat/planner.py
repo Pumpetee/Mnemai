@@ -367,6 +367,26 @@ def _save_plan_document(vault: Vault, task: str, plans: list[dict], context: dic
         return ""
 
 
+_STOP_NAMES = {
+    "empty_step": "шаг не дал результата",
+    "timeout": "превышен лимит времени",
+    "owner": "остановлено владельцем",
+}
+
+
+def _actions_count(n: int) -> str:
+    """How many actions a step made, in human words: «ни одного действия», «1 действие», «3 действия»."""
+    if n <= 0:
+        return "ни одного действия"
+    if 11 <= n % 100 <= 14:
+        return f"{n} действий"
+    if n % 10 == 1:
+        return f"{n} действие"
+    if 2 <= n % 10 <= 4:
+        return f"{n} действия"
+    return f"{n} действий"
+
+
 def _append_plan_result(vault: Vault, plan: dict) -> None:
     """Put the real step results into the schema document, so the chat can stay compact."""
     raw = str(plan.get("doc") or "")
@@ -377,21 +397,26 @@ def _append_plan_result(vault: Vault, plan: dict) -> None:
         if not path.is_relative_to(vault.root.resolve()):
             return
         actual = plan.get("actual") or {}
+        reason = str(plan.get("stop_reason") or "")
         lines = [
             "",
             "## Результат",
             "",
+            f"**Задача:** {plan.get('task') or '—'}",
             f"**Статус:** {plan.get('status')} · {len(plan.get('steps') or [])} шагов · "
             f"{actual.get('seconds', '—')} с · {actual.get('tokens', '—')} токенов",
-            "",
         ]
+        if reason:
+            lines.append(f"**Причина остановки (stop_reason):** {reason} — {_STOP_NAMES.get(reason, reason)}")
+        lines.append("")
         for i, step in enumerate(plan.get("steps") or [], 1):
-            lines += [
-                f"### Шаг {i} · {step.get('role') or ''} · {step.get('model_name') or ''}",
-                "",
-                str(step.get("output") or "—"),
-                "",
-            ]
+            head = f"### Шаг {i} · {step.get('role') or ''} · {step.get('model_name') or ''}"
+            if step.get("status") or "actions" in step:
+                head += f" — статус: {step.get('status') or '—'}, действий: {int(step.get('actions') or 0)}"
+            lines += [head, ""]
+            if step.get("note"):
+                lines += [f"**Что случилось:** {step['note']}", ""]
+            lines += [str(step.get("output") or "—"), ""]
         path.write_text(path.read_text(encoding="utf-8") + "\n".join(lines), encoding="utf-8")
     except (OSError, ValueError):
         pass
@@ -563,6 +588,37 @@ def _prompt_for(plan: dict, index: int, task: str, previous: list[str]) -> str:
     )
 
 
+# the one extra call after a tool-using step that forgot to sum up: tools are forbidden outright
+SUMMARY_ASK = "Инструменты уже выполнены, не вызывай их снова; сформулируй краткий итог шага по полученным результатам."
+TOOLS_FORBIDDEN = "Инструменты на этом вызове запрещены: не вызывай их, верни только текст итога шага."
+
+
+def _stop_text(plan: dict, steps: list[dict], index: int, reason: str) -> str:
+    """Why the chain stopped and what the owner can do — the concrete cause, never a bare «шаг не дал текста»."""
+    total = len(steps)
+    step = steps[index] if 0 <= index < total else {}
+    role = step.get("role") or "шаг"
+    where = f"шаге {index + 1} из {total} — «{role}»"
+    advice = (
+        "Открой документ схемы (кнопка «Документ»), чтобы увидеть, что успели сделать предыдущие шаги, "
+        "или пересобери схему и выбери для этого шага другую модель."
+        if plan.get("doc")
+        else "Пересобери схему и выбери для этого шага другую модель."
+    )
+    if reason == "owner":
+        return f"Остановлено владельцем на {where}. {advice}"
+    if reason == "timeout":
+        note = str(step.get("note") or "").rstrip(".")
+        return f"План остановлен по лимиту времени на {where}: {note}. {advice}"
+    actions = int(step.get("actions") or 0)
+    what = (
+        "модель не вызвала инструменты и не вернула текст"
+        if actions <= 0
+        else f"модель сделала {_actions_count(actions)}, но не сформулировала итог"
+    )
+    return f"План остановлен на {where}: {what}, поэтому следующие шаги не запускались. {advice}"
+
+
 def run(vault: Vault, cid: str, plan: dict) -> dict:
     """Start the chosen chain in a chat: each step is one AI call, the results are passed on to the next."""
     task = str(plan.get("task") or "").strip()
@@ -577,6 +633,10 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         raise ValueError("план запускается в разговоре")
     plan = json.loads(json.dumps(plan))
     steps = plan["steps"]  # the copy, not the request object: outputs must be saved in the plan message
+    plan.pop("stop_reason", None)  # a re-run of a stopped plan starts clean
+    for s in steps:
+        for key in ("status", "note", "actions", "actual", "output", "empty"):
+            s.pop(key, None)
     plan["task"] = task
     plan["status"] = "running"
     first_pid = CH.split_model(steps[0]["model"])[0]
@@ -613,7 +673,8 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         made: list[str] = []
         tokens = 0
         actions_total = 0
-        timed_out = False
+        stop_reason = ""
+        stop_at = -1  # the 0-based step the chain stopped on, for an honest report
         started = time.time()
         try:
             from . import tools as TL
@@ -621,10 +682,16 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
             tools_on = TL.enabled(vault)
             tool_rule = TL.rule(vault) if tools_on else ""
             for i, step in enumerate(steps):
+                step["actions"] = 0
                 if g["stop"]:
+                    stop_reason, stop_at = "owner", i
+                    step["status"] = "stopped"
+                    step["note"] = "не выполнялся: остановлено владельцем"
                     break
                 if time.time() - started > plan_budget:
-                    timed_out = True
+                    stop_reason, stop_at = "timeout", i
+                    step["status"] = "timeout"
+                    step["note"] = f"не выполнялся: план не уложился в общий лимит {int(plan_budget)} с"
                     break
                 step_started = time.time()
                 step_usage: dict = {}
@@ -675,7 +742,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                             actions_total += 1
                             step_actions += 1
                             if actions_total > 18:  # a model stuck in a tool loop must not take the app down
-                                answer = "_Слишком много действий подряд — шаг остановлен. Уточни задачу._"
+                                answer = "Слишком много действий подряд — шаг остановлен. Уточни задачу."
                                 break
                             said = TL.before(clean, call)
                             result = CH._act(vault, cid, g, call, client, step["model"])
@@ -697,40 +764,84 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     messages.append(
                         {"role": "user", "text": "Ты не вернул результат шага. Выполни его и верни текст результата."}
                     )
-                if not answer.strip() and not g["stop"]:
-                    if time.time() - step_started > STEP_SECONDS:
-                        timed_out = True
-                        answer = "_Шаг остановлен: больше 90 секунд, результат не получен._"
-                    else:
-                        answer = "_Шаг не дал текста._"
-                    step["empty"] = True
+                step["actions"] = step_actions
+                if (
+                    not answer.strip()
+                    and step_actions
+                    and not g["stop"]
+                    and time.time() - step_started <= STEP_SECONDS
+                    and time.time() - started <= plan_budget
+                ):
+                    # tools were used but the model never summed up: one last call that is not allowed to act
+                    g["phase"] = f"шаг {i + 1}: прошу итог без инструментов"
+                    try:
+                        raw = PR.complete(
+                            vault,
+                            pid,
+                            mname,
+                            system + "\n\n" + TOOLS_FORBIDDEN,
+                            messages + [{"role": "user", "text": SUMMARY_ASK}],
+                            usage=step_usage,
+                            meta={"purpose": f"итог шага плана {i + 1}", "chat": cid},
+                        )
+                        answer = CH.strip_tool_markup(CH.strip_thinking(raw)).strip()
+                    except Exception:  # noqa: BLE001 — the summary is a courtesy, never a reason to lose the plan
+                        answer = ""
+                step_seconds = round(time.time() - step_started, 1)
+                over_step = time.time() - step_started > STEP_SECONDS
+                over_plan = time.time() - started > plan_budget
                 step_tokens = sum(int(val) for val in step_usage.values() if isinstance(val, (int, float)))
                 tokens += step_tokens
-                step["actual"] = {"tokens": step_tokens, "seconds": round(time.time() - step_started, 1)}
+                step["actual"] = {"tokens": step_tokens, "seconds": step_seconds}
                 step["output"] = answer
+                if g["stop"]:
+                    stop_reason, stop_at = "owner", i
+                    step["status"] = "stopped"
+                    step["note"] = "остановлено владельцем на этом шаге"
+                elif over_step or over_plan:
+                    stop_reason, stop_at = "timeout", i
+                    step["status"] = "timeout"
+                    if answer.strip() and over_step:
+                        step["note"] = f"ответ получен, но шаг занял {step_seconds} с — больше лимита {STEP_SECONDS} с"
+                    elif answer.strip():
+                        step["note"] = f"ответ получен, но план не уложился в общий лимит {int(plan_budget)} с"
+                    else:
+                        step["note"] = f"модель сделала {_actions_count(step_actions)}, но не уложилась в лимит времени"
+                elif not answer.strip():
+                    stop_reason, stop_at = "empty_step", i
+                    step["status"] = "empty"
+                    step["note"] = (
+                        f"модель сделала {_actions_count(step_actions)}, но не сформулировала итог"
+                        if step_actions
+                        else "модель не вернула текст, хотя инструменты не вызывались"
+                    )
+                else:
+                    step["status"] = "ok"
+                    step["note"] = ""
                 made.append(answer)
-                if time.time() - step_started > STEP_SECONDS:
-                    timed_out = True
-                    break
-                preview = answer.strip()
+                preview = answer.strip() or step.get("note") or ""
                 if len(preview) > 280:
                     preview = preview[:280].rsplit(" ", 1)[0] + "…"
                 g["text"] += f"### Шаг {i + 1} · {step['role']} · {step['model_name']}\n\n{preview}\n\n"
-            plan["status"] = "done" if not g["stop"] and not timed_out else "stopped"
+                if stop_reason:
+                    break
+            if stop_at >= 0:
+                for later in steps[stop_at + 1 :]:
+                    later["status"] = "stopped"
+                    later["note"] = f"не выполнялся: план остановлен на шаге {stop_at + 1}"
+            plan["status"] = "stopped" if stop_reason else "done"
+            if stop_reason:
+                plan["stop_reason"] = stop_reason
             plan["actual"] = {"seconds": round(time.time() - started, 1), "tokens": tokens}
             _append_plan_result(vault, plan)
             CH._update_msg(vault, cid, mid, {"plan": plan})
             outputs = [str(s.get("output") or "") for s in steps]
-            final = next((o for o in reversed(outputs) if o and not o.startswith("_Шаг не дал")), "")
-            empties = [str(i + 1) for i, s in enumerate(steps) if s.get("empty")]
-            if empties:
-                final = f"_Шаги {', '.join(empties)} не вернули текста; подробности — в документе схемы._\n\n" + final
-            if g["stop"]:
-                final = "_Остановлено владельцем._\n\n" + final
-            elif timed_out:
-                final = f"_Остановлено по лимиту времени: план не уложился в {int(plan_budget)} секунд._\n\n" + final
+            final = next((o for o in reversed(outputs) if o), "")
+            if stop_reason:
+                cause = _stop_text(plan, steps, stop_at, stop_reason)
+                final = cause + (("\n\n" + final) if final.strip() else "")
             if not final.strip():
-                final = "_План завершён, но ни один шаг не вернул текст. Открой документ схемы, чтобы увидеть детали._"
+                final = "План завершён, но ни один шаг не вернул текст. Открой документ схемы, чтобы увидеть детали."
             CH._add_msg(
                 vault,
                 cid,
@@ -742,9 +853,11 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     "model": "plan",
                     "plan": {
                         "title": plan.get("title"),
+                        "task": task,
                         "steps": len(steps),
                         "doc": plan.get("doc"),
                         "status": plan.get("status"),
+                        "stop_reason": plan.get("stop_reason"),
                     },
                 },
             )

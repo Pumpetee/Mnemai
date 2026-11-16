@@ -1465,6 +1465,9 @@ document.addEventListener("click", (e) => {
   if (b) post("/api/files/reveal", { path: b.dataset.reveal }).catch((err) => toast(err.message));
   const o = e.target.closest && e.target.closest("[data-fopen]");
   if (o) post("/api/files/open", { path: o.dataset.fopen }).catch((err) => toast(err.message));
+  // «Пересобрать» on a stopped result: the constructor with the same task, pre-filled and not running
+  const r = e.target.closest && e.target.closest("[data-replan]");
+  if (r) planOpen((r.dataset.task || "").trim());
 });
 // a document path in an answer («PDF готов: C:\…\отчёт.pdf») gets an «Открыть» button next to it
 const OPENABLE = /\.(pdf|docx?|xlsx?|pptx|csv|md|txt|png|jpe?g|odt|rtf)$/i;
@@ -1487,6 +1490,51 @@ function quoteLine(s) {
     .replace(/\s{2,}/g, " ")
     .trim();
 }
+// a stopped plan: name the step that failed (when the planner sent it) and tell the owner what to do next
+function planStopHead(plan, text) {
+  const reason = String((plan && plan.stop_reason) || "");
+  if (!["empty_step", "timeout", "owner", "failed"].includes(reason)) return null;
+  const failed = plan.failed && typeof plan.failed === "object" ? plan.failed : {};
+  const steps = Array.isArray(plan.steps) ? plan.steps : [];
+  const bad = steps.find((s) => s && ["empty", "timeout", "stopped"].includes(String(s.status || "")));
+  let step =
+    Number(plan.failed_step ?? plan.stop_step ?? failed.step ?? (typeof plan.failed === "number" ? plan.failed : 0)) ||
+    0;
+  let role = String(plan.failed_role || plan.stop_role || failed.role || (bad && bad.role) || "").trim();
+  if (!step && bad) step = steps.indexOf(bad) + 1;
+  if (!step && !role) {
+    // the planner names the step in the result text: «... на шаге 2 из 3 — «Критик»: ...»
+    const m = String(text || "").match(
+      /шаг(?:е|и|ов)?\s+(\d+)(?:\s+из\s+\d+)?(?:\s*[—–·:()-]\s*(?:«([^»\n]{1,60})»|([^\n·—–:.,]{2,60})))?/i,
+    );
+    if (m) {
+      step = Number(m[1]) || 0;
+      role = String(m[2] || m[3] || "").split(/\s+(?:не|ничего|останов|превыс|вернул|дал|пуст)/)[0];
+    }
+  }
+  role = role.replace(/[.,;:—–-]+$/, "").trim();
+  const note = String(plan.stop_note || plan.note || failed.note || "").trim();
+  const next = "Дальше шаги не запускались. Подробности — в документе; схему можно пересобрать.";
+  if (reason === "owner")
+    return {
+      icon: "pause",
+      title: "Схема остановлена владельцем",
+      hint: note || "Сделанные шаги сохранены — ниже и в документе.",
+    };
+  if (reason === "failed")
+    return {
+      icon: "x",
+      title: "Схема остановлена из-за ошибки",
+      hint: note || "Подробности — ниже; схему можно пересобрать.",
+    };
+  const what = reason === "timeout" ? "не уложился во время" : "не дал текста";
+  const who = `${step ? "шаг " + step : "шаг"}${role ? " · " + role : ""}`;
+  return {
+    icon: reason === "timeout" ? "clock" : "x",
+    title: `Схема остановлена: ${who} ${what}`,
+    hint: note ? `${note} ${next}` : next,
+  };
+}
 function msgHtml(m, last, i, lastAi) {
   if (m.hidden) return "";
   if (m.kind === "plan") return planCardHTML(m.plan || {}, true); // the schema lives in the conversation
@@ -1495,6 +1543,11 @@ function msgHtml(m, last, i, lastAi) {
     const doc = pm.doc
       ? `<button class="pdocc" data-fopen="${esc(pm.doc)}">${ic("file")}${tr("Документ")}</button>`
       : "";
+    const stop = planStopHead(pm, m.text);
+    if (stop) {
+      const replan = `<button class="pdocc preplan" data-replan data-task="${esc(pm.task || "")}">${ic("redo")}${tr("Пересобрать")}</button>`;
+      return `<div class="planres planresstop"><div class="planresh stop">${ic(stop.icon)}<b>${esc(stop.title)}</b><span>${esc(stop.hint)}</span><span class="planresacts">${replan}${doc}</span></div><div class="md">${md(m.text, false)}</div></div>`;
+    }
     return `<div class="planres"><div class="planresh">${ic("check")}<b>${tr("Результат схемы")}</b><span>${esc(pm.title || "")}${pm.steps ? " · " + esc(String(pm.steps)) + " " + tr("шагов") : ""}</span>${doc}</div><div class="md">${md(m.text, false)}</div></div>`;
   }
   if (m.kind === "progress") {

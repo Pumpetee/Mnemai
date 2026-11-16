@@ -2057,6 +2057,11 @@ function scrollEnd() {
   if (m) m.scrollTop = m.scrollHeight;
 }
 // follow the answer only when the owner is at the bottom: reading above must not be interrupted by a jump
+// a drag/selection in progress must not be destroyed by a poll or a live-update re-render
+function selectionActive() {
+  const s = window.getSelection();
+  return !!(s && s.rangeCount && !s.isCollapsed && String(s).trim());
+}
 function msgsNearBottom() {
   const m = $("#msgs");
   return !m || m.scrollHeight - m.scrollTop - m.clientHeight < 80;
@@ -2369,18 +2374,23 @@ function poll() {
     }
     if (st.plan) updatePlanProgress(st.plan); // step statuses on the plan card while the chain runs
     if (st.seq !== undefined && T.seq !== -1 && st.seq !== T.seq) {
-      const c = await api("/api/chat?id=" + cid);
-      if (CHAT.id !== cid) return;
-      renderChat(c);
-      T.shown = 0;
-      T.last = "";
+      if (selectionActive()) {
+        // the owner is selecting text: rebuild on a later tick, not under their cursor
+      } else {
+        const c = await api("/api/chat?id=" + cid);
+        if (CHAT.id !== cid) return;
+        renderChat(c);
+        T.shown = 0;
+        T.last = "";
+        T.seq = st.seq;
+      }
     } // a speaker finished
     if (st.status !== undefined) {
       CHAT.live = st;
       drawTable();
     }
     if (st.seq !== undefined) {
-      T.seq = st.seq;
+      if (!selectionActive()) T.seq = st.seq; // a selection keeps the current render until it is released
       if (st.speaker !== T.speaker) {
         T.speaker = st.speaker;
         T.ref = (CHAT.cons && CHAT.cons.members.find((r) => consName(r) === st.speaker)) || "";

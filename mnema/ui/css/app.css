@@ -20802,3 +20802,49 @@ button.xft:hover {
 .preplan:hover {
   color: var(--acc-d);
 }
+
+/* chat text is always selectable: answers, the owner's own message and scheme/result cards */
+.msgs,
+.msg.user .b,
+.planres .md,
+.planres .md *,
+.planres table,
+.planres table td,
+.planres table th,
+.plancard,
+.plancard * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.msg.user .b,
+.planres .md,
+.planres .md * {
+  cursor: text;
+}
+.msg .acts,
+.msg .acts *,
+.planres button,
+.planres .planresh,
+.planres .planresh * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* the chat is a document: selecting a phrase must work even if some parent says otherwise */
+#msgs,
+#msgs .md,
+#msgs .md *,
+#msgs .msg.user .b,
+#msgs .planres,
+#msgs .planres * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+#msgs button,
+#msgs .acts,
+#msgs .acts *,
+#msgs .planresacts,
+#msgs .planresacts * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}

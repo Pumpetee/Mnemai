@@ -127,6 +127,7 @@ function planProgressKey(p) {
 
 function updatePlanProgress(p) {
   if (!p || !Array.isArray(p.steps)) return;
+  if (window.selectionActive && window.selectionActive()) return; // do not replace the card under a selection
   const key = planProgressKey(p);
   if (CHAT.planKey === key) return;
   CHAT.planKey = key;

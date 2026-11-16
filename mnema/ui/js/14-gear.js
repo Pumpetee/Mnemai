@@ -6,15 +6,10 @@ function statusText() {
   return STATUS.label + (STATUS.when ? " · " + STATUS.when : "");
 }
 function statusLine() {
-  const s = $("#cstatus"),
-    i = $("#inp");
-  const txt = compCfg().placeholder || statusText();
-  if (s) {
-    s.textContent = txt;
-    s.hidden = !txt;
-    s.classList.toggle("hastext", !!(i && i.value));
-  }
-  if (i) i.placeholder = ""; // the hint lives above the field, not in it
+  const i = $("#inp");
+  if (!i || compCfg().placeholder) return;
+  if (document.activeElement === i && i.dataset.hint === "off" && !i.value) return; // the owner clicked the hint away
+  i.placeholder = statusText();
 }
 function achOn() {
   return LS.get("ach_on", true);

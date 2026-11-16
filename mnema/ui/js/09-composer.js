@@ -59,17 +59,12 @@ function applyComposer() {
     if (el) el.hidden = c.off.includes(k);
   });
   bar.classList.toggle("nolabels", !c.labels);
-  const inp = $("#inp"),
-    stline = $("#cstatus");
+  const inp = $("#inp");
   if (inp) {
-    inp.placeholder = "";
+    const hintOff = document.activeElement === inp && inp.dataset.hint === "off" && !inp.value;
+    inp.placeholder = hintOff ? "" : c.placeholder || statusText();
     inp.rows = Math.max(1, Math.min(8, c.rows));
     inp.style.minHeight = c.rows > 1 ? c.rows * 22 + "px" : "";
-  }
-  if (stline) {
-    stline.textContent = c.placeholder || statusText();
-    stline.hidden = !stline.textContent;
-    stline.classList.toggle("hastext", !!(inp && inp.value));
   }
 }
 let COMP_LAST = null; // the switch just flipped: its button pops in the sample, or fades out of it

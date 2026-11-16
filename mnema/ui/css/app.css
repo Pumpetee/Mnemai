@@ -20405,3 +20405,8 @@ button.xft:hover {
 .cbox textarea {
   padding-top: calc(13px * var(--den));
 }
+
+/* the hint is a native placeholder inside the field again: a click hides it and the caret takes its place */
+.cbox textarea {
+  padding-top: calc(14px * var(--den));
+}

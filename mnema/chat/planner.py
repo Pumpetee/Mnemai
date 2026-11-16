@@ -628,6 +628,22 @@ def _stop_text(plan: dict, steps: list[dict], index: int, reason: str) -> str:
     return f"План остановлен на {where}: {what}, поэтому следующие шаги не запускались. {advice}"
 
 
+def _is_mcp_sweep(task: str) -> bool:
+    """The owner asks to go through every MCP tool: a model-by-model improvisation is the wrong tool for that."""
+    t = (task or "").lower()
+    return "mcp" in t and any(
+        marker in t
+        for marker in (
+            "tools/list",
+            "все инструменты",
+            "всех инструментов",
+            "каждый инструмент",
+            "all tools",
+            "весь каталог",
+        )
+    )
+
+
 def _fallback_row(vault: Vault, failed_pid: str):
     """If a paid provider refuses (402) or is down, finish the step on a connected local/harness model."""
     try:
@@ -751,6 +767,48 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         try:
             from . import tools as TL
 
+            if _is_mcp_sweep(task):
+                # deterministic full sweep: every tool once, table, cleanup — no model improvisation
+                from . import mcpsmoke
+
+                g["phase"] = "MCP smoke: прохожу весь tools/list"
+                g["text"] = "Прохожу все инструменты MCP-сервера…"
+                table = mcpsmoke.run(vault)
+                now = round(time.time() - started, 1)
+                for j, step in enumerate(steps):
+                    step["actions"] = 0
+                    step["status"] = "ok"
+                    step["actual"] = {"tokens": 0, "seconds": now if j == 0 else 0}
+                    step["output"] = table if j == 0 else ""
+                    step["note"] = "" if j == 0 else "выполнено одной встроенной проверкой mcp_smoke"
+                plan["status"] = "done"
+                plan["actual"] = {"seconds": now, "tokens": 0}
+                plan["stop_reason"] = None
+                g["plan_progress"] = _progress(plan, steps)
+                g["text"] = "MCP smoke завершён."
+                _append_plan_result(vault, plan)
+                CH._update_msg(vault, cid, mid, {"plan": plan})
+                CH._add_msg(
+                    vault,
+                    cid,
+                    {
+                        "role": "assistant",
+                        "kind": "plan_result",
+                        "text": table,
+                        "ts": CH._now(),
+                        "model": "plan",
+                        "plan": {
+                            "title": plan.get("title"),
+                            "task": task,
+                            "steps": len(steps),
+                            "doc": plan.get("doc"),
+                            "status": "done",
+                            "stop_reason": None,
+                        },
+                    },
+                )
+                return
+
             tools_on = TL.enabled(vault)
             tool_rule = TL.rule(vault) if tools_on else ""
             for i, step in enumerate(steps):
@@ -779,7 +837,9 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                         "результаты инструментов: настоящий результат придёт тебе следующим сообщением. "
                         "MCP-инструменты Mnemai вызывай блоком ```mnema mcp_call name=\"имя\"``` с JSON-аргументами "
                         "в теле (например memory_context, pc_run, web_search); tools/list — это MCP-метод, "
-                        "а не shell-команда.\n\n" + tool_rule
+                        "а не shell-команда. Для задачи «проверить все инструменты MCP» используй один блок "
+                        "```mnema mcp_smoke```: он сам проходит весь каталог, составляет таблицу и убирает следы.\n\n"
+                        + tool_rule
                     )
                 step_memory = _memory(vault, pid)
                 user = ""

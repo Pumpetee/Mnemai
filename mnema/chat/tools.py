@@ -51,8 +51,19 @@ TOOLS = (
     "run_command",
     "open_app",
     "mcp_call",
+    "mcp_smoke",
 )
-WRITES = {"write_file", "edit_file", "make_document", "edit_pdf", "remember", "run_command", "open_app", "mcp_call"}
+WRITES = {
+    "write_file",
+    "edit_file",
+    "make_document",
+    "edit_pdf",
+    "remember",
+    "run_command",
+    "open_app",
+    "mcp_call",
+    "mcp_smoke",
+}
 TEXT_EXT = {".md", ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".log", ".ini", ".tsv"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
 MAX_READ = 60_000
@@ -202,6 +213,10 @@ pc_screenshot, pc_clipboard_*, subagent_run). Если шаг просит пр�
 
 tools/list — это MCP-метод, а не shell-команда. Управление рабочим столом (pc_click, pc_type, pc_key,
 pc_scroll, pc_open_app, open_app) без отдельного разрешения владельца не вызывается.
+
+Если задача просит проверить ВСЕ инструменты MCP-сервера (или весь tools/list), не вызывай их по одному
+вручную: вызови ```mnema mcp_smoke``` — Mnemai сама пройдёт каждый инструмент, соберёт таблицу
+«инструмент | вызван | результат | замечание», уберёт тестовую папку, память и вернёт буфер обмена.
 """
 
 
@@ -449,6 +464,8 @@ def what(vault: Vault, call: dict) -> str:
         exists = False
     if t == "mcp_call":
         return f"вызвать MCP-инструмент {call.get('name', '')}"
+    if t == "mcp_smoke":
+        return "пройти все инструменты локального MCP-сервера"
     return {
         "read_file": f"прочитать файл {path}",
         "list_files": f"посмотреть, что лежит в папке {path}",
@@ -1426,6 +1443,11 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
     t = call["tool"]
     if t == "mcp_call":
         return _mcp_run(vault, call)
+    if t == "mcp_smoke":
+        from . import mcpsmoke
+
+        text = mcpsmoke.run(vault)
+        return text, "Проверила все инструменты MCP", ""
     if t == "remember":
         from ..agent import profile as P
         from ..memory import remember

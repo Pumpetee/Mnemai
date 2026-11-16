@@ -88,6 +88,10 @@ def _messages(v: Vault, chat_id: str) -> list[dict]:
 
 
 class Planner(unittest.TestCase):
+    def test_a_full_mcp_sweep_is_recognised(self):
+        self.assertTrue(PL._is_mcp_sweep("Проверь MCP: пройди ВСЕ инструменты из tools/list, каждый вызови"))
+        self.assertFalse(PL._is_mcp_sweep("Проверь один инструмент memory_context"))
+
     def test_every_plan_has_executors_and_estimates(self):
         v = _vault()
         with patch.object(PR, "status", lambda vault: STATUS):

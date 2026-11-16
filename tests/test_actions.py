@@ -335,6 +335,15 @@ class ActionsTest(unittest.TestCase):
         self.assertIn("local", text)  # the real MCP server answered
         self.assertIn("MCP", line)
 
+    def test_mcp_smoke_is_one_deterministic_action(self):
+        call = TL.parse("```mnema mcp_smoke\n```")
+        self.assertEqual(call["tool"], "mcp_smoke")
+        v = _vault()
+        with patch("mnema.chat.mcpsmoke.run", lambda vault: "| инструмент | результат |\n| memory_context | ok |"):
+            text, line, _ = TL.run(v, call)
+        self.assertIn("memory_context", text)
+        self.assertIn("все инструменты", line)
+
     def test_mcp_desktop_control_still_needs_the_owner(self):
         v = _vault()
         call = TL.parse('```mnema mcp_call name="pc_click"\n{"x": 1, "y": 2}\n```')

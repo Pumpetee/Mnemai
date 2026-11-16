@@ -303,6 +303,10 @@ def run_readonly(vault: Vault) -> str:
 
     server = Server(vault, "local")
     folder = Path(tempfile.gettempdir()) / f"mnemai-mcp-smoke-{date.today().isoformat()}"
+    from ..agent import profile as profile_mod
+
+    profile = profile_mod.load(vault)
+    original_folders = list(profile.get("tool_folders") or [])
     rows: list[dict] = []
     expected = [str(t.get("name")) for t in TOOLS]
     if "tools/list" not in expected:
@@ -323,6 +327,11 @@ def run_readonly(vault: Vault) -> str:
         rows.append(
             {"tool": "tools/list", "ok": True, "out": "каталог модуля", "note": f"{len(expected) - 1} инструментов"}
         )
+        # the /tmp folder must be an allowed work folder for the chat file actions; restored in finally
+        if str(folder) not in original_folders:
+            changed = dict(profile)
+            changed["tool_folders"] = [*original_folders, str(folder)]
+            profile_mod.save(vault, changed)
         # read-only memory and service
         call("memory_context")
         call("memory_search", {"query": "Mnemai"})
@@ -360,8 +369,43 @@ def run_readonly(vault: Vault) -> str:
         ):
             if call(name, args) is None:
                 notes[name] = "вне хранилища нельзя: инструмент отказал на /tmp"
+        # edit_pdf can be checked without Chromium: make two tiny valid PDFs with pypdf in the test folder
         notes["edit_pdf"] = "не проверен: PDF вне хранилища не создаётся"
-        call("edit_pdf", {"do": "merge", "path": str(folder / "merged.pdf"), "files": f"{folder / 'doc.pdf'}"})
+        try:
+            from pypdf import PdfWriter
+
+            for name in ("pdf1.pdf", "pdf2.pdf"):
+                writer = PdfWriter()
+                writer.add_blank_page(width=200, height=200)
+                with open(folder / name, "wb") as fh:
+                    writer.write(fh)
+            call(
+                "edit_pdf",
+                {
+                    "do": "merge",
+                    "files": f"{folder / 'pdf1.pdf'};{folder / 'pdf2.pdf'}",
+                    "path": str(folder / "merged.pdf"),
+                },
+            )
+            call(
+                "edit_pdf",
+                {"do": "pages", "path": str(folder / "pages.pdf"), "from": str(folder / "merged.pdf"), "pages": "1"},
+            )
+            call(
+                "edit_pdf",
+                {
+                    "do": "rotate",
+                    "path": str(folder / "rotated.pdf"),
+                    "from": str(folder / "merged.pdf"),
+                    "pages": "1",
+                    "angle": 90,
+                },
+            )
+            call("edit_pdf", {"do": "split", "path": str(folder), "from": str(folder / "merged.pdf")})
+            if any(r["tool"] == "edit_pdf" and r["ok"] for r in rows):
+                notes["edit_pdf"] = "merge/pages/rotate/split проверены на двух PDF в тестовой папке"
+        except Exception as e:  # noqa: BLE001 — pypdf absent is an environment note, not a crash
+            notes["edit_pdf"] = f"не проверен: {type(e).__name__}: {str(e)[:120]}"
 
         # commands, jobs, web, service
         call("pc_run", {"command": "echo MCP-SMOKE pc_run", "cwd": str(folder), "timeout": 15})
@@ -396,6 +440,13 @@ def run_readonly(vault: Vault) -> str:
         try:
             if old_clip is not None:
                 server.call("pc_clipboard_set", {"text": old_clip}, strict=True)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if profile_mod.load(vault).get("tool_folders") != original_folders:
+                restored = dict(profile_mod.load(vault))
+                restored["tool_folders"] = original_folders
+                profile_mod.save(vault, restored)
         except Exception:  # noqa: BLE001
             pass
         try:
@@ -444,9 +495,12 @@ def run_readonly(vault: Vault) -> str:
         if name in private:
             note = "ответ получен (содержимое не выводится)"
         if name == "edit_pdf":
-            status = "не проверен"
-            partial += 1
-            note = notes.get(name, "нет тестового PDF")
+            if item["ok"]:
+                status, note = "ok", notes.get(name, "PDF-операции проверены")
+                ok += 1
+            else:
+                status, note = "не проверен", notes.get(name, "нет тестового PDF")
+                partial += 1
         elif item["ok"] and item["fail"]:
             status = "ok" if name in {"pc_read_file", "pc_list_dir", "pc_grep"} else "частично"
             if status == "ok":

@@ -1502,5 +1502,6 @@ def complete(
     messages: list[dict],
     usage: dict | None = None,
     meta: dict | None = None,
+    stop=None,
 ) -> str:
-    return "".join(stream(vault, pid, model, system, messages, usage=usage, meta=meta))
+    return "".join(stream(vault, pid, model, system, messages, usage=usage, meta=meta, stop=stop))

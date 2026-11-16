@@ -207,7 +207,7 @@ class Planner(unittest.TestCase):
         }
         calls = []
 
-        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None, stop=None):
             calls.append((pid, model, messages[0]["text"]))
             return f"результат шага {len(calls)}"
 
@@ -260,7 +260,7 @@ class Planner(unittest.TestCase):
         )
         calls = []
 
-        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None, stop=None):
             calls.append(pid)
             return ""
 
@@ -307,7 +307,7 @@ class Planner(unittest.TestCase):
         )
         calls = []
 
-        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None, stop=None):
             calls.append({"system": system, "messages": messages})
             if len(calls) == 1:
                 return "```mnema read_file path=notes.md```"
@@ -359,7 +359,7 @@ class Planner(unittest.TestCase):
             ],
         )
 
-        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None, stop=None):
             CH._gen[chat["id"]]["stop"] = True  # the owner pressed Escape while the step was running
             return ""
 
@@ -398,7 +398,7 @@ class Planner(unittest.TestCase):
         def fake_time():
             return clock["now"]
 
-        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None):
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None, stop=None):
             calls.append(pid)
             clock["now"] += 95.0  # the step exceeded the 90 s cap
             return "результат шага 1"

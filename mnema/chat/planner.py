@@ -791,6 +791,11 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                             messages,
                             usage=step_usage,
                             meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
+                            stop=lambda: (
+                                g["stop"]
+                                or time.time() - step_started > STEP_SECONDS
+                                or time.time() - started > plan_budget
+                            ),
                         )
                         clean = CH.strip_thinking(raw)
                         call = TL.parse(clean) if tools_on else None

@@ -20705,3 +20705,19 @@ button.xft:hover {
 .plancard .pfoot {
   flex-wrap: wrap;
 }
+
+/* plan cards and the result align with ordinary answers instead of hugging the left edge */
+.plancard.inchat {
+  width: 100%;
+  max-width: 760px;
+  margin: 8px auto 12px;
+}
+.planres {
+  width: 100%;
+  max-width: 760px;
+  margin: 8px auto 14px;
+  overflow: hidden;
+}
+.planres .planresh {
+  min-width: 0;
+}

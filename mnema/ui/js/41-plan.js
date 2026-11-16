@@ -67,7 +67,7 @@ function planCardHTML(plan, inChat) {
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
     <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${moneyPill}${status}</span></div>
     <div class="psteps">${nodes}</div>
-    ${plan.why ? `<div class="pwhy">${esc(plan.why)}</div>` : ""}
+    ${!inChat && plan.why ? `<div class="pwhy">${esc(plan.why)}</div>` : ""}
     ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span>${plan.doc ? `<button class="btn g sm" data-fopen="${esc(plan.doc)}">${ic("file")}${tr("Документ")}</button>` : ""}<button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
 }

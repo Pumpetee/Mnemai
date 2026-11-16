@@ -589,7 +589,8 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         "history_chars": sum(len(line) for line in history),
     }
     estimate(plan, task, context_chars=context_chars)
-    plan_budget = min(PLAN_SECONDS, max(90, int((plan["estimate"].get("seconds_max") or 120) * 1.6)))
+    # the owner saw the upper estimate before starting: give 30 s of grace, not another 60 %
+    plan_budget = min(PLAN_SECONDS, max(60, int(plan["estimate"].get("seconds_max") or 120) + 30))
     mid = secrets.token_hex(4)
     CH._add_msg(
         vault,

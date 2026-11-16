@@ -600,6 +600,7 @@ PROBE_COMMAND = re.compile(
     r"\b(?:command\s+-v|which|type\s+-a|rpm\s+-q|dpkg\s+(?:-s|-l)|pacman\s+-[QS]|"
     r"apt-cache\s+(?:policy|show|search)|apt\s+list|dnf\s+(?:list|info|search)|zypper\s+(?:se|search|info)|"
     r"apk\s+(?:info|search)|flatpak\s+list|snap\s+list|cat\s+/etc/os-release|lsb_release|hostnamectl|uname|"
+    r"ping6?|dig|nslookup|host|traceroute|mtr|ss|netstat|nmap|ip\s+(?:addr|a|route|r)|"
     r"find|\bls\b|[\w.+-]+\s+--version)\b",
     re.I,
 )
@@ -625,6 +626,10 @@ def _probe_summary(command: str) -> str:
     m = re.search(r"([\w.+-]+)\s+--version", command, re.I)
     if m:
         return "Не нашла: " + m.group(1)
+    if re.search(
+        r"\b(?:ping6?|dig|nslookup|host|traceroute|mtr|ss|netstat|nmap|ip\s+(?:addr|a|route|r))\b", command, re.I
+    ):
+        return "Проверила сеть"
     return "Проверила систему"
 
 
@@ -662,7 +667,7 @@ def _command_summary(command: str) -> str:
         return "Проверила программу"
     if any(w in low for w in ("/etc/os-release", "uname", "hostnamectl", "lsb_release", "neofetch")):
         return "Проверила систему"
-    if re.search(r"\b(?:nmap|ping|ss|netstat|curl|wget|ip addr|dig|traceroute)\b", low):
+    if re.search(r"\b(?:nmap|ping6?|ss|netstat|curl|wget|ip addr|dig|traceroute|nslookup|mtr)\b", low):
         return "Проверила сеть"
     if re.search(r"\b(?:ps|top|htop|pgrep|systemctl status)\b", low):
         return "Проверила процессы"

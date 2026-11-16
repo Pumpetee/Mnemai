@@ -1,6 +1,7 @@
 """Actions in the chat: the model reads and writes files and memory with the owner's word on every action."""
 
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -271,6 +272,17 @@ class ActionsTest(unittest.TestCase):
         r, _ = self._send(v, "Проверь сеть", s, ["yes"])
         msgs = CH.load_chat(v, r["chat"])["messages"]
         self.assertFalse(any((m.get("text") or "").strip() == "Пр" for m in msgs))
+
+    def test_a_failed_ping_is_not_a_red_error(self):
+        if not shutil.which("ping"):
+            self.skipTest("ping is not installed here")
+        v = _vault(self.work)
+        s = Script('Проверю.\n```mnema run_command command="ping -c 1 -W 1 192.0.2.1"\n```', "Готово.")
+        r, _ = self._send(v, "Проверь сеть", s, ["yes"])
+        msgs = CH.load_chat(v, r["chat"])["messages"]
+        action = next(m for m in msgs if m.get("kind") == "action")
+        self.assertNotIn("failed", action)  # the check ran; «no reply» is an answer, not a broken action
+        self.assertIn("Проверила сеть", action.get("text") or "")
 
     def test_a_bundle_of_checks_is_not_a_failure(self):
         v = _vault(self.work)

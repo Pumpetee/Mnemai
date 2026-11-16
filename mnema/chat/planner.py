@@ -20,8 +20,7 @@ from ..vault import Vault
 from . import engine as CH, providers as PR
 
 MAX_STEPS = 6
-STEP_SECONDS = 90  # a step that keeps calling tools and never answers must not hold the plan
-PLAN_SECONDS = 300  # the whole chain: past this Mnemai stops and says so honestly
+# No wall-clock cap on a plan: the owner can stop it, and each provider call can be interrupted by that stop.
 FREE = {"local", "ollama", "strata"}  # runs on this computer: no token price
 STRONG = {"claude_code", "anthropic", "openai", "gemini", "openrouter", "codex"}
 OUT_CHARS = {"короткий": 700, "план": 1200, "черновик": 3500, "критика": 1000, "финал": 2200, "ответ": 1500}
@@ -700,8 +699,6 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         "history_chars": sum(len(line) for line in history),
     }
     estimate(plan, task, context_chars=context_chars)
-    # the owner saw the upper estimate before starting: give 30 s of grace, not another 60 %
-    plan_budget = min(PLAN_SECONDS, max(60, int(plan["estimate"].get("seconds_max") or 120) + 30))
     mid = secrets.token_hex(4)
     CH._add_msg(
         vault,
@@ -741,11 +738,6 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     step["status"] = "stopped"
                     step["note"] = "не выполнялся: остановлено владельцем"
                     break
-                if time.time() - started > plan_budget:
-                    stop_reason, stop_at = "timeout", i
-                    step["status"] = "timeout"
-                    step["note"] = f"не выполнялся: план не уложился в общий лимит {int(plan_budget)} с"
-                    break
                 step_started = time.time()
                 step_usage: dict = {}
                 step["status"] = "running"
@@ -774,14 +766,10 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 answer = ""
                 step_actions = 0
                 for attempt in range(2):
-                    if g["stop"] or time.time() - started > plan_budget:
+                    if g["stop"]:
                         break
                     for _round in range(3):
-                        if (
-                            g["stop"]
-                            or time.time() - step_started > STEP_SECONDS
-                            or time.time() - started > plan_budget
-                        ):
+                        if g["stop"]:
                             break
                         raw = PR.complete(
                             vault,
@@ -791,11 +779,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                             messages,
                             usage=step_usage,
                             meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
-                            stop=lambda: (
-                                g["stop"]
-                                or time.time() - step_started > STEP_SECONDS
-                                or time.time() - started > plan_budget
-                            ),
+                            stop=lambda: g["stop"],
                         )
                         clean = CH.strip_thinking(raw)
                         call = TL.parse(clean) if tools_on else None
@@ -826,13 +810,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                         {"role": "user", "text": "Ты не вернул результат шага. Выполни его и верни текст результата."}
                     )
                 step["actions"] = step_actions
-                if (
-                    not answer.strip()
-                    and step_actions
-                    and not g["stop"]
-                    and time.time() - step_started <= STEP_SECONDS
-                    and time.time() - started <= plan_budget
-                ):
+                if not answer.strip() and step_actions and not g["stop"]:
                     # tools were used but the model never summed up: one last call that is not allowed to act
                     g["phase"] = f"шаг {i + 1}: прошу итог без инструментов"
                     try:
@@ -849,8 +827,6 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     except Exception:  # noqa: BLE001 — the summary is a courtesy, never a reason to lose the plan
                         answer = ""
                 step_seconds = round(time.time() - step_started, 1)
-                over_step = time.time() - step_started > STEP_SECONDS
-                over_plan = time.time() - started > plan_budget
                 step_tokens = sum(int(val) for val in step_usage.values() if isinstance(val, (int, float)))
                 tokens += step_tokens
                 step["actual"] = {"tokens": step_tokens, "seconds": step_seconds}
@@ -859,15 +835,6 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     stop_reason, stop_at = "owner", i
                     step["status"] = "stopped"
                     step["note"] = "остановлено владельцем на этом шаге"
-                elif over_step or over_plan:
-                    stop_reason, stop_at = "timeout", i
-                    step["status"] = "timeout"
-                    if answer.strip() and over_step:
-                        step["note"] = f"ответ получен, но шаг занял {step_seconds} с — больше лимита {STEP_SECONDS} с"
-                    elif answer.strip():
-                        step["note"] = f"ответ получен, но план не уложился в общий лимит {int(plan_budget)} с"
-                    else:
-                        step["note"] = f"модель сделала {_actions_count(step_actions)}, но не уложилась в лимит времени"
                 elif not answer.strip():
                     stop_reason, stop_at = "empty_step", i
                     step["status"] = "empty"

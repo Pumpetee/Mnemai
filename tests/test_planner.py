@@ -381,7 +381,7 @@ class Planner(unittest.TestCase):
         self.assertIn("Остановлено владельцем", result["text"])
         self.assertEqual(result["plan"]["stop_reason"], "owner")
 
-    def test_timeout_stops_the_plan_and_does_not_run_later_steps(self):
+    def test_a_long_plan_is_not_stopped_by_a_wall_clock(self):
         v = _vault()
         chat = _chat(v)
         plan = _plan(
@@ -400,8 +400,8 @@ class Planner(unittest.TestCase):
 
         def fake_complete(vault, pid, model, system, messages, usage=None, meta=None, stop=None):
             calls.append(pid)
-            clock["now"] += 95.0  # the step exceeded the 90 s cap
-            return "результат шага 1"
+            clock["now"] += 95.0  # each step takes longer than any old 90 s cap
+            return f"результат шага {len(calls)}"
 
         with (
             patch.object(PR, "status", lambda vault: STATUS),
@@ -412,19 +412,14 @@ class Planner(unittest.TestCase):
             PL.run(v, chat["id"], plan)
             _wait(chat["id"])
 
-        self.assertEqual(len(calls), 1)  # the second step was not started
+        self.assertEqual(len(calls), 2)  # no time limit: both steps ran
         messages = _messages(v, chat["id"])
         ready = next(m for m in messages if m.get("kind") == "plan")["plan"]
         result = next(m for m in messages if m.get("kind") == "plan_result")
-        self.assertEqual(ready["status"], "stopped")
-        self.assertEqual(ready["stop_reason"], "timeout")
-        self.assertEqual(ready["steps"][0]["status"], "timeout")
-        self.assertTrue(ready["steps"][0]["note"])
-        self.assertEqual(ready["steps"][1]["status"], "stopped")
-        self.assertIn("лимиту времени", result["text"])
-        self.assertIn("шаге 1 из 2", result["text"])
-        self.assertIn("результат шага 1", result["text"])  # what the step did manage to say is kept
-        self.assertEqual(result["plan"]["stop_reason"], "timeout")
+        self.assertEqual(ready["status"], "done")
+        self.assertNotIn("stop_reason", ready)
+        self.assertEqual([s["status"] for s in ready["steps"]], ["ok", "ok"])
+        self.assertIn("результат шага 2", result["text"])
 
 
 if __name__ == "__main__":

@@ -20390,3 +20390,18 @@ button.xft:hover {
 .cbar .cchip {
   height: 32px;
 }
+
+/* the hint sits above the rounded input, so the caret is on the first line inside the box instead of below the hint */
+.composer .cstatus {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto 6px;
+  padding: 0 calc(16px * var(--den));
+  font-size: calc(13px * var(--fs));
+}
+.cstatus.hastext {
+  visibility: hidden;
+}
+.cbox textarea {
+  padding-top: calc(13px * var(--den));
+}

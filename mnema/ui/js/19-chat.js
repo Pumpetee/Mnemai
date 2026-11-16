@@ -128,7 +128,7 @@ async function viewChat(id) {
      <div class="netfreeze" id="netfreeze" hidden><i></i><span>Заморозил сессию, пока нет соединения. Контекст не потеряется.</span></div>
      <div id="ctable"></div><div class="msgs" id="msgs"></div>
      <div class="workbar" id="workbar" hidden><span class="workdot"></span><span class="worklabel">Mnemai работает</span><span class="workphase" id="workphase"></span><span class="workline"><i></i></span></div>
-     <div class="composer" id="composer"><div id="recbar"></div><div class="cbox"><button class="hq chelp" id="chelp" title="${tr("Что умеет строка ввода")}">?</button><button class="ccfg" id="ccfg" title="Настроить строку ввода">${ic("gear")}</button><div class="qbar" id="qbar" hidden></div><div class="fbar" id="fbar" hidden></div><div class="cstatus" id="cstatus"></div><textarea id="inp" rows="1" placeholder="" title="Enter — отправить, Shift+Enter — новая строка"></textarea>
+     <div class="composer" id="composer"><div id="recbar"></div><div class="cstatus" id="cstatus"></div><div class="cbox"><button class="hq chelp" id="chelp" title="${tr("Что умеет строка ввода")}">?</button><button class="ccfg" id="ccfg" title="Настроить строку ввода">${ic("gear")}</button><div class="qbar" id="qbar" hidden></div><div class="fbar" id="fbar" hidden></div><textarea id="inp" rows="1" placeholder="" title="Enter — отправить, Shift+Enter — новая строка"></textarea>
        <div class="cbar"><button class="ib" id="clip" title="Прикрепить файл">${ic("clip")}</button><input type="file" id="fpick" multiple hidden>
        <input type="file" id="apick" accept="audio/*,video/*,.m4a,.ogg,.opus,.amr" hidden>
        <button class="ib" id="plusb" data-menu title="Ещё">${ic("plus")}<i class="pdot" hidden></i></button>

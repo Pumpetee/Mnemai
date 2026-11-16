@@ -944,6 +944,32 @@ class App:
             ("Выход", self.quit, None, None),
         ]
 
+    def _watch_renderer(self):
+        """A renderer crash leaves a black window while the API is fine: reload the page instead of waiting for a restart."""
+        try:
+            from PyQt6.QtCore import QTimer, QUrl
+
+            page = self.window.gui.webview.page()
+            self._renderer_reloading = False
+
+            def recover(_status, _code):
+                if self._renderer_reloading or self.vault is None:
+                    return
+                self._renderer_reloading = True
+
+                def reload_page():
+                    try:
+                        self.window.gui.webview.setUrl(QUrl(self.url()))
+                    except Exception:  # noqa: BLE001 — recovery is best effort
+                        pass
+                    self._renderer_reloading = False
+
+                QTimer.singleShot(400, reload_page)
+
+            page.renderProcessTerminated.connect(recover)
+        except Exception:  # noqa: BLE001 — another backend, or a pywebview version without that signal
+            pass
+
     def build_tray(self):
         """pystray on Windows and macOS. On Linux the window runs on Qt, so the tray is Qt's own (qt_tray, started
         with the window). A tray that can't start never stops the program: closing the window then quits."""
@@ -1093,6 +1119,7 @@ class App:
                 pass
 
         self.window.events.loaded += fit_default_window
+        self._watch_renderer()
         self.build_tray()
         from .updater import Checker, Updater
 

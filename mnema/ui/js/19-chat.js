@@ -1495,7 +1495,7 @@ function quoteLine(s) {
 // a stopped plan: name the step that failed (when the planner sent it) and tell the owner what to do next
 function planStopHead(plan, text) {
   const reason = String((plan && plan.stop_reason) || "");
-  if (!["empty_step", "timeout", "owner", "failed"].includes(reason)) return null;
+  if (!["empty_step", "timeout", "owner", "failed", "loop"].includes(reason)) return null;
   const failed = plan.failed && typeof plan.failed === "object" ? plan.failed : {};
   const steps = Array.isArray(plan.steps) ? plan.steps : [];
   const bad = steps.find((s) => s && ["empty", "timeout", "stopped"].includes(String(s.status || "")));
@@ -1529,7 +1529,12 @@ function planStopHead(plan, text) {
       title: "Схема остановлена из-за ошибки",
       hint: note || "Подробности — ниже; схему можно пересобрать.",
     };
-  const what = reason === "timeout" ? "не уложился во время" : "не дал текста";
+  const what =
+    reason === "timeout"
+      ? "не уложился во время"
+      : reason === "loop"
+        ? "зациклился на одном действии"
+        : "не дал текста";
   const who = `${step ? "шаг " + step : "шаг"}${role ? " · " + role : ""}`;
   return {
     icon: reason === "timeout" ? "clock" : "x",

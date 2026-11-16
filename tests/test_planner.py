@@ -347,6 +347,44 @@ class Planner(unittest.TestCase):
         self.assertEqual(result["text"], "Итог: в документе пять пунктов.")
         self.assertIsNone(result["plan"]["stop_reason"])
 
+    def test_a_repeated_action_stops_a_looping_plan(self):
+        v = _vault()
+        chat = _chat(v)
+        plan = _plan(
+            v, "Проверь MCP", [("harness:deepseek-flash", "DeepSeek Flash", "Проверка", "Вызови clients_list")]
+        )
+        calls = []
+
+        def fake_complete(vault, pid, model, system, messages, usage=None, meta=None, stop=None):
+            calls.append(1)
+            return '```mnema mcp_call name="clients_list"\n{}\n```'
+
+        def fake_parse(text):
+            return {"tool": "mcp_call", "name": "clients_list", "args": {}, "start": 0, "end": len(text)}
+
+        with (
+            patch.object(PR, "status", lambda vault: STATUS),
+            patch.object(PR, "complete", fake_complete),
+            patch.object(TL, "enabled", lambda vault: True),
+            patch.object(TL, "rule", lambda vault, small=False: "ПРАВИЛО ИНСТРУМЕНТОВ"),
+            patch.object(TL, "parse", fake_parse),
+            patch.object(TL, "before", lambda text, call: ""),
+            patch.object(CH, "_act", lambda *args, **kwargs: "список клиентов"),
+            patch.object(CH, "_drain_queue"),
+        ):
+            PL.run(v, chat["id"], plan)
+            _wait(chat["id"])
+
+        self.assertEqual(len(calls), 3)  # the same action three times is a loop, not work
+        messages = _messages(v, chat["id"])
+        ready = next(m for m in messages if m.get("kind") == "plan")["plan"]
+        result = next(m for m in messages if m.get("kind") == "plan_result")
+        self.assertEqual(ready["status"], "stopped")
+        self.assertEqual(ready["stop_reason"], "loop")
+        self.assertEqual(ready["steps"][0]["status"], "stopped")
+        self.assertIn("три раза", result["text"])
+        self.assertEqual(result["plan"]["stop_reason"], "loop")
+
     def test_owner_stop_is_reported_as_such(self):
         v = _vault()
         chat = _chat(v)

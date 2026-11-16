@@ -322,6 +322,26 @@ class ActionsTest(unittest.TestCase):
         self.assertNotIn("failed", action)  # the check found nothing; that is an answer, not a crash
         self.assertIn("arimong", action.get("text") or "")
 
+    def test_mcp_tools_can_be_called_from_a_plan_action(self):
+        call = TL.parse('```mnema mcp_call name="clients_list"\n{}\n```')
+        self.assertEqual(call["tool"], "mcp_call")
+        self.assertEqual(call["name"], "clients_list")
+        direct = TL.parse('```mnema memory_context\n{"part": 0}\n```')
+        self.assertEqual(direct["tool"], "mcp_call")
+        self.assertEqual(direct["name"], "memory_context")
+        self.assertEqual(direct["args"], {"part": 0})
+        v = _vault()
+        text, line, _ = TL.run(v, call)
+        self.assertIn("local", text)  # the real MCP server answered
+        self.assertIn("MCP", line)
+
+    def test_mcp_desktop_control_still_needs_the_owner(self):
+        v = _vault()
+        call = TL.parse('```mnema mcp_call name="pc_click"\n{"x": 1, "y": 2}\n```')
+        text, line, _ = TL.run(v, call)
+        self.assertIn("разрешение", text)
+        self.assertIn("разрешение", line)
+
     def test_a_russian_command_prefix_is_not_part_of_the_shell_command(self):
         call = TL.parse("```mnema команда: echo mnema-ru-ok\n```")
         self.assertEqual(call["command"], "echo mnema-ru-ok")

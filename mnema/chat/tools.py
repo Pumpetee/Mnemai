@@ -50,8 +50,9 @@ TOOLS = (
     "remember",
     "run_command",
     "open_app",
+    "mcp_call",
 )
-WRITES = {"write_file", "edit_file", "make_document", "edit_pdf", "remember", "run_command", "open_app"}
+WRITES = {"write_file", "edit_file", "make_document", "edit_pdf", "remember", "run_command", "open_app", "mcp_call"}
 TEXT_EXT = {".md", ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".log", ".ini", ".tsv"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
 MAX_READ = 60_000
@@ -182,6 +183,28 @@ def _system_note() -> str:
     return f"Система: {pretty or 'Linux'}. Пакетный менеджер: {manager or 'неизвестен'}; ставь пакеты через него."
 
 
+MCP_RULE = """
+
+=== MCP-инструменты Mnemai ===
+У Mnemai есть собственный MCP-сервер: память (memory_*), файлы ПК (pc_*), команды и фоновые задачи,
+интернет (web_*), задачи и дела (task_*, todo_*), служебные (clients_list, journal_tail, pc_notify,
+pc_screenshot, pc_clipboard_*, subagent_run). Если шаг просит проверить или вызвать MCP-инструмент,
+вызывай его действием mcp_call, а не через терминал:
+
+```mnema mcp_call name="memory_context"
+{}
+```
+
+Имя инструмента можно писать сразу маркером (аргументы — JSON в теле):
+```mnema memory_context
+{}
+```
+
+tools/list — это MCP-метод, а не shell-команда. Управление рабочим столом (pc_click, pc_type, pc_key,
+pc_scroll, pc_open_app, open_app) без отдельного разрешения владельца не вызывается.
+"""
+
+
 def rule(vault: Vault, small: bool = False) -> str:
     folders = "\n".join(f"- {name}: {path}" for name, path in roots(vault))
     if pc_enabled(vault):
@@ -195,7 +218,7 @@ def rule(vault: Vault, small: bool = False) -> str:
         terminal = ""
     if terminal:
         terminal += "\n" + _system_note()
-    return (SMALL_RULE if small else RULE).format(folders=folders, terminal=terminal)
+    return (SMALL_RULE if small else RULE).format(folders=folders, terminal=terminal) + MCP_RULE
 
 
 # ---------------------------------------------------------------- the block in the answer
@@ -231,6 +254,57 @@ COMMAND_LINE = re.compile(r"(?m)^\s*command:\s*(.+?)\s*$")
 BARE_RE = re.compile(r"```mnema\s+(.*?)(?:```|\Z)", re.S)
 
 
+_MCP_NAMES: set[str] | None = None
+
+
+def mcp_tool_names() -> set[str]:
+    """Names from the one tools/list of the local MCP server; cached, never imported at module load."""
+    global _MCP_NAMES
+    if _MCP_NAMES is None:
+        try:
+            from ..mcp_server import TOOLS as MCP_TOOLS
+
+            _MCP_NAMES = {str(t["name"]) for t in MCP_TOOLS}
+        except Exception:  # noqa: BLE001 — chat works even if the MCP module is unavailable
+            _MCP_NAMES = set()
+    return _MCP_NAMES
+
+
+def _mcp_args(rest: str, body: str) -> dict:
+    args = {k: v for k, v in ARG_RE.findall(rest or "") if k not in ("name", "tool")}
+    raw = (body or "").strip()
+    if raw.startswith("{"):
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                args.update({str(k): v for k, v in data.items()})
+        except json.JSONDecodeError:
+            args.setdefault("text", raw)
+    elif raw:
+        args.setdefault("text", raw)
+    return args
+
+
+def _mcp_block(raw_tool: str, rest: str, body: str, start: int, end: int) -> dict | None:
+    """A direct MCP tool block (```mnema memory_context …) or a bare mcp_call block."""
+    if raw_tool == "mcp_call":
+        name = dict(ARG_RE.findall(rest or "")).get("name", "").strip()
+    elif raw_tool in mcp_tool_names():
+        name = raw_tool
+    else:
+        return None
+    if not name:
+        return None
+    return {
+        "tool": "mcp_call",
+        "name": name,
+        "args": _mcp_args(rest, body),
+        "body": "",
+        "start": start,
+        "end": end,
+    }
+
+
 def _foreign_action(text: str) -> dict | None:
     """Some models still write their old tool syntaxes instead of ```mnema. Understand them as run_command."""
     raw = text or ""
@@ -264,6 +338,9 @@ def parse(text: str) -> dict | None:
         tool = ALIASES.get(raw_tool, raw_tool)
         rest = m.group(2) or ""
         if tool not in TOOLS:
+            mcp = _mcp_block(raw_tool, rest, m.group(3) or "", m.start(), m.end())
+            if mcp:
+                return mcp
             # «```mnema cat /etc/os-release```» — a bare command after the marker
             command = " ".join((raw_tool + rest).split())
             command = re.sub(
@@ -292,6 +369,10 @@ def parse(text: str) -> dict | None:
             if value and key:
                 call[key] = value
         call.update(tool=tool, body=(m.group(3) or "").rstrip("\n"), start=m.start(), end=m.end())
+        if tool == "mcp_call":
+            name = str(call.get("name") or "").strip()
+            call["args"] = _mcp_args(rest, call.get("body") or "")
+            call["name"] = name
         return call
     m = BARE_RE.search(text or "")
     if m:
@@ -366,6 +447,8 @@ def what(vault: Vault, call: dict) -> str:
         exists = resolve(vault, path).exists() if path else False
     except Refused:
         exists = False
+    if t == "mcp_call":
+        return f"вызвать MCP-инструмент {call.get('name', '')}"
     return {
         "read_file": f"прочитать файл {path}",
         "list_files": f"посмотреть, что лежит в папке {path}",
@@ -1294,9 +1377,55 @@ def _open_app(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str
     return f"Открыла программу: {shown} ({exe})", f"Открыла: {shown}", str(Path(exe).parent)
 
 
+MCP_DESKTOP = {"pc_click", "pc_type", "pc_key", "pc_scroll", "pc_open_app", "open_app"}
+
+
+def _mcp_run(vault: Vault, call: dict) -> tuple[str, str, str]:
+    """Call one tool of the local MCP server from a chat/plan action."""
+    name = str(call.get("name") or "").strip()
+    if not name:
+        raise Refused("не указан MCP-инструмент")
+    if name in ("tools/list", "tools_list"):
+        from ..mcp_server import TOOLS as MCP_TOOLS
+
+        catalog = [
+            {
+                "name": t.get("name"),
+                "description": t.get("description", ""),
+                "args": list((t.get("inputSchema") or {}).get("properties", {})),
+            }
+            for t in MCP_TOOLS
+        ]
+        text = json.dumps(catalog, ensure_ascii=False, indent=1)
+        shown = text if len(text) <= MAX_OUTPUT else text[:MAX_OUTPUT] + "\n…[каталог длиннее, показано начало]"
+        return shown, "Показала MCP tools/list", ""
+    if name not in mcp_tool_names():
+        raise Refused(f"такого MCP-инструмента нет: {name}")
+    if name in MCP_DESKTOP:
+        text = f"Нужно отдельное разрешение владельца: {name} управляет рабочим столом и пропущен."
+        return text, "Пропустила: нужно разрешение владельца", ""
+    args = dict(call.get("args") or {})
+    if not args:
+        args = _mcp_args("", call.get("body") or "")
+    for key, value in call.items():
+        if key not in ("tool", "name", "args", "body", "start", "end"):
+            args.setdefault(key, value)
+    try:
+        from ..mcp_server import Server
+
+        out = Server(vault, "local").call(name, args, strict=True)
+    except Exception as e:  # noqa: BLE001 — the model gets the MCP error and can react
+        raise Refused(f"{name}: {e}") from e
+    text = str(out)
+    shown = text if len(text) <= MAX_OUTPUT else text[:MAX_OUTPUT] + "\n…[вывод длиннее, показано начало]"
+    return shown, f"Вызвала MCP {name}", ""
+
+
 def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
     """Do an approved action: (result for the model, line for the owner, path or "")."""
     t = call["tool"]
+    if t == "mcp_call":
+        return _mcp_run(vault, call)
     if t == "remember":
         from ..agent import profile as P
         from ..memory import remember

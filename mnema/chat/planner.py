@@ -370,6 +370,7 @@ _STOP_NAMES = {
     "empty_step": "шаг не дал результата",
     "timeout": "превышен лимит времени",
     "owner": "остановлено владельцем",
+    "loop": "модель зациклилась на одном действии",
 }
 
 
@@ -575,6 +576,12 @@ def propose(vault: Vault, task: str, chat_id: str = "", planner: str = "auto") -
     return result
 
 
+_UNFINISHED = re.compile(
+    r"продолж|сейчас (?:вызов|провер|запущ)|дальше|next|to be continued|осталось|ещё не|not finished",
+    re.I,
+)
+
+
 def _prompt_for(plan: dict, index: int, task: str, previous: list[str]) -> str:
     prev = "\n\n".join(f"[Шаг {i + 1} — {plan['steps'][i]['role']}]\n{text}" for i, text in enumerate(previous))
     prev = prev[-12000:] if len(prev) > 12000 else prev
@@ -606,6 +613,9 @@ def _stop_text(plan: dict, steps: list[dict], index: int, reason: str) -> str:
     )
     if reason == "owner":
         return f"Остановлено владельцем на {where}. {advice}"
+    if reason == "loop":
+        note = str(step.get("note") or "").rstrip(".")
+        return f"План остановлен на {where}: {note}. Следующие шаги не запускались. {advice}"
     if reason == "timeout":
         note = str(step.get("note") or "").rstrip(".")
         return f"План остановлен по лимиту времени на {where}: {note}. {advice}"
@@ -616,6 +626,18 @@ def _stop_text(plan: dict, steps: list[dict], index: int, reason: str) -> str:
         else f"модель сделала {_actions_count(actions)}, но не сформулировала итог"
     )
     return f"План остановлен на {where}: {what}, поэтому следующие шаги не запускались. {advice}"
+
+
+def _fallback_row(vault: Vault, failed_pid: str):
+    """If a paid provider refuses (402) or is down, finish the step on a connected local/harness model."""
+    try:
+        rows = [r for r in available(vault) if str(r.get("pid")) != failed_pid]
+    except Exception:  # noqa: BLE001 — no fallback is not a reason to fail differently
+        return None
+    if not rows:
+        return None
+    rows.sort(key=lambda r: 0 if r.get("pid") == "harness" else 1 if r.get("pid") == "local" else 2)
+    return rows[0]
 
 
 def _progress(plan: dict, steps: list[dict], current: int = -1) -> dict:
@@ -746,6 +768,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 g["phase"] = f"шаг {i + 1} из {len(steps)}: {step['role']}"
                 pid, mname = CH.split_model(step["model"])
                 client = PR.PROVIDERS[pid]["client"]
+                fallback = _fallback_row(vault, pid)
                 system = (
                     f"Ты — исполнитель шага {i + 1} из {len(steps)} в цепочке ИИ. Твоя роль: {step['role']}. "
                     "Работай только над своим шагом, не повторяй работу предыдущих и верни его результат."
@@ -753,7 +776,10 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 if tools_on:
                     system += (
                         "\n\nЕсли для шага нужны инструменты, вызывай их действиями Mnemai. Не выдумывай "
-                        "результаты инструментов: настоящий результат придёт тебе следующим сообщением.\n\n" + tool_rule
+                        "результаты инструментов: настоящий результат придёт тебе следующим сообщением. "
+                        "MCP-инструменты Mnemai вызывай блоком ```mnema mcp_call name=\"имя\"``` с JSON-аргументами "
+                        "в теле (например memory_context, pc_run, web_search); tools/list — это MCP-метод, "
+                        "а не shell-команда.\n\n" + tool_rule
                     )
                 step_memory = _memory(vault, pid)
                 user = ""
@@ -765,29 +791,63 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 messages = [{"role": "user", "text": user}]
                 answer = ""
                 step_actions = 0
+                last_sig = ""
+                same_action = 0
                 for attempt in range(2):
                     if g["stop"]:
                         break
-                    for _round in range(3):
+                    for _round in range(16):  # a MCP smoke step may need many tool calls in a row
                         if g["stop"]:
                             break
-                        raw = PR.complete(
-                            vault,
-                            pid,
-                            mname,
-                            system,
-                            messages,
-                            usage=step_usage,
-                            meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
-                            stop=lambda: g["stop"],
-                        )
+                        try:
+                            raw = PR.complete(
+                                vault,
+                                pid,
+                                mname,
+                                system,
+                                messages,
+                                usage=step_usage,
+                                meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
+                                stop=lambda: g["stop"],
+                            )
+                        except Exception as e:  # noqa: BLE001 — a paid provider may answer 402/500
+                            if fallback is None:
+                                raise
+                            old = f"{pid}:{mname}"
+                            pid, mname = CH.split_model(str(fallback["model"]))
+                            client = PR.PROVIDERS[pid]["client"]
+                            step["fallback"] = f"{old} → {pid}:{mname}: {type(e).__name__}: {str(e)[:160]}"
+                            g["phase"] = f"шаг {i + 1}: провайдер не ответил, продолжаю на {mname}"
+                            fallback = None
+                            continue
                         clean = CH.strip_thinking(raw)
                         call = TL.parse(clean) if tools_on else None
                         if call:
                             actions_total += 1
                             step_actions += 1
-                            if actions_total > 18:  # a model stuck in a tool loop must not take the app down
+                            if actions_total > 160:  # a model stuck in a tool loop must not take the app down
                                 answer = "Слишком много действий подряд — шаг остановлен. Уточни задачу."
+                                break
+                            sig = json.dumps(
+                                [
+                                    call.get("tool"),
+                                    call.get("name"),
+                                    call.get("args"),
+                                    call.get("command"),
+                                    call.get("body"),
+                                ],
+                                ensure_ascii=False,
+                                sort_keys=True,
+                            )
+                            if sig == last_sig:
+                                same_action += 1
+                            else:
+                                last_sig, same_action = sig, 1
+                            if same_action >= 3:
+                                stop_reason, stop_at = "loop", i
+                                label = call.get("name") or call.get("tool")
+                                step["note"] = f"модель три раза подряд попросила «{label}» и не двигалась дальше"
+                                answer = step["note"]
                                 break
                             said = TL.before(clean, call)
                             result = CH._act(vault, cid, g, call, client, step["model"])
@@ -801,6 +861,18 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                             )
                             continue
                         answer = CH.strip_tool_markup(clean).strip()
+                        if answer and step_actions and _round < 7 and (len(answer) < 180 or _UNFINISHED.search(answer)):
+                            # a model often says «продолжаю» after one tool and calls it a finished step
+                            messages.append({"role": "assistant", "text": answer})
+                            messages.append(
+                                {
+                                    "role": "user",
+                                    "text": "Это ещё не итог шага: выполни оставшиеся пункты задания, вызови нужные "
+                                    "инструменты и верни только итоговый отчёт.",
+                                }
+                            )
+                            answer = ""
+                            continue
                         break
                     if answer or g["stop"]:
                         break
@@ -835,6 +907,9 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     stop_reason, stop_at = "owner", i
                     step["status"] = "stopped"
                     step["note"] = "остановлено владельцем на этом шаге"
+                elif stop_reason == "loop":
+                    stop_reason, stop_at = "loop", i
+                    step["status"] = "stopped"
                 elif not answer.strip():
                     stop_reason, stop_at = "empty_step", i
                     step["status"] = "empty"

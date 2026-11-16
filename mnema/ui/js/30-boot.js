@@ -46,7 +46,8 @@ applyAch();
   }
   const [v, ...argl] = location.hash.slice(1).split("/"),
     arg = argl.join("/");
-  go(v || "chat", arg);
+  // a renderer reload (recovery after a crash) must come back to the same conversation, not a blank one
+  go(v || "chat", arg || ((!v || v === "chat") && LS.get("lastchat", "") ? LS.get("lastchat", "") : undefined));
   hideSplash();
   badge();
   setInterval(badge, 20000);

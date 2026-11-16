@@ -142,7 +142,7 @@ def models_table(vault: Vault) -> list[dict]:
 def _planner(rows: list[dict], wanted: str) -> dict:
     """Who chooses the executors: the cheapest ready model (auto), a strong one, a local one or an exact model."""
     wanted = (wanted or "").strip()
-    if wanted and wanted not in ("auto", "strong", "local"):
+    if wanted and wanted not in ("auto", "strong", "medium", "local"):
         row = next((r for r in rows if r["model"] == wanted), None)
         if not row:
             raise ValueError("эта модель не подключена")
@@ -154,6 +154,13 @@ def _planner(rows: list[dict], wanted: str) -> dict:
         return row
     if wanted == "strong":
         return max(rows, key=lambda r: (r["tier"], not r["free"]))
+    if wanted == "medium":
+        middle = next((r for r in rows if r["tier"] == 2 and not r["free"]), None)
+        if middle is None:
+            middle = next((r for r in rows if r["tier"] == 2), None)
+        if middle is None:
+            middle = rows[len(rows) // 2]
+        return middle
     order = (
         "harness",
         "local",
@@ -601,6 +608,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
     def work():
         made: list[str] = []
         tokens = 0
+        actions_total = 0
         started = time.time()
         try:
             from . import tools as TL
@@ -649,6 +657,10 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                         clean = CH.strip_thinking(raw)
                         call = TL.parse(clean) if tools_on else None
                         if call:
+                            actions_total += 1
+                            if actions_total > 24:  # a model stuck in a tool loop must not take the app down
+                                answer = "_Слишком много действий подряд — шаг остановлен. Уточни задачу._"
+                                break
                             said = TL.before(clean, call)
                             result = CH._act(vault, cid, g, call, client, step["model"])
                             if result is None:

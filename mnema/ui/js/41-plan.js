@@ -52,9 +52,9 @@ function planCardHTML(plan, inChat) {
       const e = s.est || {},
         a = s.actual;
       const title = `прогноз ${planTokRange(e)} · ${planSecRange(e)}${a ? ` / факт ${fmtTok(a.tokens || 0, true)} · ${planSecs(a.seconds)}` : ""}`;
-      return `<div class="pnode" title="${title}"><div class="phead"><span class="pnum">${i + 1}</span><span class="prole">${esc(s.role || "Шаг")}</span></div><span class="pmodel">${esc(s.model_name || s.model || "")}</span><span class="pmeta">≈ ${planTokRange(e)} · ${planSecRange(e)}</span></div>`;
+      return `<div class="pstep" title="${title}"><span class="pnum">${i + 1}</span><span class="pst"><b>${esc(s.role || "Шаг")}</b><small>${esc(s.model_name || s.model || "")}</small></span><span class="pest">≈ ${planTokRange(e)} · ${planSecRange(e)}</span></div>`;
     })
-    .join('<span class="parrow">→</span>');
+    .join("");
   const done = plan.actual;
   const status = plan.status === "running" ? `<span class="pstat">идёт</span>` : "";
   const tokens = `${planTokRange(est)}${done ? ` → ${fmtTok(done.tokens || 0, true)}` : ""}`;
@@ -66,7 +66,7 @@ function planCardHTML(plan, inChat) {
     : "";
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
     <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${moneyPill}${status}</span></div>
-    <div class="pflow ${steps.length > 1 ? "multi" : ""}">${nodes}</div>
+    <div class="psteps">${nodes}</div>
     ${plan.why ? `<div class="pwhy">${esc(plan.why)}</div>` : ""}
     ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span>${plan.doc ? `<button class="btn g sm" data-fopen="${esc(plan.doc)}">${ic("file")}${tr("Документ")}</button>` : ""}<button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
@@ -97,7 +97,10 @@ function planOpen() {
     </div>
     <div class="planfoot">
       <div class="plannote">${ic("mem")}${tr("учтём память и историю разговора")} · ${ic("users")}${tr("исполнители из подключённых ИИ")}</div>
-      <button class="btn" id="plango">${ic("flow")}<span>${tr("Предложить варианты")}</span></button>
+      <div class="planacts">
+        <button class="btn g" id="planrecalc">${ic("redo")}<span>${tr("Пересчитать")}</span></button>
+        <button class="btn" id="plango">${ic("flow")}<span>${tr("Предложить варианты")}</span></button>
+      </div>
     </div>
     <div id="planout"></div>
   </div>`;
@@ -107,6 +110,7 @@ function planOpen() {
     if (e.target === pop) planClose();
   };
   $("#plango", pop).onclick = planPropose;
+  $("#planrecalc", pop).onclick = planPropose;
   planWhoWire(pop);
   loadPlanModels();
   setTimeout(() => $("#plantask", pop).focus(), 60);
@@ -116,10 +120,13 @@ async function planPropose() {
   const task = ($("#plantask") || {}).value?.trim() || "";
   const out = $("#planout");
   if (!task) return toast(tr("Напиши задачу"));
-  const b = $("#plango");
+  const b = $("#plango"),
+    recalc = $("#planrecalc");
+  if (!b || b.disabled) return;
   const was = b.textContent;
   b.disabled = true;
   b.textContent = tr("Подбираю…");
+  if (recalc) recalc.disabled = true;
   if (out)
     out.innerHTML = `<div class="planwait"><i class="planspin"></i><span>${tr("Подбираю исполнителей из подключённых ИИ…")}</span></div>`;
   try {
@@ -136,6 +143,7 @@ async function planPropose() {
   } finally {
     b.disabled = false;
     b.textContent = was;
+    if (recalc) recalc.disabled = false;
   }
 }
 
@@ -177,6 +185,7 @@ let PLAN_MODELS = [];
 function planWhoLabel() {
   if (PLAN_WHO === "auto") return tr("Авто · дешёвая");
   if (PLAN_WHO === "strong") return tr("Сильная");
+  if (PLAN_WHO === "medium") return tr("Средняя");
   if (PLAN_WHO === "local") return tr("Локально");
   const m = PLAN_MODELS.find((x) => x.model === PLAN_WHO) || planWhoList().find((x) => x.v === PLAN_WHO);
   return m ? m.name : PLAN_WHO;
@@ -193,12 +202,13 @@ function planWhoHTML() {
   const hasLocal = models.some((m) => ["local", "ollama", "strata"].includes(m.pid));
   const chip = (v, title, sub) =>
     `<button type="button" class="pwopt ${PLAN_WHO === v ? "on" : ""}" data-pw="${v}"><b>${tr(title)}</b><small>${tr(sub)}</small></button>`;
-  const customOn = !["auto", "strong", "local"].includes(PLAN_WHO);
+  const customOn = !["auto", "strong", "medium", "local"].includes(PLAN_WHO);
   return `<div class="planwho">
     <div class="planwhoh"><span>${tr("Исполнителей подбирает")}</span><small>${tr("от планировщика зависят качество, время и цена схемы")}</small></div>
     <div class="planwhoopts">
       ${chip("auto", "Авто", "дешёвая и быстрая")}
       ${chip("strong", "Сильная", "умнее план")}
+      ${chip("medium", "Средняя", "баланс цены и качества")}
       ${hasLocal ? chip("local", "Локально", "без оплаты") : ""}
       <button type="button" class="pwopt pwoptall ${customOn ? "on" : ""}" id="planwhoall"><b>${tr("Все модели")}</b><small id="planwhopick">${esc(planWhoLabel())}</small></button>
     </div>
@@ -269,6 +279,7 @@ function planModelPicker() {
     <p class="hint">${tr("Это модель, которая будет подбирать исполнителей для шагов, а не выполнять шаги. Цены — ориентир за 1 млн токенов; локальные — $0.")}</p>
     <input class="inp" id="ppsearch" placeholder="${tr("Поиск по модели или провайдеру")}">
     <div class="ppwrap"><table class="pptable"><thead><tr><th>${tr("Модель")}</th><th>${tr("Провайдер")}</th><th>${tr("Вход / 1М")}</th><th>${tr("Выход / 1М")}</th><th>${tr("Хорошо для")}</th><th>${tr("Класс")}</th><th></th></tr></thead><tbody id="pprows"></tbody></table></div>
+    <p class="ppnote" id="ppmore"></p>
     <p class="ppnote">${tr("Цены — ориентир по прайсу API; Claude Code по подписке и локальные модели — $0.")}</p>
   </div>`;
   document.body.appendChild(pop);
@@ -280,7 +291,13 @@ function planModelPicker() {
   const rows = PLAN_MODELS.length ? PLAN_MODELS : planWhoList();
   const draw = () => {
     const q = ($("#ppsearch", pop).value || "").trim().toLowerCase();
-    const list = rows.filter((m) => !q || (m.name + " " + m.provider + " " + m.model).toLowerCase().includes(q));
+    const all = rows
+      .filter((m) => !q || (m.name + " " + m.provider + " " + m.model).toLowerCase().includes(q))
+      .sort((a, b) => (a.free === b.free ? a.price_in - b.price_in || a.name.localeCompare(b.name) : a.free ? -1 : 1));
+    const list = all.slice(0, 60);
+    const more = $("#ppmore", pop);
+    if (more)
+      more.textContent = all.length > 60 ? `${tr("Показаны первые 60 из")} ${all.length} — ${tr("уточни поиск.")}` : "";
     $("#pprows", pop).innerHTML = list.length
       ? list
           .map(

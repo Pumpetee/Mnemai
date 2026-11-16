@@ -112,6 +112,7 @@ class Planner(unittest.TestCase):
 
         self.assertEqual(run_with("local")[0]["planner"]["model"], "local:qwen3")
         self.assertEqual(run_with("strong")[0]["planner"]["model"], "claude_code:haiku")
+        self.assertEqual(run_with("medium")[0]["planner"]["model"], "harness:deepseek-flash")  # tier 2
         self.assertEqual(run_with("harness:deepseek-flash")[0]["planner"]["model"], "harness:deepseek-flash")
         with patch.object(PR, "status", lambda vault: STATUS):
             with self.assertRaises(ValueError):

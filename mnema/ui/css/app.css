@@ -20624,3 +20624,84 @@ button.xft:hover {
   font-size: calc(11.5px * var(--fs));
   color: var(--ink3);
 }
+
+/* plan steps as a compact vertical list: nothing is clipped on a narrow card */
+.psteps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+.pstep {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--line2);
+}
+.pstep:last-child {
+  border-bottom: 0;
+}
+.pstep .pnum {
+  flex: none;
+}
+.pst {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pst b {
+  font-size: calc(12.5px * var(--fs));
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pst small {
+  font-size: calc(11px * var(--fs));
+  color: var(--ink3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pest {
+  flex: none;
+  font-size: calc(11px * var(--fs));
+  color: var(--ink3);
+  white-space: nowrap;
+}
+.planfoot {
+  flex-wrap: wrap;
+}
+#planrecalc {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+#planrecalc svg.i {
+  width: 15px;
+  height: 15px;
+}
+
+/* note on its own line, the two actions evenly on the right */
+.planfoot {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.planfoot .plannote {
+  margin-right: 0;
+}
+.planacts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plancard .pfoot {
+  flex-wrap: wrap;
+}

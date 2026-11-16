@@ -48,6 +48,8 @@ const PLAN_STEP_MARKS = {
   empty: ["x", "нет текста", "bad"],
   timeout: ["clock", "ошибка", "bad"],
   stopped: ["pause", "стоп", "warn"],
+  running: ["clock", "идёт", "warn"],
+  pending: ["pause", "ждёт", ""],
 };
 
 function planStepMark(status) {
@@ -113,6 +115,33 @@ function planCardHTML(plan, inChat) {
     ${!inChat && plan.why ? `<div class="pwhy">${esc(plan.why)}</div>` : ""}
     ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span>${plan.doc ? `<button class="btn g sm" data-fopen="${esc(plan.doc)}">${ic("file")}${tr("Документ")}</button>` : ""}<button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
   </div>`;
+}
+
+function planProgressKey(p) {
+  return [
+    p.status || "",
+    p.stop_reason || "",
+    (p.steps || []).map((s) => `${s.status || ""}:${(s.actual || {}).seconds ?? ""}:${s.actions || 0}`).join(","),
+  ].join("|");
+}
+
+function updatePlanProgress(p) {
+  if (!p || !Array.isArray(p.steps)) return;
+  const key = planProgressKey(p);
+  if (CHAT.planKey === key) return;
+  CHAT.planKey = key;
+  const msgs = $("#msgs");
+  const card = $$("#msgs .plancard").pop();
+  if (!msgs || !card) return;
+  const stick = msgsNearBottom();
+  const top = msgs.scrollTop;
+  const holder = document.createElement("div");
+  holder.innerHTML = planCardHTML(p, true);
+  const next = holder.firstElementChild;
+  if (!next) return;
+  card.replaceWith(next);
+  if (stick) scrollEnd();
+  else msgs.scrollTop = top; // do not pull the owner out of what he is reading
 }
 
 function planClose() {
@@ -450,7 +479,8 @@ async function planApply(plan) {
     CHAT.reading = false;
     const r = await post("/api/plan/run", { chat: CHAT.id || "", plan });
     planClose();
-    if (r.chat && CHAT.id !== r.chat) await viewChat(r.chat);
+    CHAT.planKey = "";
+    if (r.chat) await viewChat(r.chat); // show the plan card with statuses immediately, not only at the end
     CHAT.reading = false;
     scrollEnd();
     poll();

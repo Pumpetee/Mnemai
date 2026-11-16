@@ -566,6 +566,7 @@ def state(cid: str) -> dict:
             **({"pending": g["pending"]} if g.get("pending") else {}),
             **({"sudo": g["sudo"]} if g.get("sudo") else {}),
             **({"run": g["run"]} if g.get("run") else {}),
+            **({"plan": g["plan_progress"]} if g.get("plan_progress") else {}),
         }
         if g
         else {"text": "", "done": True, "error": "", "phase": ""}

@@ -13,6 +13,7 @@ const CHAT = {
   chat: null,
   reading: false, // the owner scrolled up: do not pull the view back while the answer streams
   escGuardUntil: 0, // Escape just closed a window: the next press should not stop the answer by accident
+  planKey: "", // last live plan-card signature
 };
 const NET = { ok: true, ms: 0, timer: 0, frozen: false, resumePoll: false, resumeChat: "" };
 
@@ -102,6 +103,7 @@ const TYPING = '<span class="typing"><i></i><i></i><i></i></span>',
 const SEND_ICON = '<svg viewBox="0 0 24 24"><path d="M3 20l18-8L3 4v6l12 2-12 2z"/></svg>';
 async function viewChat(id) {
   CHAT.reading = false;
+  CHAT.planKey = "";
   const [cl, mdl] = await Promise.all([api("/api/chats"), api("/api/models")]);
   CHAT.model = CHAT.model || cl.default_model;
   const opts = mdl.providers
@@ -2355,6 +2357,7 @@ function poll() {
       pingNet();
       return;
     }
+    if (st.plan) updatePlanProgress(st.plan); // step statuses on the plan card while the chain runs
     if (st.seq !== undefined && T.seq !== -1 && st.seq !== T.seq) {
       const c = await api("/api/chat?id=" + cid);
       if (CHAT.id !== cid) return;

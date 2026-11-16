@@ -619,6 +619,56 @@ def _stop_text(plan: dict, steps: list[dict], index: int, reason: str) -> str:
     return f"План остановлен на {where}: {what}, поэтому следующие шаги не запускались. {advice}"
 
 
+def _progress(plan: dict, steps: list[dict], current: int = -1) -> dict:
+    """A small snapshot for the live plan card: statuses only, never full step outputs."""
+    rows = []
+    for i, step in enumerate(steps):
+        status = step.get("status")
+        if not status:
+            status = "running" if i == current else "pending"
+        rows.append(
+            {
+                "role": step.get("role"),
+                "model_name": step.get("model_name"),
+                "status": status,
+                "actions": int(step.get("actions") or 0),
+                "actual": step.get("actual"),
+                "est": step.get("est"),
+                "note": step.get("note"),
+            }
+        )
+    return {
+        "id": plan.get("id"),
+        "title": plan.get("title"),
+        "note": plan.get("note"),
+        "task": plan.get("task"),
+        "doc": plan.get("doc"),
+        "estimate": plan.get("estimate"),
+        "context": plan.get("context"),
+        "status": plan.get("status"),
+        "stop_reason": plan.get("stop_reason"),
+        "steps": rows,
+    }
+
+
+def _live_text(steps: list[dict], current: int = -1) -> str:
+    """What the owner sees while the chain runs: finished steps and the current one, not a wall of answers."""
+    lines = []
+    for i, step in enumerate(steps):
+        status = step.get("status")
+        actual = step.get("actual") or {}
+        if status == "ok":
+            lines.append(f"✓ Шаг {i + 1} · {step.get('role') or ''} · {actual.get('seconds', '—')} с")
+        elif status in ("empty", "timeout"):
+            lines.append(f"✗ Шаг {i + 1} · {step.get('role') or ''} — {step.get('note') or status}")
+        elif status == "stopped":
+            lines.append(f"· Шаг {i + 1} · {step.get('role') or ''} — не выполнялся")
+    if 0 <= current < len(steps):
+        step = steps[current]
+        lines.append(f"**Шаг {current + 1} из {len(steps)} · {step.get('role') or ''}**\nвыполняется…")
+    return "\n\n".join(lines)
+
+
 def run(vault: Vault, cid: str, plan: dict) -> dict:
     """Start the chosen chain in a chat: each step is one AI call, the results are passed on to the next."""
     task = str(plan.get("task") or "").strip()
@@ -637,6 +687,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
     for s in steps:
         for key in ("status", "note", "actions", "actual", "output", "empty"):
             s.pop(key, None)
+        s["status"] = "pending"
     plan["task"] = task
     plan["status"] = "running"
     first_pid = CH.split_model(steps[0]["model"])[0]
@@ -668,6 +719,8 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         "who": "",
     }
     CH._gen[cid] = g
+    g["plan_progress"] = _progress(plan, steps, 0)
+    g["text"] = _live_text(steps, 0)
 
     def work():
         made: list[str] = []
@@ -695,6 +748,9 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     break
                 step_started = time.time()
                 step_usage: dict = {}
+                step["status"] = "running"
+                g["plan_progress"] = _progress(plan, steps, i)
+                g["text"] = _live_text(steps, i)
                 g["phase"] = f"шаг {i + 1} из {len(steps)}: {step['role']}"
                 pid, mname = CH.split_model(step["model"])
                 client = PR.PROVIDERS[pid]["client"]
@@ -819,10 +875,12 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     step["status"] = "ok"
                     step["note"] = ""
                 made.append(answer)
-                preview = answer.strip() or step.get("note") or ""
-                if len(preview) > 280:
-                    preview = preview[:280].rsplit(" ", 1)[0] + "…"
-                g["text"] += f"### Шаг {i + 1} · {step['role']} · {step['model_name']}\n\n{preview}\n\n"
+                g["plan_progress"] = _progress(plan, steps)
+                g["text"] = _live_text(steps)
+                try:
+                    CH._update_msg(vault, cid, mid, {"plan": plan})  # switching back mid-run shows the statuses
+                except Exception:  # noqa: BLE001 — a progress write must never break the plan
+                    pass
                 if stop_reason:
                     break
             if stop_at >= 0:
@@ -833,6 +891,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
             if stop_reason:
                 plan["stop_reason"] = stop_reason
             plan["actual"] = {"seconds": round(time.time() - started, 1), "tokens": tokens}
+            g["plan_progress"] = _progress(plan, steps)
             _append_plan_result(vault, plan)
             CH._update_msg(vault, cid, mid, {"plan": plan})
             outputs = [str(s.get("output") or "") for s in steps]

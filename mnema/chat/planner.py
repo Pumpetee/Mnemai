@@ -119,6 +119,26 @@ def available(vault: Vault) -> list[dict]:
     return rows
 
 
+def models_table(vault: Vault) -> list[dict]:
+    """Every ready model with the guide prices, for the comparison table in the constructor."""
+    out = []
+    for row in available(vault):
+        pin, pout = _price(row["pid"], row["name"])
+        out.append(
+            {
+                "model": row["model"],
+                "name": row["name"],
+                "provider": row["provider"],
+                "pid": row["pid"],
+                "free": row["free"],
+                "tier": row["tier"],
+                "price_in": pin,
+                "price_out": pout,
+            }
+        )
+    return out
+
+
 def _planner(rows: list[dict], wanted: str) -> dict:
     """Who chooses the executors: the cheapest ready model (auto), a strong one, a local one or an exact model."""
     wanted = (wanted or "").strip()

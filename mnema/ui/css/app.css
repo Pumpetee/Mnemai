@@ -20523,3 +20523,104 @@ button.xft:hover {
 .planwhoinfo:empty {
   display: none;
 }
+
+/* the planner comparison table: a real popup instead of a clipped native select */
+.planpick {
+  z-index: 95;
+  backdrop-filter: blur(5px);
+}
+.planpick .ppcard {
+  position: relative;
+  width: 920px;
+  max-width: 95vw;
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: 16px;
+  border-top: 3px solid var(--acc);
+  padding: 20px 22px;
+}
+.planpick .lmx {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+.planpick h2 {
+  margin: 0 0 4px;
+}
+.planpick .hint {
+  margin: 0 0 12px;
+}
+.ppwrap {
+  max-height: 52vh;
+  overflow: auto;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.pptable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: calc(12.5px * var(--fs));
+}
+.pptable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--soft);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pptable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line2);
+  vertical-align: middle;
+}
+.pptable td b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.pptable td small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink3);
+  font-size: calc(11px * var(--fs));
+}
+.pptable tbody tr:hover td {
+  background: var(--soft);
+}
+.pptable tbody tr.cur td {
+  background: var(--acc2);
+}
+.pptag {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: calc(11px * var(--fs));
+  white-space: nowrap;
+}
+.pptag.free {
+  color: var(--ok);
+  background: var(--okb);
+}
+.pptag.cheap {
+  color: var(--ink2);
+  background: var(--soft);
+}
+.pptag.strong {
+  color: var(--acc-d);
+  background: var(--acc2);
+}
+.ppempty {
+  text-align: center;
+  color: var(--ink3);
+  padding: 20px;
+}
+.ppnote {
+  margin: 10px 0 0;
+  font-size: calc(11.5px * var(--fs));
+  color: var(--ink3);
+}

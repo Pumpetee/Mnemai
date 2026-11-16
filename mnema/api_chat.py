@@ -57,6 +57,10 @@ def get(vault: Vault, path: str, q: dict):
         from .chat import prompts as PRM
 
         return 200, {"prompts": PRM.all_prompts(vault), **PRM.settings(vault)}
+    if path == "/api/plan/models":  # the constructor's comparison table
+        from .chat import planner as PL
+
+        return 200, {"models": PL.models_table(vault)}
     if path == "/api/models":
         PR.find_strata(vault)  # once per start: a Strata already running on this computer shows up by itself
         return 200, {"providers": PR.status(vault), "default_model": CH.default_model(vault)}

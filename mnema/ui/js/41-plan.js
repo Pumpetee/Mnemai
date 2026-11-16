@@ -108,6 +108,7 @@ function planOpen() {
   };
   $("#plango", pop).onclick = planPropose;
   planWhoWire(pop);
+  loadPlanModels();
   setTimeout(() => $("#plantask", pop).focus(), 60);
 }
 
@@ -158,29 +159,48 @@ function planWhoList() {
     .filter((p) => p.ready)
     .flatMap((p) =>
       (p.models || []).map((m) => ({
+        model: p.id + ":" + m.id,
         v: p.id + ":" + m.id,
         pid: p.id,
-        label: (p.id === "local" ? "На компьютере · " : p.name + " · ") + m.name,
+        name: m.name,
+        provider: p.name,
+        free: ["local", "ollama", "strata"].includes(p.id),
+        tier: ["local", "ollama", "strata"].includes(p.id) ? 1 : 3,
+        price_in: 0,
+        price_out: 0,
       })),
     );
 }
 
+let PLAN_MODELS = [];
+
+function planWhoLabel() {
+  if (PLAN_WHO === "auto") return tr("Авто · дешёвая");
+  if (PLAN_WHO === "strong") return tr("Сильная");
+  if (PLAN_WHO === "local") return tr("Локально");
+  const m = PLAN_MODELS.find((x) => x.model === PLAN_WHO) || planWhoList().find((x) => x.v === PLAN_WHO);
+  return m ? m.name : PLAN_WHO;
+}
+
 function planWhoHTML() {
   const models = planWhoList();
-  if (!["auto", "strong", "local"].includes(PLAN_WHO) && !models.some((m) => m.v === PLAN_WHO)) PLAN_WHO = "auto";
+  if (
+    !["auto", "strong", "local"].includes(PLAN_WHO) &&
+    !models.some((m) => m.v === PLAN_WHO) &&
+    !PLAN_MODELS.some((m) => m.model === PLAN_WHO)
+  )
+    PLAN_WHO = "auto";
   const hasLocal = models.some((m) => ["local", "ollama", "strata"].includes(m.pid));
   const chip = (v, title, sub) =>
     `<button type="button" class="pwopt ${PLAN_WHO === v ? "on" : ""}" data-pw="${v}"><b>${tr(title)}</b><small>${tr(sub)}</small></button>`;
-  const opts = models
-    .map((m) => `<option value="${esc(m.v)}"${PLAN_WHO === m.v ? " selected" : ""}>${esc(m.label)}</option>`)
-    .join("");
+  const customOn = !["auto", "strong", "local"].includes(PLAN_WHO);
   return `<div class="planwho">
     <div class="planwhoh"><span>${tr("Исполнителей подбирает")}</span><small>${tr("от планировщика зависят качество, время и цена схемы")}</small></div>
     <div class="planwhoopts">
       ${chip("auto", "Авто", "дешёвая и быстрая")}
       ${chip("strong", "Сильная", "умнее план")}
       ${hasLocal ? chip("local", "Локально", "без оплаты") : ""}
-      <select id="planwhosel" class="planwhosel" title="${tr("Выбрать другую модель")}"><option value="">${tr("Другая модель…")}</option>${opts}</select>
+      <button type="button" class="pwopt pwoptall ${customOn ? "on" : ""}" id="planwhoall"><b>${tr("Все модели")}</b><small id="planwhopick">${esc(planWhoLabel())}</small></button>
     </div>
     <div class="planwhoinfo" id="planwhoinfo"></div>
   </div>`;
@@ -192,23 +212,106 @@ function planWhoWire(pop) {
       (b.onclick = () => {
         PLAN_WHO = b.dataset.pw;
         LS.set("plan_who", PLAN_WHO);
-        const sel = $("#planwhosel", pop);
-        if (sel) sel.value = "";
         $$("[data-pw]", pop).forEach((x) => x.classList.toggle("on", x === b));
+        const all = $("#planwhoall", pop);
+        if (all) {
+          all.classList.remove("on");
+          const lbl = $("#planwhopick", pop);
+          if (lbl) lbl.textContent = planWhoLabel();
+        }
         const info = $("#planwhoinfo", pop);
         if (info) info.textContent = "";
       }),
   );
-  const sel = $("#planwhosel", pop);
-  if (sel)
-    sel.onchange = () => {
-      if (!sel.value) return;
-      PLAN_WHO = sel.value;
-      LS.set("plan_who", PLAN_WHO);
-      $$("[data-pw]", pop).forEach((x) => x.classList.remove("on"));
-      const info = $("#planwhoinfo", pop);
-      if (info) info.textContent = "";
-    };
+  const all = $("#planwhoall", pop);
+  if (all) all.onclick = () => planModelPicker();
+}
+
+async function loadPlanModels() {
+  try {
+    const r = await api("/api/plan/models");
+    PLAN_MODELS = r.models || [];
+  } catch (e) {
+    PLAN_MODELS = [];
+  }
+  const pick = $("#planwhopick");
+  if (pick) pick.textContent = planWhoLabel();
+}
+
+function planPrice(v) {
+  const n = Number(v) || 0;
+  if (!n) return "$0";
+  return n < 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(2)}`;
+}
+
+function planKind(m) {
+  if (m.free) return tr("локальная · бесплатно");
+  return m.tier >= 3 ? tr("сильная") : m.tier === 2 ? tr("средняя") : tr("дешёвая");
+}
+
+function planRole(m) {
+  if (m.free) return tr("черновик и проверка");
+  return m.tier >= 3 ? tr("план и критика") : m.tier === 2 ? tr("план и шаги") : tr("быстрые шаги");
+}
+
+function planModelPicker() {
+  const old = $("#planpick");
+  if (old) {
+    old.remove();
+    return;
+  }
+  const pop = document.createElement("div");
+  pop.className = "modal planpick";
+  pop.id = "planpick";
+  pop.innerHTML = `<div class="card ppcard">
+    <button class="lmx" data-x title="${tr("Закрыть")}">×</button>
+    <h2>${tr("Кого поставить планировщиком?")}</h2>
+    <p class="hint">${tr("Это модель, которая будет подбирать исполнителей для шагов, а не выполнять шаги. Цены — ориентир за 1 млн токенов; локальные — $0.")}</p>
+    <input class="inp" id="ppsearch" placeholder="${tr("Поиск по модели или провайдеру")}">
+    <div class="ppwrap"><table class="pptable"><thead><tr><th>${tr("Модель")}</th><th>${tr("Провайдер")}</th><th>${tr("Вход / 1М")}</th><th>${tr("Выход / 1М")}</th><th>${tr("Хорошо для")}</th><th>${tr("Класс")}</th><th></th></tr></thead><tbody id="pprows"></tbody></table></div>
+    <p class="ppnote">${tr("Цены — ориентир по прайсу API; Claude Code по подписке и локальные модели — $0.")}</p>
+  </div>`;
+  document.body.appendChild(pop);
+  const close = () => pop.remove();
+  $("[data-x]", pop).onclick = close;
+  pop.onclick = (e) => {
+    if (e.target === pop) close();
+  };
+  const rows = PLAN_MODELS.length ? PLAN_MODELS : planWhoList();
+  const draw = () => {
+    const q = ($("#ppsearch", pop).value || "").trim().toLowerCase();
+    const list = rows.filter((m) => !q || (m.name + " " + m.provider + " " + m.model).toLowerCase().includes(q));
+    $("#pprows", pop).innerHTML = list.length
+      ? list
+          .map(
+            (m) =>
+              `<tr class="${m.model === PLAN_WHO ? "cur" : ""}"><td><b>${esc(m.name)}</b><small>${esc(m.model.split(":").slice(1).join(":"))}</small></td><td>${esc(m.provider)}</td><td>${planPrice(m.price_in)}</td><td>${planPrice(m.price_out)}</td><td>${planRole(m)}</td><td><span class="pptag ${m.free ? "free" : m.tier >= 3 ? "strong" : "cheap"}">${planKind(m)}</span></td><td><button class="btn sm" data-pick="${esc(m.model)}">${m.model === PLAN_WHO ? tr("Выбрана") : tr("Выбрать")}</button></td></tr>`,
+          )
+          .join("")
+      : `<tr><td colspan="7" class="ppempty">${tr("Ничего не нашлось")}</td></tr>`;
+    $$("[data-pick]", pop).forEach((b) => {
+      b.onclick = () => {
+        PLAN_WHO = b.dataset.pick;
+        LS.set("plan_who", PLAN_WHO);
+        close();
+        const main = $("#planwhoopts");
+        if (main) {
+          $$("[data-pw]", main).forEach((x) => x.classList.remove("on"));
+          const allb = $("#planwhoall", main);
+          if (allb) {
+            allb.classList.add("on");
+            const lbl = $("#planwhopick", main);
+            if (lbl) lbl.textContent = planWhoLabel();
+          }
+        }
+        const info = $("#planwhoinfo");
+        if (info) info.textContent = `${tr("Планировщик")}: ${planWhoLabel()}`;
+      };
+    });
+  };
+  $("#ppsearch", pop).oninput = draw;
+  draw();
+  $("#ppsearch", pop).focus();
 }
 
 function planCloseAsk() {

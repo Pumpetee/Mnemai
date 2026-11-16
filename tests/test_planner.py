@@ -87,6 +87,17 @@ class Planner(unittest.TestCase):
         self.assertTrue(doc and Path(doc).is_file())  # the schema is also a Markdown document
         self.assertIn("Схема задачи", Path(doc).read_text(encoding="utf-8"))
 
+    def test_models_table_has_prices_and_kinds(self):
+        v = _vault()
+        with patch.object(PR, "status", lambda vault: STATUS):
+            rows = PL.models_table(v)
+        by = {r["model"]: r for r in rows}
+        self.assertIn("local:qwen3", by)
+        self.assertEqual(by["local:qwen3"]["price_in"], 0)
+        self.assertEqual(by["local:qwen3"]["price_out"], 0)
+        self.assertGreater(by["harness:deepseek-flash"]["price_in"], 0)
+        self.assertGreaterEqual(by["harness:deepseek-flash"]["tier"], 1)
+
     def test_the_owner_can_choose_who_picks_the_executors(self):
         v = _vault()
 

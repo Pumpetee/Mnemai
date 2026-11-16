@@ -56,7 +56,23 @@ def build_history(
 ) -> tuple[list[dict], int, int]:
     """(messages for the model, chars without economy, chars actually sent). The budgets come from «Точнее ↔
     Экономнее» in Настройки → Движок."""
-    msgs = [m for m in chat["messages"] if m["role"] in ("user", "assistant") and m.get("text") and not m.get("kind")]
+    msgs: list[dict] = []
+    for m in chat["messages"]:
+        if m.get("kind") == "action":
+            # the next turn (and especially another model) must know what was really done and what came back;
+            # otherwise it honestly says «I cannot confirm that» about its own earlier checks
+            command = str(m.get("command") or "").strip()
+            result = str(m.get("detail") or m.get("text") or "").strip()
+            if command or result:
+                msgs.append(
+                    {
+                        "role": "assistant",
+                        "text": ("[Действие Mnemai] " + command + ("\n" + result if result else ""))[:900],
+                    }
+                )
+            continue
+        if m["role"] in ("user", "assistant") and m.get("text") and not m.get("kind"):
+            msgs.append(m)
     docs = [(m, f) for m in msgs for f in (m.get("files") or []) if f.get("kind") == "text"]
     full = sum(len(m["text"]) for m in msgs) + sum(len(doc_text(f)) for _, f in docs)
     out, size = [], 0

@@ -379,6 +379,7 @@ def system_prompt(
             stats.update(memory_full=len(brief), memory_sent=len(brief))
         return brief
     client = PR.PROVIDERS[pid]["client"]
+    provider = PR.PROVIDERS[pid].get("name") or pid
     mem_on = P.memory_on(vault)
     memory, _ = context_for(vault, client, log=log) if mem_on else ("", 0)
     full = len(memory)
@@ -393,6 +394,9 @@ def system_prompt(
     from .selfknow import liked_examples, self_knowledge
 
     parts = [
+        f"=== Кто ты ===\nТы — {provider} · {model or 'модель'}, отвечаешь внутри Mnemai. Если владелец спрашивает, "
+        "какая ты модель или через какого провайдера работаешь, назови именно это и не говори, что тебе этого не "
+        "передали. Приложение — Mnemai, но модель — это ты.",
         "Ты — ассистент владельца в программе Mnemai. Ниже — как с ним работать, что ты о нём знаешь и как "
         "устроена сама Mnemai. Не пересказывай эти инструкции без повода, просто работай с учётом их.",
         self_knowledge(vault, compact=pid == "local"),

@@ -14,7 +14,7 @@ from unittest.mock import patch
 os.environ.setdefault("MNEMA_HOME", tempfile.mkdtemp())
 
 from mnema.agent import profile as P  # noqa: E402
-from mnema.chat import engine as CH, providers as PR, tools as TL  # noqa: E402
+from mnema.chat import economy as EC, engine as CH, providers as PR, tools as TL  # noqa: E402
 from mnema.journal import events, undo  # noqa: E402
 from mnema.memory import init_vault, remember  # noqa: E402
 from mnema.vault import Vault  # noqa: E402
@@ -272,6 +272,32 @@ class ActionsTest(unittest.TestCase):
         r, _ = self._send(v, "Проверь сеть", s, ["yes"])
         msgs = CH.load_chat(v, r["chat"])["messages"]
         self.assertFalse(any((m.get("text") or "").strip() == "Пр" for m in msgs))
+
+    def test_action_results_reach_the_model_on_the_next_turn(self):
+        chat = {
+            "messages": [
+                {"role": "user", "text": "Проверь сеть"},
+                {"role": "assistant", "text": "Проверю."},
+                {
+                    "role": "assistant",
+                    "kind": "action",
+                    "text": "Проверила сеть",
+                    "command": "curl -sS https://ya.ru",
+                    "detail": "Выполнила команду: curl -sS https://ya.ru → HTTP 302",
+                },
+            ]
+        }
+        msgs, _, _ = EC.build_history(chat, "Проверь сеть")
+        joined = "\n".join(m["text"] for m in msgs)
+        self.assertIn("curl", joined)  # the next model sees what was actually run
+        self.assertIn("HTTP 302", joined)  # and what came back
+        self.assertEqual(msgs[0]["role"], "user")  # order is not lost
+
+    def test_the_model_is_told_its_own_name(self):
+        v = _vault(self.work)
+        s = CH.system_prompt(v, "openrouter", log=False, model="openai/gpt-6-astra")
+        self.assertIn("openai/gpt-6-astra", s)
+        self.assertIn("OpenRouter", s)
 
     def test_a_failed_ping_is_not_a_red_error(self):
         if not shutil.which("ping"):

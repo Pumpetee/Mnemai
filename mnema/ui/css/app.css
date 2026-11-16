@@ -20848,3 +20848,18 @@ button.xft:hover {
   -webkit-user-select: none !important;
   user-select: none !important;
 }
+
+/* Software rendering: QtWebEngine with --disable-gpu leaks compositor memory for as long as a perpetual
+   animation keeps forcing frames — an idle window grows by hundreds of MB a minute. The program forces
+   prefers-reduced-motion on Linux when it renders in software; endless animations then play once and stop,
+   while one-shot ones finish at once. This is also the calm interface users with reduced motion expect. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

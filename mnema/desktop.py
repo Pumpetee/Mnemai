@@ -12,6 +12,7 @@ import ctypes
 import json
 import os
 import re
+import signal
 import time
 import socket
 import subprocess
@@ -20,10 +21,28 @@ import threading
 import urllib.request
 from pathlib import Path
 
+
 # QtWebEngine's GPU process has crashed twice on this Fedora box after a long plan, leaving a black window.
 # Rendering the UI in software is a little slower but does not take the window down with the GPU process.
+def _linux_webengine_flags(configured: str) -> str:
+    """QtWebEngine flags for Linux: software rendering plus reduced motion.
+
+    Software rendering leaks compositor memory for as long as a perpetual CSS animation keeps forcing frames:
+    hundreds of megabytes a minute on a window nobody touches. The reduced-motion flag makes the interface stop
+    endless animations (see app.css), while a custom GPU setup without --disable-gpu is left as it is.
+    """
+    flags = configured.strip()
+    if "--disable-gpu" not in flags:
+        return flags
+    if "--force-prefers-reduced-motion" not in flags:
+        flags = (flags + " --force-prefers-reduced-motion").strip()
+    return flags
+
+
 if sys.platform.startswith("linux"):
-    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu")
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = _linux_webengine_flags(
+        os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu")
+    )
 
 import webview
 from PIL import Image, ImageDraw
@@ -1018,11 +1037,39 @@ class App:
         self.window.events.loaded += on_loaded
 
     def _reload_ui(self) -> None:
-        """Reload the page from a background thread: a fresh renderer releases whatever the old one held."""
+        """Reload the page from a background thread: the crash watchdog then starts a fresh renderer."""
         try:
             self.window.evaluate_js("location.reload()")
         except Exception as exc:  # noqa: BLE001 — recovery must never end the program
             _note(f"renderer: перезагрузка страницы не удалась: {exc}")
+
+    def _restart_renderer(self) -> None:
+        """Kill the QtWebEngine renderer process: a page reload alone keeps it, and so does its native memory.
+
+        The crash watchdog reloads the page after a renderer dies, so a new process is forked from the zygote
+        and starts small. Without a renderer process (already dead, or another backend) this is a plain reload.
+        """
+        if getattr(self, "_renderer_page", None) is None:
+            # the crash watchdog is not attached yet: killing the renderer would leave a dead page behind
+            self._reload_ui()
+            return
+        try:
+            pids = _renderer_pids(os.getpid())
+        except Exception:  # noqa: BLE001 — /proc hiccups must not end the program
+            pids = []
+        killed = 0
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+                killed += 1
+            except OSError:  # noqa: PERF203 — the renderer may have exited between the scan and the kill
+                continue
+        if killed:
+            # an intentional restart must not grow the crash backoff to a minute: the page is reloaded quickly
+            self._renderer_crashes = []
+            _note(f"renderer: память окна выше порога — перезапускаю процесс рендерера ({killed})")
+        else:
+            self._reload_ui()
 
     def _watch_memory(self):
         """Cap the renderer's native memory: a black window is worse than a page reload.
@@ -1046,9 +1093,9 @@ class App:
                 if verdict == "reload":
                     _note(
                         f"renderer: память окна {rss:.0f} МБ ≥ {RENDERER_MEMORY_RELOAD_MB} МБ — "
-                        "перезагружаю страницу, чтобы рендерер начал с нуля"
+                        "перезапускаю рендерер, страница откроется заново"
                     )
-                    self._reload_ui()
+                    self._restart_renderer()
                     warned = False
                 elif verdict == "warn" and not warned:
                     _note(f"renderer: память окна {rss:.0f} МБ — выше обычного, слежу")
@@ -1362,6 +1409,29 @@ def _descendants_rss_mb(pid: int) -> float:
             total += _rss_mb(current)
         stack.extend(_proc_children(current))
     return total
+
+
+def _proc_cmdline(pid: int) -> str:
+    """The command line of a process from /proc; empty when the process is already gone."""
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def _renderer_pids(pid: int) -> list[int]:
+    """QtWebEngine renderer processes below the app — they hold the Blink/compositor memory a page reload keeps."""
+    found: list[int] = []
+    stack, seen = [pid], set()
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if current != pid and "--type=renderer" in _proc_cmdline(current):
+            found.append(current)
+        stack.extend(_proc_children(current))
+    return found
 
 
 def _memory_action(rss_mb: float) -> str:

@@ -204,6 +204,7 @@ async function viewChat(id) {
   inp.oninput = () => {
     inp.style.height = "auto";
     inp.style.height = Math.min(240, inp.scrollHeight) + "px";
+    LS.set("draft:" + (CHAT.id || "new"), inp.value); // a renderer reload must not eat an unsent message
   };
   inp.onkeydown = (e) => {
     if (e.key === "Escape") {
@@ -269,6 +270,11 @@ async function viewChat(id) {
   WORK("");
   CHAT.id = id || "";
   if (CHAT.id) LS.set("lastchat", CHAT.id); // «Чаты» on the rail comes back here
+  const savedDraft = LS.get("draft:" + (CHAT.id || "new"), "");
+  if (savedDraft) {
+    inp.value = savedDraft;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+  }
   CHAT.chat = null;
   CHAT.newPrivate = false;
   CHAT.pendingTitle = "";
@@ -2060,7 +2066,10 @@ function scrollEnd() {
 // a drag/selection in progress must not be destroyed by a poll or a live-update re-render
 function selectionActive() {
   const s = window.getSelection();
-  return !!(s && s.rangeCount && !s.isCollapsed && String(s).trim());
+  if (!s || !s.rangeCount || s.isCollapsed || !String(s).trim()) return false;
+  const node = s.anchorNode;
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  return !!(el && el.closest && el.closest("#msgs")); // a selection elsewhere must not freeze the chat
 }
 function msgsNearBottom() {
   const m = $("#msgs");
@@ -2149,6 +2158,7 @@ async function sendMsg() {
     toast("Нет связи с Mnemai — заморозил сессию, контекст не потеряется");
     return;
   }
+  LS.set("draft:" + (CHAT.id || "new"), ""); // it is being sent now
   if (CHAT.polling) {
     if (!CHAT.cons) {
       // The answer is still being written: accept the message now, stop the old plan and let the new turn

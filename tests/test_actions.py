@@ -368,6 +368,11 @@ class ActionsTest(unittest.TestCase):
         self.assertTrue(seen.get("w"))
         self.assertIn("memory_remember", text)
 
+    def test_credentials_are_not_available_through_mcp_paths(self):
+        self.assertTrue(TL.sensitive_path("~/.ssh/id_rsa"))
+        self.assertTrue(TL.sensitive_path("~/.aws/credentials"))
+        self.assertFalse(TL.sensitive_path("/tmp/mnemai-mcp-smoke-test/notes.txt"))
+
     def test_mcp_desktop_control_still_needs_the_owner(self):
         v = _vault()
         call = TL.parse('```mnema mcp_call name="pc_click"\n{"x": 1, "y": 2}\n```')

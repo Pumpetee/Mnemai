@@ -534,7 +534,23 @@ def _phase(g: dict) -> str:
     return f"модель на компьютере {what} · {pct}%{left}"
 
 
+def _prune_gen() -> None:
+    """Completed generations are polled once; stale ones must not live in the process forever."""
+    now = time.time()
+    for cid, item in list(_gen.items()):
+        if item.get("done"):
+            item.setdefault("done_at", now)
+            if now - float(item.get("done_at") or now) > 3600:
+                _gen.pop(cid, None)
+        elif now - float(item.get("started") or now) > 7200:
+            _gen.pop(cid, None)
+    if len(_gen) > 300:  # a hard ceiling: an app open for days cannot grow without bound
+        for cid in list(_gen)[: len(_gen) - 300]:
+            _gen.pop(cid, None)
+
+
 def state(cid: str) -> dict:
+    _prune_gen()
     g = _gen.get(cid)
     from .terms import visible
 
@@ -731,7 +747,10 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
         desc = TL.what(vault, call)
     except Exception as e:
         return f"Не сделано: {e}"
-    allowed = not P.load(vault).get("tools_ask", False) or call["tool"] in (load_chat(vault, cid).get("tools_ok") or [])
+    force_ask = call["tool"] in getattr(TL, "FORCE_ASK", set())
+    allowed = (not force_ask and not P.load(vault).get("tools_ask", False)) or call["tool"] in (
+        load_chat(vault, cid).get("tools_ok") or []
+    )
     if not allowed:
         aid = secrets.token_hex(4)
         box = {"event": threading.Event(), "choice": ""}
@@ -740,10 +759,12 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
             pending={"id": aid, "tool": call["tool"], "what": desc, "write": call["tool"] in TL.WRITES},
             phase="жду твоего разрешения",
         )
+        deadline = time.monotonic() + 600  # a lost window must not keep a thread alive forever
         while not box["event"].wait(0.3):
-            if g["stop"]:
+            if g["stop"] or time.monotonic() > deadline:
                 g.pop("pending", None)
                 _answers.pop(aid, None)
+                g["stop"] = True
                 return None
         g.pop("pending", None)
         _answers.pop(aid, None)
@@ -755,7 +776,8 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
                 {"role": "assistant", "kind": "action", "ts": _now(), "text": "Не разрешено: " + desc, "refused": True},
             )
             return "Владелец не разрешил это действие. Не повторяй его; ответь без него или спроси, как быть."
-        if choice == "always":
+        if choice == "always" and call["tool"] not in getattr(TL, "FORCE_ASK", set()):
+            # a broad MCP action is never put on the permanent allowlist: one call, one decision
             modify_chat(
                 vault, cid, lambda c: c.__setitem__("tools_ok", sorted(set(c.get("tools_ok") or []) | {call["tool"]}))
             )
@@ -902,8 +924,10 @@ def _sudo_password_in_chat(vault: Vault, cid: str, g: dict, command: str) -> str
         g["sudo"] = {"id": aid, "command": command[:160], "wrong": attempt > 0}
         g["phase"] = "жду пароль администратора"
         try:
+            deadline = time.monotonic() + 600
             while not box["event"].wait(0.3):
-                if g.get("stop"):
+                if g.get("stop") or time.monotonic() > deadline:
+                    g["stop"] = True
                     return None
         finally:
             _answers.pop(aid, None)

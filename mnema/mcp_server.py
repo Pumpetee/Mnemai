@@ -840,6 +840,12 @@ class Server:
         from .chat import tools as TL
         from .journal import log_event
 
+        for key in ("path", "destination", "cwd"):
+            value = str(args.get(key) or "")
+            if value and TL.sensitive_path(value):
+                raise PermissionDenied(
+                    "служебные файлы Mnemai, ключи, пароли и секретные хранилища не отдаются и не меняются через MCP"
+                )
         if name == "pc_run" and TL.SECRET_ACCESS.search(str(args.get("command") or "")):
             raise PermissionDenied("пароли и ключи не читаю — они лежат вне памяти и не отдаются ни одной модели")
         if name in ("pc_read_file", "pc_list_dir", "pc_glob", "pc_grep"):

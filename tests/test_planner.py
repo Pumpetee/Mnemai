@@ -88,9 +88,7 @@ def _messages(v: Vault, chat_id: str) -> list[dict]:
 
 
 class Planner(unittest.TestCase):
-    def test_a_full_mcp_sweep_is_recognised(self):
-        self.assertTrue(PL._is_mcp_sweep("Проверь MCP: пройди ВСЕ инструменты из tools/list, каждый вызови"))
-        self.assertFalse(PL._is_mcp_sweep("Проверь один инструмент memory_context"))
+    def test_readonly_plan_document_detection(self):
         self.assertTrue(PL._is_mcp_readonly_sweep("Проверь все инструменты MCP: хранилище только читаем, tools/list"))
         self.assertFalse(PL._is_mcp_readonly_sweep("Проверь все инструменты MCP, tools/list"))
 
@@ -450,7 +448,7 @@ class Planner(unittest.TestCase):
         with (
             patch.object(PR, "status", lambda vault: STATUS),
             patch.object(PR, "complete", fake_complete),
-            patch.object(PL, "time", SimpleNamespace(time=fake_time, strftime=time.strftime)),
+            patch.object(PL, "time", SimpleNamespace(time=fake_time, monotonic=fake_time, strftime=time.strftime)),
             patch.object(CH, "_drain_queue"),
         ):
             PL.run(v, chat["id"], plan)

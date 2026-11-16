@@ -68,6 +68,8 @@ WRITES = {
     "mcp_smoke_readonly",
     "mcp_smoke_all",
 }
+# even when «не спрашивать» is on, these must get one explicit owner confirmation: they can touch the whole machine
+FORCE_ASK = {"mcp_call", "mcp_smoke", "mcp_smoke_readonly", "mcp_smoke_all"}
 TEXT_EXT = {".md", ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".log", ".ini", ".tsv"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
 MAX_READ = 60_000
@@ -472,9 +474,15 @@ def what(vault: Vault, call: dict) -> str:
     except Refused:
         exists = False
     if t == "mcp_call":
-        return f"вызвать MCP-инструмент {call.get('name', '')}"
+        name = str(call.get("name") or "")
+        args = call.get("args") or {}
+        try:
+            shown = json.dumps(args, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError):
+            shown = str(args)
+        return f"вызвать MCP-инструмент {name} {shown[:300]}"
     if t in ("mcp_smoke", "mcp_smoke_readonly", "mcp_smoke_all"):
-        return "пройти все инструменты локального MCP-сервера"
+        return "пройти все инструменты локального MCP-сервера (проверка может создавать и удалять тестовые записи)"
     return {
         "read_file": f"прочитать файл {path}",
         "list_files": f"посмотреть, что лежит в папке {path}",
@@ -620,8 +628,37 @@ def _command(call: dict) -> str:
 
 SECRET_ACCESS = re.compile(
     r"secret-tool\b|secrets\.json|gnome-keyring|kwallet|keyring\.(?:get|list)|"
-    r"security\s+find-generic-password"
+    r"security\s+find-generic-password|\.ssh\b|\.gnupg\b|\.aws\b|\.netrc\b|"
+    r"id_(?:rsa|ed25519|ecdsa)|\.config/(?:gcloud|gh|google-chrome|chromium|BraveSoftware)|"
+    r"Login Data|key4\.db|logins\.json",
+    re.I,
 )
+SENSITIVE_DIRS = {
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".mozilla",
+    ".thunderbird",
+    ".pki",
+    "keyrings",
+    "gcloud",
+    "gh",
+    "google-chrome",
+    "chromium",
+    "BraveSoftware",
+}
+SENSITIVE_NAMES = {".netrc", "id_rsa", "id_ed25519", "id_ecdsa", "secrets.json", "credentials", "login data"}
+
+
+def sensitive_path(text: str) -> bool:
+    """Never hand an MCP client the owner's credentials, SSH/GPG keys or browser secret stores."""
+    try:
+        p = Path(str(text or "")).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return False
+    if p.name.lower() in SENSITIVE_NAMES:
+        return True
+    return any(part in SENSITIVE_DIRS for part in p.parts)
 
 
 INSTALL_COMMAND = re.compile(
@@ -1406,8 +1443,8 @@ def _open_app(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str
 MCP_DESKTOP = {"pc_click", "pc_type", "pc_key", "pc_scroll", "pc_open_app", "open_app"}
 
 
-def _mcp_run(vault: Vault, call: dict) -> tuple[str, str, str]:
-    """Call one tool of the local MCP server from a chat/plan action."""
+def _mcp_run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]:
+    """Call one tool of the local MCP server from a chat/plan action as the assistant that asked for it."""
     name = str(call.get("name") or "").strip()
     if not name:
         raise Refused("не указан MCP-инструмент")
@@ -1439,7 +1476,7 @@ def _mcp_run(vault: Vault, call: dict) -> tuple[str, str, str]:
     try:
         from ..mcp_server import Server
 
-        out = Server(vault, "local").call(name, args, strict=True)
+        out = Server(vault, client).call(name, args, strict=True)
     except Exception as e:  # noqa: BLE001 — the model gets the MCP error and can react
         raise Refused(f"{name}: {e}") from e
     text = str(out)
@@ -1451,7 +1488,7 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
     """Do an approved action: (result for the model, line for the owner, path or "")."""
     t = call["tool"]
     if t == "mcp_call":
-        return _mcp_run(vault, call)
+        return _mcp_run(vault, call, client)
     if t in ("mcp_smoke", "mcp_smoke_readonly", "mcp_smoke_all"):
         from . import mcpsmoke
 

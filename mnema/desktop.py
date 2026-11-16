@@ -951,10 +951,16 @@ class App:
 
             page = self.window.gui.webview.page()
             self._renderer_reloading = False
+            self._renderer_crashes: list[float] = []
 
             def recover(_status, _code):
                 if self._renderer_reloading or self.vault is None:
                     return
+                now = time.time()
+                self._renderer_crashes = [t for t in self._renderer_crashes if now - t < 60]
+                if len(self._renderer_crashes) >= 3:
+                    return  # let the owner restart instead of flashing the window forever
+                self._renderer_crashes.append(now)
                 self._renderer_reloading = True
 
                 def reload_page():
@@ -964,7 +970,7 @@ class App:
                         pass
                     self._renderer_reloading = False
 
-                QTimer.singleShot(400, reload_page)
+                QTimer.singleShot(min(4000, 400 * len(self._renderer_crashes)), reload_page)
 
             page.renderProcessTerminated.connect(recover)
         except Exception:  # noqa: BLE001 — another backend, or a pywebview version without that signal

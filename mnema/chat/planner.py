@@ -20,7 +20,8 @@ from ..vault import Vault
 from . import engine as CH, providers as PR
 
 MAX_STEPS = 6
-# No wall-clock cap on a plan: the owner can stop it, and each provider call can be interrupted by that stop.
+# No wall-clock cap on the whole plan, but one provider request must not hang the plan thread forever.
+PROVIDER_SECONDS = 300
 FREE = {"local", "ollama", "strata"}  # runs on this computer: no token price
 STRONG = {"claude_code", "anthropic", "openai", "gemini", "openrouter", "codex"}
 OUT_CHARS = {"короткий": 700, "план": 1200, "черновик": 3500, "критика": 1000, "финал": 2200, "ответ": 1500}
@@ -643,22 +644,6 @@ def _is_mcp_readonly_sweep(task: str) -> bool:
     )
 
 
-def _is_mcp_sweep(task: str) -> bool:
-    """The owner asks to go through every MCP tool: a model-by-model improvisation is the wrong tool for that."""
-    t = (task or "").lower()
-    return "mcp" in t and any(
-        marker in t
-        for marker in (
-            "tools/list",
-            "все инструменты",
-            "всех инструментов",
-            "каждый инструмент",
-            "all tools",
-            "весь каталог",
-        )
-    )
-
-
 def _fallback_row(vault: Vault, failed_pid: str):
     """If a paid provider refuses (402) or is down, finish the step on a connected local/harness model."""
     try:
@@ -782,53 +767,6 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         try:
             from . import tools as TL
 
-            if _is_mcp_sweep(task):
-                # deterministic full sweep: every tool once, table, cleanup — no model improvisation
-                from . import mcpsmoke
-
-                readonly = _is_mcp_readonly_sweep(task)
-                g["phase"] = (
-                    "MCP smoke: прохожу весь tools/list (только чтение)"
-                    if readonly
-                    else "MCP smoke: прохожу весь tools/list"
-                )
-                g["text"] = "Прохожу все инструменты MCP-сервера…"
-                table = mcpsmoke.run_readonly(vault) if readonly else mcpsmoke.run(vault)
-                now = round(time.time() - started, 1)
-                for j, step in enumerate(steps):
-                    step["actions"] = 0
-                    step["status"] = "ok"
-                    step["actual"] = {"tokens": 0, "seconds": now if j == 0 else 0}
-                    step["output"] = table if j == 0 else ""
-                    step["note"] = "" if j == 0 else "выполнено одной встроенной проверкой mcp_smoke"
-                plan["status"] = "done"
-                plan["actual"] = {"seconds": now, "tokens": 0}
-                plan["stop_reason"] = None
-                g["plan_progress"] = _progress(plan, steps)
-                g["text"] = "MCP smoke завершён."
-                _append_plan_result(vault, plan)
-                CH._update_msg(vault, cid, mid, {"plan": plan})
-                CH._add_msg(
-                    vault,
-                    cid,
-                    {
-                        "role": "assistant",
-                        "kind": "plan_result",
-                        "text": table,
-                        "ts": CH._now(),
-                        "model": "plan",
-                        "plan": {
-                            "title": plan.get("title"),
-                            "task": task,
-                            "steps": len(steps),
-                            "doc": plan.get("doc"),
-                            "status": "done",
-                            "stop_reason": None,
-                        },
-                    },
-                )
-                return
-
             tools_on = TL.enabled(vault)
             tool_rule = TL.rule(vault) if tools_on else ""
             for i, step in enumerate(steps):
@@ -876,10 +814,11 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 for attempt in range(2):
                     if g["stop"]:
                         break
-                    for _round in range(16):  # a MCP smoke step may need many tool calls in a row
+                    for _round in range(12):  # many MCP calls in a row, still bounded
                         if g["stop"]:
                             break
                         try:
+                            call_started = time.monotonic()
                             raw = PR.complete(
                                 vault,
                                 pid,
@@ -888,7 +827,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                                 messages,
                                 usage=step_usage,
                                 meta={"purpose": f"шаг плана {i + 1}", "chat": cid},
-                                stop=lambda: g["stop"],
+                                stop=lambda: g["stop"] or time.monotonic() - call_started > PROVIDER_SECONDS,
                             )
                         except Exception as e:  # noqa: BLE001 — a paid provider may answer 402/500
                             if fallback is None:
@@ -905,7 +844,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                         if call:
                             actions_total += 1
                             step_actions += 1
-                            if actions_total > 160:  # a model stuck in a tool loop must not take the app down
+                            if actions_total > 80:  # a model stuck in a tool loop must not take the app down
                                 answer = "Слишком много действий подряд — шаг остановлен. Уточни задачу."
                                 break
                             sig = json.dumps(

@@ -945,36 +945,78 @@ class App:
         ]
 
     def _watch_renderer(self):
-        """A renderer crash leaves a black window while the API is fine: reload the page instead of waiting for a restart."""
-        try:
-            from PyQt6.QtCore import QTimer, QUrl
+        """A renderer crash leaves a black window while the API is fine: reload the page instead of waiting for a restart.
 
-            page = self.window.gui.webview.page()
-            self._renderer_reloading = False
-            self._renderer_crashes: list[float] = []
+        Two things are easy to get wrong here. The Qt bindings differ: a source install runs on PySide6 through qtpy,
+        the Linux bundle ships PyQt6, so the code must not import PyQt6 by name. And in pywebview 6 the Qt window lives
+        in ``window.native`` while ``window.gui`` is the platform module. Both mistakes used to hide the watchdog
+        behind ``except: pass`` and the window stayed black until a manual restart.
+        """
+        self._renderer_reloading = False
+        self._renderer_crashes: list[float] = []
+        self._renderer_page = None
 
-            def recover(_status, _code):
-                if self._renderer_reloading or self.vault is None:
+        def current_page():
+            """The QWebEnginePage of the current window (pywebview 6: window.native.webview; older: gui.webview)."""
+            native = getattr(self.window, "native", None)
+            try:
+                if native is not None and getattr(native, "webview", None) is not None:
+                    return native.webview.page()
+                return self.window.gui.webview.page()
+            except Exception:  # noqa: BLE001 — the window is not created yet, or another backend
+                return None
+
+        def recover(status, code):
+            if self.quitting or self._renderer_reloading or self.vault is None:
+                return
+            page = current_page()
+            if page is None:
+                _note("renderer: упал, но страница ещё недоступна — вотчдог подключится после загрузки окна")
+                return
+            now = time.time()
+            self._renderer_crashes = [t for t in self._renderer_crashes if now - t < 600]  # 10 minutes of history
+            attempt = len(self._renderer_crashes)
+            self._renderer_crashes.append(now)
+            delay = _renderer_reload_delay(attempt)
+            slow = " (медленный режим: раз в минуту)" if delay >= RENDERER_SLOW_RELOAD_MS else ""
+            _note(
+                f"renderer: статус={_renderer_status_text(status)}, код={code}, "
+                f"попытка {attempt + 1}, перезагрузка через {delay} мс{slow}"
+            )
+            self._renderer_reloading = True
+
+            def reload_page():
+                self._renderer_reloading = False
+                if self.quitting:
                     return
-                now = time.time()
-                self._renderer_crashes = [t for t in self._renderer_crashes if now - t < 60]
-                if len(self._renderer_crashes) >= 3:
-                    return  # let the owner restart instead of flashing the window forever
-                self._renderer_crashes.append(now)
-                self._renderer_reloading = True
+                core = _renderer_qtcore()
+                if core is None:
+                    return
+                try:
+                    page.setUrl(core.QUrl(self.url()))
+                except Exception as exc:  # noqa: BLE001 — recovery is best effort
+                    _note(f"renderer: перезагрузка не удалась: {exc}")
 
-                def reload_page():
-                    try:
-                        self.window.gui.webview.setUrl(QUrl(self.url()))
-                    except Exception:  # noqa: BLE001 — recovery is best effort
-                        pass
-                    self._renderer_reloading = False
+            _renderer_schedule(delay, reload_page)
 
-                QTimer.singleShot(min(4000, 400 * len(self._renderer_crashes)), reload_page)
+        def on_loaded(*_):
+            try:
+                page = current_page()
+                if page is None:
+                    return
+                signal = getattr(page, "renderProcessTerminated", None)
+                if signal is None:  # Windows (WebView2) and macOS (WebKit) have no Qt renderer signal to watch
+                    return
+                if page is not self._renderer_page:
+                    self._renderer_page = page
+                    signal.connect(recover)
+                    _note("renderer: вотчдог подключён")
+                elif self._renderer_crashes:
+                    _note("renderer: интерфейс восстановлен")
+            except Exception as exc:  # noqa: BLE001 — the watchdog must never break the window
+                _note(f"renderer: вотчдог не подключился: {exc}")
 
-            page.renderProcessTerminated.connect(recover)
-        except Exception:  # noqa: BLE001 — another backend, or a pywebview version without that signal
-            pass
+        self.window.events.loaded += on_loaded
 
     def build_tray(self):
         """pystray on Windows and macOS. On Linux the window runs on Qt, so the tray is Qt's own (qt_tray, started
@@ -1173,6 +1215,60 @@ def _crash_log() -> None:
     )
     faulthandler.enable(file=f, all_threads=True)  # hard crashes (native code) too
     _crash_log.file = f
+
+
+RENDERER_SLOW_RELOAD_MS = 60_000  # после серии быстрых падений перезагружаем страницу раз в минуту, но не сдаёмся
+
+
+def _renderer_status_text(status) -> str:
+    """Qt's renderer termination status as a word for app.log (works with PyQt6 and PySide6 enums alike)."""
+    try:
+        code = int(getattr(status, "value", status))
+    except (TypeError, ValueError):
+        return str(status)
+    return {0: "normal", 1: "abnormal", 2: "crashed", 3: "killed"}.get(code, f"unknown({code})")
+
+
+def _renderer_reload_delay(attempt: int) -> int:
+    """Milliseconds before reloading the page after a renderer crash.
+
+    The first crashes get quick retries, then the watchdog slows down to one reload a minute — it never stops:
+    a black window with a live API and a tray icon is worse than an occasional reload.
+    """
+    schedule = (400, 1500, 4000, 15000)
+    return schedule[attempt] if attempt < len(schedule) else RENDERER_SLOW_RELOAD_MS
+
+
+def _note(text: str) -> None:
+    """One line to app.log next to Python tracebacks: the renderer recovery has no other place to report."""
+    try:
+        HOME.mkdir(parents=True, exist_ok=True)
+        with (HOME / "app.log").open("a", encoding="utf-8", buffering=1) as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {text}\n")
+    except Exception:  # noqa: BLE001 — logging must never break recovery
+        pass
+
+
+def _renderer_qtcore():
+    """QtCore from whichever binding this install uses: qtpy (PySide6 in a source install) or PyQt6 (the bundle)."""
+    try:
+        from qtpy import QtCore
+
+        return QtCore
+    except ImportError:
+        try:
+            from PyQt6 import QtCore
+
+            return QtCore
+        except ImportError:
+            return None
+
+
+def _renderer_schedule(delay_ms: int, callback) -> None:
+    """Arms the page reload. Kept in one function so tests can drive the watchdog without a Qt event loop."""
+    core = _renderer_qtcore()
+    if core is not None:
+        core.QTimer.singleShot(delay_ms, callback)
 
 
 WEBVIEW2 = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"

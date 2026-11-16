@@ -20,6 +20,8 @@ from ..vault import Vault
 from . import engine as CH, providers as PR
 
 MAX_STEPS = 6
+STEP_SECONDS = 90  # a step that keeps calling tools and never answers must not hold the plan
+PLAN_SECONDS = 300  # the whole chain: past this Mnemai stops and says so honestly
 FREE = {"local", "ollama", "strata"}  # runs on this computer: no token price
 STRONG = {"claude_code", "anthropic", "openai", "gemini", "openrouter", "codex"}
 OUT_CHARS = {"короткий": 700, "план": 1200, "черновик": 3500, "критика": 1000, "финал": 2200, "ответ": 1500}
@@ -587,6 +589,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         "history_chars": sum(len(line) for line in history),
     }
     estimate(plan, task, context_chars=context_chars)
+    plan_budget = min(PLAN_SECONDS, max(90, int((plan["estimate"].get("seconds_max") or 120) * 1.6)))
     mid = secrets.token_hex(4)
     CH._add_msg(
         vault,
@@ -609,6 +612,7 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
         made: list[str] = []
         tokens = 0
         actions_total = 0
+        timed_out = False
         started = time.time()
         try:
             from . import tools as TL
@@ -617,6 +621,9 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
             tool_rule = TL.rule(vault) if tools_on else ""
             for i, step in enumerate(steps):
                 if g["stop"]:
+                    break
+                if time.time() - started > plan_budget:
+                    timed_out = True
                     break
                 step_started = time.time()
                 step_usage: dict = {}
@@ -641,9 +648,16 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 user += _prompt_for(plan, i, task, made)
                 messages = [{"role": "user", "text": user}]
                 answer = ""
+                step_actions = 0
                 for attempt in range(2):
-                    for _round in range(5):
-                        if g["stop"]:
+                    if g["stop"] or time.time() - started > plan_budget:
+                        break
+                    for _round in range(3):
+                        if (
+                            g["stop"]
+                            or time.time() - step_started > STEP_SECONDS
+                            or time.time() - started > plan_budget
+                        ):
                             break
                         raw = PR.complete(
                             vault,
@@ -658,7 +672,8 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                         call = TL.parse(clean) if tools_on else None
                         if call:
                             actions_total += 1
-                            if actions_total > 24:  # a model stuck in a tool loop must not take the app down
+                            step_actions += 1
+                            if actions_total > 18:  # a model stuck in a tool loop must not take the app down
                                 answer = "_Слишком много действий подряд — шаг остановлен. Уточни задачу._"
                                 break
                             said = TL.before(clean, call)
@@ -668,28 +683,39 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                                 break
                             if said.strip():
                                 messages.append({"role": "assistant", "text": said.strip()})
-                            messages.append({"role": "user", "text": "[Результат действия Mnemai]\n" + result})
+                            messages.append(
+                                {"role": "user", "text": "[Результат действия Mnemai]\n" + str(result)[:3500]}
+                            )
                             continue
                         answer = CH.strip_tool_markup(clean).strip()
                         break
                     if answer or g["stop"]:
                         break
+                    if step_actions:
+                        break  # it already used tools: another blind round would only burn time and tokens
                     messages.append(
                         {"role": "user", "text": "Ты не вернул результат шага. Выполни его и верни текст результата."}
                     )
                 if not answer.strip() and not g["stop"]:
-                    answer = "_Шаг не дал текста._"
+                    if time.time() - step_started > STEP_SECONDS:
+                        timed_out = True
+                        answer = "_Шаг остановлен: больше 90 секунд, результат не получен._"
+                    else:
+                        answer = "_Шаг не дал текста._"
                     step["empty"] = True
                 step_tokens = sum(int(val) for val in step_usage.values() if isinstance(val, (int, float)))
                 tokens += step_tokens
                 step["actual"] = {"tokens": step_tokens, "seconds": round(time.time() - step_started, 1)}
                 step["output"] = answer
                 made.append(answer)
+                if time.time() - step_started > STEP_SECONDS:
+                    timed_out = True
+                    break
                 preview = answer.strip()
                 if len(preview) > 280:
                     preview = preview[:280].rsplit(" ", 1)[0] + "…"
                 g["text"] += f"### Шаг {i + 1} · {step['role']} · {step['model_name']}\n\n{preview}\n\n"
-            plan["status"] = "done" if not g["stop"] else "stopped"
+            plan["status"] = "done" if not g["stop"] and not timed_out else "stopped"
             plan["actual"] = {"seconds": round(time.time() - started, 1), "tokens": tokens}
             _append_plan_result(vault, plan)
             CH._update_msg(vault, cid, mid, {"plan": plan})
@@ -700,6 +726,8 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                 final = f"_Шаги {', '.join(empties)} не вернули текста; подробности — в документе схемы._\n\n" + final
             if g["stop"]:
                 final = "_Остановлено владельцем._\n\n" + final
+            elif timed_out:
+                final = f"_Остановлено по лимиту времени: план не уложился в {int(plan_budget)} секунд._\n\n" + final
             if not final.strip():
                 final = "_План завершён, но ни один шаг не вернул текст. Открой документ схемы, чтобы увидеть детали._"
             CH._add_msg(

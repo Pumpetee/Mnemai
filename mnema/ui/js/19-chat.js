@@ -12,6 +12,7 @@ const CHAT = {
   newPrivate: false,
   chat: null,
   reading: false, // the owner scrolled up: do not pull the view back while the answer streams
+  escGuardUntil: 0, // Escape just closed a window: the next press should not stop the answer by accident
 };
 const NET = { ok: true, ms: 0, timer: 0, frozen: false, resumePoll: false, resumeChat: "" };
 
@@ -563,6 +564,7 @@ document.addEventListener(
   "keydown",
   (e) => {
     if (e.key !== "Escape" || !CHAT.polling) return;
+    if (Date.now() < (CHAT.escGuardUntil || 0)) return; // the same Escape already closed a window
     const vis = (x) =>
       x.isConnected && getComputedStyle(x).display !== "none" && getComputedStyle(x).visibility !== "hidden";
     const overlay = $$(".modal, .menu, .mmenu, .hqpop, .pop").some(vis);
@@ -585,6 +587,7 @@ window.addEventListener(
     if (!top) return;
     e.preventDefault();
     e.stopImmediatePropagation();
+    CHAT.escGuardUntil = Date.now() + 600;
     const x = top.querySelector("[data-x], .lmx, .mx, [data-close], [data-skip], .ctx, #bk");
     if (x && top.classList.contains("modal")) return x.click();
     if (top.classList.contains("modal")) {

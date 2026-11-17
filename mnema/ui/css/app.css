@@ -11114,7 +11114,10 @@ textarea,
   margin-top: 8px;
 }
 .pm .mlist button {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
   width: 100%;
   text-align: left;
   border: 0;
@@ -11125,6 +11128,13 @@ textarea,
 }
 .pm .mlist button:hover {
   background: var(--acc2);
+}
+.pm .mlist button .mprice {
+  flex: none;
+  margin-left: auto;
+  color: var(--ink3);
+  font-size: calc(11.5px * var(--fs));
+  font-variant-numeric: tabular-nums;
 }
 .readyline {
   display: flex;

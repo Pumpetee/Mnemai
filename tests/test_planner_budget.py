@@ -211,6 +211,20 @@ class ExactOpenRouterPrices(unittest.TestCase):
         self.assertEqual(prices["anthropic/claude-opus-5"], [15.0, 75.0])
         self.assertEqual(prices["qwen/qwen3-coder"], [0.2, 0.8])
 
+    def test_status_shows_exact_prices_in_the_picker(self):
+        v = _vault()
+        PR.save(
+            v,
+            "openrouter",
+            models=["qwen/qwen3-coder", "anthropic/claude-opus-5"],
+            prices={"qwen/qwen3-coder": [1.23, 4.56], "anthropic/claude-opus-5": [5.0, 25.0]},
+        )
+        with patch.object(PR, "key_of", return_value="sk-test"):
+            p = next(x for x in PR.status(v) if x["id"] == "openrouter")
+        by_id = {m["id"]: m for m in p["models"]}
+        self.assertEqual((by_id["qwen/qwen3-coder"]["price_in"], by_id["qwen/qwen3-coder"]["price_out"]), (1.23, 4.56))
+        self.assertEqual(by_id["anthropic/claude-opus-5"]["price_in"], 5.0)
+
     def test_planner_uses_the_exact_price_when_known(self):
         v = _vault()
         PR.save(v, "openrouter", prices={"qwen/qwen3-coder": [1.23, 4.56]})

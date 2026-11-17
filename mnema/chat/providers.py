@@ -304,6 +304,23 @@ def problem_of(data: dict, pid: str) -> str:
     return str(pr["text"])
 
 
+NO_OLD = {"ollama", "strata", "yandex", "codex", "opencode_go"}
+
+
+def _model_entry(pid: str, mid: str, prices: dict) -> dict:
+    """A model as the picker sees it, with the exact price per 1M tokens when the provider reported it."""
+    entry: dict = {"id": mid, "name": mid}
+    if model_rank.old(mid) and pid not in NO_OLD:
+        entry["old"] = True
+    pair = prices.get(mid)
+    try:
+        if pair:
+            entry["price_in"], entry["price_out"] = float(pair[0]), float(pair[1])
+    except (TypeError, ValueError, IndexError):
+        pass
+    return entry
+
+
 def note_problem(vault: Vault, pid: str, text: str, kind: str = "account") -> None:
     """The AI is connected but does not work: no money, the subscription ended, the key was refused, a limit.
     The tile says so and the AI leaves the lists of models until it is checked again."""
@@ -348,19 +365,12 @@ def status(vault: Vault) -> list[dict]:
                 if p["key"]
                 else bool(data[pid]["models"])
             )
+            prices = data[pid].get("prices") or {}
             models = (
                 [{"id": m, "name": n} for m, n in CLAUDE_CODE_MODELS]
                 if pid == "claude_code"
                 else [
-                    {
-                        "id": m,
-                        "name": m,
-                        **(
-                            {"old": True}
-                            if model_rank.old(m) and pid not in ("ollama", "strata", "yandex", "codex", "opencode_go")
-                            else {}
-                        ),
-                    }
+                    _model_entry(pid, m, prices)
                     for m in model_rank.rank(pid, data[pid]["models"], data[pid].get("created"))
                 ]
             )

@@ -1999,6 +1999,14 @@ const PROV_HOW = {
     u: "https://ollama.com",
   },
 };
+function fmtPrice(v) {
+  const n = Number(v) || 0;
+  if (n <= 0) return "0";
+  if (n >= 10) return "$" + Math.round(n);
+  if (n >= 1) return "$" + n.toFixed(1);
+  return "$" + n.toFixed(3);
+}
+
 async function connectModal(pid) {
   await refreshProviders();
   const p = CHAT.providers.find((x) => x.id === pid);
@@ -2015,7 +2023,11 @@ async function connectModal(pid) {
     const good = list.filter((x) => !x.old),
       aged = list.filter((x) => x.old);
     const btn = (x) =>
-      `<button data-pm="${esc(x.id)}" class="${p.id + ":" + x.id === CHAT.model ? "cur" : ""}">${esc(x.name)}</button>`;
+      `<button data-pm="${esc(x.id)}" class="${p.id + ":" + x.id === CHAT.model ? "cur" : ""}">${esc(x.name)}${
+        x.price_in != null && x.price_out != null
+          ? `<small class="mprice" title="${tr("вход / выход, $ за 1M токенов")}">${fmtPrice(x.price_in)} · ${fmtPrice(x.price_out)}</small>`
+          : ""
+      }</button>`;
     // connected: the models come first, the key and the check fold below; not yet: how to connect first
     const models_ = list.length
       ? `<div class="fld" style="margin-top:12px"><span>${tr("Выбери модель")} (${list.length})</span><input id="pq" placeholder="${tr("поиск")}"></div><div class="mlist" id="pml">${good.map(btn).join("")}${aged.length ? `<div class="mlold">${tr("Старые и служебные")}</div>${aged.map(btn).join("")}` : ""}</div>`

@@ -3486,7 +3486,8 @@
 "экономия": "economy",
 "Экономия включена: простые шаги, дешёвые модели": "Economy is on: simple steps, cheap models",
 "Схема дороже бюджета:": "The scheme is over budget:",
-"Можно запустить всё равно или увеличить бюджет.": "You can still run it, or raise the budget."
+"Можно запустить всё равно или увеличить бюджет.": "You can still run it, or raise the budget.",
+"вход / выход, $ за 1M токенов": "input / output, $ per 1M tokens"
 },
 "patterns": {
 "{}Новый разговор": "{}New chat",

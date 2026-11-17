@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -174,3 +175,46 @@ class EconomyAndBudget(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExactOpenRouterPrices(unittest.TestCase):
+    def test_usd_per_1m_parses_openrouter_strings(self):
+        self.assertEqual(PR._usd_per_1m("0.000015"), 15.0)
+        self.assertEqual(PR._usd_per_1m("$0.000003"), 3.0)
+        self.assertEqual(PR._usd_per_1m("0"), 0.0)
+        self.assertEqual(PR._usd_per_1m(None), 0.0)
+
+    def test_fetch_saves_exact_prices_even_before_the_balance_check(self):
+        v = _vault()
+        data = [
+            {
+                "id": "models/anthropic/claude-opus-5",
+                "created": 1700000000,
+                "pricing": {"prompt": "0.000015", "completion": "0.000075"},
+            },
+            {
+                "id": "models/qwen/qwen3-coder",
+                "created": 1700000001,
+                "pricing": {"prompt": "0.0000002", "completion": "0.0000008"},
+            },
+        ]
+
+        def fake_get(url, headers):
+            if url.endswith("/key"):
+                raise urllib.error.HTTPError(url, 402, "Payment Required", {}, None)  # no balance, prices still saved
+            return {"data": data}
+
+        with patch.object(PR, "_get", side_effect=fake_get), patch.object(PR, "key_of", return_value="sk-test"):
+            with self.assertRaises(urllib.error.HTTPError):
+                PR.fetch_models(v, "openrouter")
+        prices = PR.load(v)["openrouter"]["prices"]
+        self.assertEqual(prices["anthropic/claude-opus-5"], [15.0, 75.0])
+        self.assertEqual(prices["qwen/qwen3-coder"], [0.2, 0.8])
+
+    def test_planner_uses_the_exact_price_when_known(self):
+        v = _vault()
+        PR.save(v, "openrouter", prices={"qwen/qwen3-coder": [1.23, 4.56]})
+        with patch.object(PR, "status", lambda vault: STATUS):
+            PL.available(v)  # loads the cache
+        self.assertEqual(PL._price("openrouter", "qwen/qwen3-coder"), (1.23, 4.56))
+        self.assertEqual(PL._price("openrouter", "anthropic/claude-opus-5"), (15.0, 75.0))  # the guide still works

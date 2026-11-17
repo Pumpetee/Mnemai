@@ -50,9 +50,27 @@ PRICE_IN_OUT = {
 }
 
 
+_OR_PRICES: dict[str, tuple[float, float]] = {}  # exact OpenRouter prices, USD per 1M, loaded from the config
+
+
+def _load_openrouter_prices(vault: Vault) -> None:
+    """The planner takes exact OpenRouter prices when the owner refreshed the catalog; otherwise it guesses."""
+    try:
+        data = PR.load(vault).get("openrouter") or {}
+        for mid, pair in (data.get("prices") or {}).items():
+            try:
+                _OR_PRICES[str(mid).lower()] = (float(pair[0]), float(pair[1]))
+            except (TypeError, ValueError, IndexError):
+                continue
+    except Exception:  # noqa: BLE001 — a locked or missing config must not break planning
+        _OR_PRICES.clear()
+
+
 def _price(pid: str, name: str) -> tuple[float, float]:
-    """The cheapest honest thing we can do without a price list per account: a model-name based guide."""
+    """The exact price when it is known, else a model-name based guide."""
     name = (name or "").lower()
+    if pid == "openrouter" and (name or "") in _OR_PRICES:
+        return _OR_PRICES[name]
     if pid == "claude_code":
         if "haiku" in name:
             return (1.0, 5.0)
@@ -107,6 +125,7 @@ def _steps_word(n: int) -> str:
 
 def available(vault: Vault) -> list[dict]:
     """Every model that can answer right now, cheapest/local first."""
+    _load_openrouter_prices(vault)
     rows: list[dict] = []
     for p in PR.status(vault):
         if not p.get("ready"):

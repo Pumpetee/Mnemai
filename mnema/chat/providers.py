@@ -252,6 +252,7 @@ def save(
     disabled: bool | None = None,
     created: dict | None = None,
     folder: str | None = None,
+    prices: dict | None = None,
 ) -> dict:
     """disabled: the owner switched this AI off — it leaves every list of models, its key and models stay."""
     if pid not in PROVIDERS:
@@ -268,6 +269,10 @@ def save(
         data[pid]["endpoint"] = endpoint.strip()
     if folder is not None:  # YandexGPT: the Yandex Cloud folder the key belongs to
         data[pid]["folder"] = folder.strip()
+    if prices is not None:  # exact prices per model, USD per 1M tokens (OpenRouter reports them publicly)
+        data[pid]["prices"] = {
+            k: [float(a), float(b)] for k, (a, b) in prices.items() if k and float(a) + float(b) >= 0
+        }
     if key is not None and not key.startswith("••••"):
         secrets_store.put(_vid(vault), f"chat.{pid}", key.strip())
     vault.service.mkdir(parents=True, exist_ok=True)
@@ -386,6 +391,15 @@ def _get(url: str, headers: dict, timeout: int = 20) -> dict:
         return json.loads(r.read().decode("utf-8"))
 
 
+def _usd_per_1m(v) -> float:
+    """OpenRouter prices are strings like «0.000015» per token; a budget works in dollars per million."""
+    try:
+        n = float(str(v or "0").replace("$", "").replace(",", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+    return round(n * 1_000_000, 4)
+
+
 def fetch_models(vault: Vault, pid: str) -> list[str]:
     """Ask the provider which models exist — nothing hard-coded."""
     if pid == "claude_code":
@@ -444,8 +458,27 @@ def fetch_models(vault: Vault, pid: str) -> list[str]:
         )
         ids = [m.get("id", "") for m in d.get("data", [])]
     else:
-        if pid == "openrouter":  # its list of models is public: the key is checked on its own
-            _get(base + "/key", {"Authorization": f"Bearer {key}"})
+        if pid == "openrouter":  # its model list and exact prices are public; the key is only checked for balance
+            d = _get(base + "/models", {"Authorization": f"Bearer {key}"})
+            ids = [m.get("id", "").removeprefix("models/") for m in d.get("data", [])]
+            created = {
+                m.get("id", "").removeprefix("models/"): float(m["created"])
+                for m in d.get("data", [])
+                if isinstance(m.get("created"), (int, float))
+            }
+            prices = {
+                m.get("id", "").removeprefix("models/"): (
+                    _usd_per_1m((m.get("pricing") or {}).get("prompt")),
+                    _usd_per_1m((m.get("pricing") or {}).get("completion")),
+                )
+                for m in d.get("data", [])
+            }
+            ids = sorted({i for i in ids if i})
+            ids = model_rank.rank(pid, ids, created)
+            save(vault, pid, models=ids, created={i: created[i] for i in ids if i in created}, prices=prices)
+            _get(base + "/key", {"Authorization": f"Bearer {key}"})  # balance: raises when it is gone
+            clear_problem(vault, pid)  # the key works again
+            return ids
         d = _get(base + "/models", {"Authorization": f"Bearer {key}"})
         ids = [m.get("id", "").removeprefix("models/") for m in d.get("data", [])]
         created = {

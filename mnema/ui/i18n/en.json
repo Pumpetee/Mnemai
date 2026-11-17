@@ -3473,7 +3473,20 @@
 "Доступно обновление Mnemai": "A Mnemai update is available",
 "Напоминание отложено. Проверить можно в шестерёнке.": "Reminder postponed. You can check in the gear menu.",
 "Нажми и Mnemai перезапустится уже новой версией.": "Press it and Mnemai restarts in the new version.",
-"Принял. Делаю…": "Got it. Doing…"
+"Принял. Делаю…": "Got it. Doing…",
+"Экономия включена": "Economy is on",
+"задачи дробятся на простые шаги, дорогие модели — только если окупаются": "tasks are split into simple steps; expensive models only when they pay off",
+"Бюджет:": "Budget:",
+"Рекомендуемый": "Recommended",
+"Свой": "Custom",
+"Укажи бюджет в долларах": "Enter the budget in dollars",
+"Смета против бюджета": "Estimate vs budget",
+"бюджет": "budget",
+"минимум": "minimum",
+"экономия": "economy",
+"Экономия включена: простые шаги, дешёвые модели": "Economy is on: simple steps, cheap models",
+"Схема дороже бюджета:": "The scheme is over budget:",
+"Можно запустить всё равно или увеличить бюджет.": "You can still run it, or raise the budget."
 },
 "patterns": {
 "{}Новый разговор": "{}New chat",

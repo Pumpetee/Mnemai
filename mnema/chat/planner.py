@@ -27,6 +27,8 @@ STRONG = {"claude_code", "anthropic", "openai", "gemini", "openrouter", "codex"}
 OUT_CHARS = {"короткий": 700, "план": 1200, "черновик": 3500, "критика": 1000, "финал": 2200, "ответ": 1500}
 SPEED = {"local": 40.0, "ollama": 45.0, "strata": 60.0}  # chars per second on this computer
 CLOUD_SPEED = 220.0  # chars per second of cloud streaming, a rough but honest order of magnitude
+RECOMMEND_FACTOR = 1.5  # a margin over the cheap «Качественно» estimate: a recommendation must not cut the budget
+RECOMMEND_MIN = 0.01
 
 # USD per 1M tokens: an approximate list price, only to compare the variants with each other.
 # Local models are free; Claude Code is covered by the subscription, the price below is the API equivalent.
@@ -62,6 +64,10 @@ def _price(pid: str, name: str) -> tuple[float, float]:
     if pid == "openrouter":
         if "mini" in name or "flash" in name:
             return (0.2, 0.8)
+        if "opus" in name:
+            return (15.0, 75.0)
+        if "haiku" in name:
+            return (1.0, 5.0)
         if "sonnet" in name:
             return (3.0, 15.0)
         if "gemini" in name:
@@ -208,13 +214,19 @@ def _history(vault: Vault, cid: str, limit: int = 8, per: int = 1400) -> list[st
 
 
 def _pick(rows: list[dict], want: int, used: set[str]) -> dict | None:
-    for row in rows:
-        if row["tier"] == want and row["model"] not in used:
-            return row
-    for row in rows:
-        if row["model"] not in used:
-            return row
-    return rows[0] if rows else None
+    if not rows:
+        return None
+
+    def first_free(pool: list[dict]) -> dict | None:
+        return next((row for row in pool if row["model"] not in used), None)
+
+    hit = first_free([r for r in rows if r["tier"] == want])
+    if hit:
+        return hit
+    # economy may run out of cheap executors before it runs out of steps: reuse the cheapest suitable model
+    # instead of drifting to an expensive one just because it happens to be free
+    allowed = [r for r in _by_cost(rows) if r["tier"] <= max(want, 2)]
+    return first_free(allowed) or (allowed or _by_cost(rows))[0]
 
 
 def _est_chars(text: str) -> int:
@@ -311,6 +323,69 @@ def _justify(plans: list[dict]) -> list[dict]:
             "предыдущих, поэтому вход растёт."
         )
     return plans
+
+
+def _by_cost(rows: list[dict]) -> list[dict]:
+    """Cheapest models first: the fallback for a plan that does not fit the budget."""
+    return sorted(rows, key=lambda r: sum(_price(r["pid"], r["name"])))
+
+
+def _fit_budget(plan: dict, rows: list[dict], budget: float, task: str, context_chars: int) -> dict:
+    """Keep the scheme inside the budget: the dearest steps drop to the cheapest connected model."""
+    estimate(plan, task, context_chars)
+    downgraded = False
+    cheap = _by_cost(rows)
+
+    def step_price(step: dict) -> float:
+        pid = str(step.get("model") or "").split(":", 1)[0]
+        return sum(_price(pid, step.get("model_name") or step.get("model") or ""))
+
+    for _ in range(12):
+        if float((plan.get("estimate") or {}).get("cost_min") or 0) <= budget + 1e-9:
+            break
+        steps = plan.get("steps") or []
+        order = sorted(
+            range(len(steps)), key=lambda i: float((steps[i].get("est") or {}).get("cost_min") or 0), reverse=True
+        )
+        changed = False
+        for i in order:
+            step = steps[i]
+            current = step_price(step)
+            target = next(
+                (r for r in cheap if r["model"] != step.get("model") and sum(_price(r["pid"], r["name"])) < current),
+                None,
+            )
+            if not target:
+                continue
+            step["model"], step["model_name"], step["provider"] = target["model"], target["name"], target["provider"]
+            step["downgraded"] = True
+            downgraded = True
+            changed = True
+            estimate(plan, task, context_chars)
+            break
+        if not changed:
+            break
+    est = plan.get("estimate") or {}
+    plan["budget"] = {
+        "usd": round(float(budget), 4),
+        "fit": float(est.get("cost_min") or 0) <= budget + 1e-9,
+        "min_usd": round(float(est.get("cost_min") or 0), 4),
+        "downgraded": downgraded,
+    }
+    return plan
+
+
+def recommend_budget(vault: Vault, task: str, context_chars: int = 0, rows: list[dict] | None = None) -> dict:
+    """The recommended budget: the cheap «Качественно» estimate plus a margin, so a scheme fits without pressure."""
+    task = (task or "").strip()
+    if not task:
+        return {"usd": 0.05, "cheap_usd": 0.0, "note": "пустая задача — запасной бюджет"}
+    plans = fallback_plans(vault, task, context_chars=context_chars, economy=True)
+    quality = next((p for p in plans if p.get("id") == "quality"), plans[-1])
+    est = quality.get("estimate") or {}
+    cheap = float(est.get("cost_min") or 0)
+    usd = max(RECOMMEND_MIN, round(float(est.get("cost_max") or cheap) * RECOMMEND_FACTOR, 2))
+    return {"usd": usd, "cheap_usd": round(cheap, 4), "note": "смета дешёвой схемы с запасом"}
 
 
 def _slug(text: str) -> str:
@@ -438,37 +513,85 @@ def _step(rows: list[dict], used: set[str], role: str, out: str, instruction: st
     }
 
 
-def fallback_plans(vault: Vault, task: str, context_chars: int = 0) -> list[dict]:
+def fallback_plans(vault: Vault, task: str, context_chars: int = 0, economy: bool = True) -> list[dict]:
+    """Three ready schemes. Economy (on by default) takes cheap executors and splits the work into simple
+    self-contained steps; the strong tier is used only when the owner switched economy off."""
     rows = available(vault)
     if not rows:
         raise ValueError("нет подключённых моделей: подключи хотя бы одну в Настройках → ИИ и модели")
+    cheap = 1 if economy else 2
+    quality_wants = [1, 1, 1, 1, 1] if economy else [3, 3, 2, 3, 2]
     used: set[str] = set()
     fast = [_step(rows, used, "Ответ", "ответ", "Реши задачу сразу, по существу, без плана и черновиков.", want=1)]
     used.clear()
     balanced = [
-        _step(rows, used, "План", "план", "Разложи задачу на шаги и реши, что должно быть в результате.", want=2),
-        _step(rows, used, "Черновик", "черновик", "Сделай работу по плану предыдущего шага.", want=3),
+        _step(
+            rows, used, "Разбор", "план", "Разбей задачу на 2–4 простые подзадачи и верни только их список.", want=cheap
+        ),
+        _step(
+            rows,
+            used,
+            "Черновик",
+            "черновик",
+            "Сделай черновик результата по списку подзадач. Работай только по списку, не пересказывай задачу.",
+            want=cheap,
+        ),
         _step(
             rows,
             used,
             "Проверка",
             "критика",
-            "Проверь черновик: ошибки, пропуски, ясность. Дай короткий список правок.",
-            want=2,
+            "Проверь черновик: ошибки, пропуски, ясность. Верни короткий список правок.",
+            want=cheap if economy else 2,
         ),
     ]
     used.clear()
     quality = [
-        _step(rows, used, "Исследование", "план", "Собери факты и составь точный план результата.", want=3),
-        _step(rows, used, "Черновик", "черновик", "Сделай полный черновик по плану.", want=3),
-        _step(rows, used, "Критик", "критика", "Найди слабые места и конкретные улучшения, без переписывания.", want=2),
-        _step(rows, used, "Доработка", "черновик", "Внеси правки критика и усиль результат.", want=3),
-        _step(rows, used, "Финал", "финал", "Отредактируй до финального ответа: ясно, коротко, без потерь.", want=2),
+        _step(
+            rows,
+            used,
+            "Разбор",
+            "план",
+            "Разбей задачу на 3–5 простых подзадач и верни только их список.",
+            want=quality_wants[0],
+        ),
+        _step(
+            rows,
+            used,
+            "Черновик",
+            "черновик",
+            "Сделай черновик результата по списку подзадач. Работай только по списку.",
+            want=quality_wants[1],
+        ),
+        _step(
+            rows,
+            used,
+            "Критик",
+            "критика",
+            "Проверь черновик: ошибки, пропуски, ясность. Верни короткий список правок.",
+            want=quality_wants[2],
+        ),
+        _step(
+            rows,
+            used,
+            "Правки",
+            "черновик",
+            "Внеси правки в черновик и верни исправленный текст целиком.",
+            want=quality_wants[3],
+        ),
+        _step(
+            rows,
+            used,
+            "Финал",
+            "финал",
+            "Сократи и отредактируй до финального ответа, сохранив смысл.",
+            want=quality_wants[4],
+        ),
     ]
     plans = [
         {"id": "fast", "title": "Быстро", "note": "Один сильный ответ, минимум времени", "steps": fast},
-        {"id": "optimal", "title": "Оптимально", "note": "План → работа → проверка", "steps": balanced},
-        {"id": "quality", "title": "Качественно", "note": "Несколько ИИ дорабатывают друг друга", "steps": quality},
+        {"id": "optimal", "title": "Оптимально", "note": "Простой разбор → работа → проверка", "steps": balanced},
+        {"id": "quality", "title": "Качественно", "note": "Простые шаги, ИИ дорабатывают друг друга", "steps": quality},
     ]
     return _justify([estimate(p, task, context_chars=context_chars) for p in plans if p["steps"]])
 
@@ -517,14 +640,29 @@ def _parse_plans(text: str, rows: list[dict]) -> list[dict]:
     return plans
 
 
-def propose(vault: Vault, task: str, chat_id: str = "", planner: str = "auto") -> list[dict]:
-    """Ask a cheap connected AI to choose the roles and executors; fall back to the built-in schemes."""
+def propose(
+    vault: Vault,
+    task: str,
+    chat_id: str = "",
+    planner: str = "auto",
+    budget: float | None = None,
+    economy: bool = True,
+) -> list[dict]:
+    """Ask a cheap connected AI to choose the roles and executors; fall back to the built-in schemes.
+
+    economy (on by default) asks for cheap executors and simple self-contained steps, and every offered
+    variant is fitted into the budget (a custom one, or the recommended cheap estimate plus a margin).
+    """
     task = (task or "").strip()
     if not task:
         raise ValueError("напиши задачу")
     rows = available(vault)
     if not rows:
         raise ValueError("нет подключённых моделей: подключи хотя бы одну в Настройках → ИИ и модели")
+    recommended = recommend_budget(vault, task, rows=rows)["usd"]
+    budget_usd = round(float(budget), 4) if budget is not None else recommended
+    if budget_usd <= 0:
+        raise ValueError("бюджет должен быть больше нуля")
     plans: list[dict] = []
     chosen = _planner(rows, planner)
     memory = _memory(vault, chosen["pid"])
@@ -539,6 +677,16 @@ def propose(vault: Vault, task: str, chat_id: str = "", planner: str = "auto") -
         pid, mname = CH.split_model(chosen["model"])
         listing = "\n".join(f"- {r['model']} — {r['name']} ({r['provider']})" for r in rows[:40])
         system = PLAN_PROMPT
+        system += f"\n\nБюджет схемы: не более ${budget_usd:.2f}. Смета каждого варианта — не больше бюджета."
+        if economy:
+            system += (
+                "\nЭкономия включена: дроби задачу на простые самодостаточные шаги. Каждый шаг — понятная задача "
+                "с явными входами и выходами; исполнителю не нужна история разговора, только переданные данные. "
+                "Бери дешёвые модели (harness, deepseek, локальные); дорогую модель — только если шаг окупается "
+                "и это заметно повышает качество, не больше одного-двух таких шагов."
+            )
+        else:
+            system += "\nЭкономия выключена: можно брать сильные модели, если это оправдано качеством."
         if memory:
             system += (
                 "\n\nПамять о владельце (кто он, его правила, проекты — учитывай при выборе шагов):\n" + memory[-8000:]
@@ -560,13 +708,16 @@ def propose(vault: Vault, task: str, chat_id: str = "", planner: str = "auto") -
     except Exception:  # noqa: BLE001 — a plan must always be offered, even if the planner model is down
         plans = []
     if len(plans) < 3:
-        plans = (plans + fallback_plans(vault, task, context_chars=context_chars))[:3]
+        plans = (plans + fallback_plans(vault, task, context_chars=context_chars, economy=economy))[:3]
     ids = ["fast", "optimal", "quality"]
     for i, p in enumerate(plans):
         p["id"] = ids[i] if i < len(ids) else f"plan{i}"
         p.setdefault("note", "")
         p["context"] = context_info
+        p["economy"] = economy
         estimate(p, task, context_chars=context_chars)
+        _fit_budget(p, rows, budget_usd, task, context_chars)
+        p["budget"]["recommended"] = recommended
     result = _justify(plans)
     # a read-only MCP sweep must not leave even a scheme document in the vault
     doc = "" if _is_mcp_readonly_sweep(task) else _save_plan_document(vault, task, result, context_info, chosen)

@@ -434,15 +434,30 @@ def post(vault: Vault, path: str, b: dict):
             opener=bool(b.get("opener")),
             private=bool(b["private"]) if "private" in b else None,
         )
+    if path == "/api/plan/budget":  # the recommended budget for a task, no AI call
+        from .chat import planner as PL
+
+        task = str(b.get("task", "")).strip()
+        if not task:
+            return 200, {"usd": 0.05, "cheap_usd": 0.0, "note": "пустая задача — запасной бюджет"}
+        return 200, PL.recommend_budget(vault, task)
     if path == "/api/plan/propose":  # a schema of steps with executors, estimates and three variants
         from .chat import planner as PL
 
+        budget = b.get("budget")
+        if budget is not None:
+            try:
+                budget = float(budget)
+            except (TypeError, ValueError):
+                budget = None
         return 200, {
             "plans": PL.propose(
                 vault,
                 str(b.get("task", "")).strip(),
                 str(b.get("chat", "") or ""),
                 str(b.get("planner", "") or "auto"),
+                budget=budget,
+                economy=bool(b.get("economy", True)),
             )
         }
     if path == "/api/plan/run":

@@ -20200,6 +20200,82 @@ button.xft:hover {
   height: 16px;
 }
 
+/* economy and budget in the task constructor: on by default, visible, and honest about the price */
+.planbudget {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg2);
+}
+.plancheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(13px * var(--fs));
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.plancheck input {
+  accent-color: var(--acc);
+}
+.planmoney {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.planmlabel {
+  font-size: calc(12px * var(--fs));
+  color: var(--ink3);
+}
+.planradio {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: calc(12px * var(--fs));
+  color: var(--ink2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.planradio input[type="radio"] {
+  accent-color: var(--acc);
+}
+.planradio input[type="number"] {
+  width: 66px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: calc(12px * var(--fs));
+}
+.planradio input[type="number"]:disabled {
+  opacity: 0.45;
+}
+#planbudrec {
+  color: var(--ink);
+}
+.ptot.budok {
+  color: var(--ok, #2f9e5f);
+}
+.ptot.budbad {
+  color: var(--bad, #d64545);
+}
+.pqwarn {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(214, 69, 69, 0.1);
+  color: var(--bad, #d64545);
+}
+
 /* the plan flow fits five steps without a bright scrollbar */
 .plancard .pflow {
   scrollbar-width: thin;

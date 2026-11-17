@@ -106,11 +106,17 @@ function planCardHTML(plan, inChat) {
   const secs = `${planSecRange(est)}${done ? ` → ${planSecs(done.seconds)}` : ""}`;
   const money = planMoneyRange(est);
   const moneyPill = money ? `<span class="ptot ptot-money" title="${tr("Оценка по прайсу API")}">${money}</span>` : "";
+  const bud = plan.budget
+    ? `<span class="ptot ${plan.budget.fit ? "budok" : "budbad"}" title="${tr("Смета против бюджета")}">${plan.budget.fit ? "✓" : "!"} ${tr("бюджет")} ${fmtUsd(plan.budget.usd)}${plan.budget.fit ? "" : ` · ${tr("минимум")} ${fmtUsd(plan.budget.min_usd)}`}</span>`
+    : "";
+  const econ = plan.economy
+    ? `<span class="pctx" title="${tr("Экономия включена: простые шаги, дешёвые модели")}">⚡ ${tr("экономия")}</span>`
+    : "";
   const ctx = plan.context
     ? `<span class="pctx" title="${tr("В план вошли память о тебе и последние сообщения разговора")}">${ic("mem")}${tr("память + история")}</span>`
     : "";
   return `<div class="plancard tone-${tone} ${inChat ? "inchat" : ""}" data-plan="${esc(plan.id || "")}">
-    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${moneyPill}${status}</span></div>
+    <div class="planh"><span class="planbadge">${esc(plan.title || "План")}</span><small>${esc(plan.note || "")}</small>${ctx}<span class="ptotals"><span class="ptot" title="${tr("прогноз → факт")}">${ic("clock")}${secs}</span><span class="ptot" title="${tr("прогноз → факт")}">${ic("coin")}${tokens}</span>${moneyPill}${bud}${econ}${status}</span></div>
     <div class="psteps">${nodes}</div>
     ${!inChat && plan.why ? `<div class="pwhy">${esc(plan.why)}</div>` : ""}
     ${inChat ? "" : `<div class="pfoot"><span class="phint">${tr("Оценка в диапазоне: минимум — если модели ответят коротко, максимум — если разойдутся")}</span>${plan.doc ? `<button class="btn g sm" data-fopen="${esc(plan.doc)}">${ic("file")}${tr("Документ")}</button>` : ""}<button class="btn sm" data-plan-run="${esc(plan.id || "")}">${tr("Запустить")}</button></div>`}
@@ -145,6 +151,70 @@ function updatePlanProgress(p) {
   else msgs.scrollTop = top; // do not pull the owner out of what he is reading
 }
 
+let PLAN_BUDGET_REC = 0;
+
+function fmtUsd(v) {
+  const n = Number(v) || 0;
+  return n >= 0.01 ? "$" + n.toFixed(2) : "$" + n.toFixed(4);
+}
+
+function planBudgetHTML() {
+  return `<div class="planbudget">
+    <label class="plancheck"><input type="checkbox" id="planeconomy" checked><span>⚡ ${tr("Экономия включена")}</span></label>
+    <span class="planhint" id="planeconomynote">${tr("задачи дробятся на простые шаги, дорогие модели — только если окупаются")}</span>
+    <div class="planmoney">
+      <span class="planmlabel">${tr("Бюджет:")}</span>
+      <label class="planradio"><input type="radio" name="planbud" id="planbudauto" checked><span>${tr("Рекомендуемый")} <b id="planbudrec">—</b></span></label>
+      <label class="planradio"><input type="radio" name="planbud" id="planbudown"><span>${tr("Свой")} <input type="number" id="planbudval" step="0.01" min="0.01" placeholder="0.10"> $</span></label>
+    </div>
+  </div>`;
+}
+
+function planBudget() {
+  const own = !!($("#planbudown") || {}).checked;
+  const v = parseFloat(($("#planbudval") || {}).value || "");
+  return { own, budget: Number.isFinite(v) && v > 0 ? v : null, economy: !!($("#planeconomy") || {}).checked };
+}
+
+function planBudgetWire(pop) {
+  const auto = $("#planbudauto", pop),
+    own = $("#planbudown", pop),
+    val = $("#planbudval", pop),
+    econ = $("#planeconomy", pop);
+  const sync = () => {
+    if (val) val.disabled = !(own && own.checked);
+    const note = $("#planeconomynote", pop);
+    if (note) note.style.opacity = econ && econ.checked ? "" : ".55";
+  };
+  if (auto) auto.onchange = sync;
+  if (own) own.onchange = sync;
+  if (econ) econ.onchange = sync;
+  sync();
+  const rec = $("#planbudrec", pop);
+  const refresh = async () => {
+    const task = ($("#plantask", pop) || {}).value.trim();
+    if (!task) {
+      if (rec) rec.textContent = "—";
+      return;
+    }
+    try {
+      const r = await post("/api/plan/budget", { task, chat: CHAT.id || "" });
+      PLAN_BUDGET_REC = Number(r.usd) || 0;
+      if (rec) rec.textContent = PLAN_BUDGET_REC ? fmtUsd(PLAN_BUDGET_REC) : "—";
+    } catch (e) {
+      /* the recommendation is optional */
+    }
+  };
+  let timer = null;
+  const inp = $("#plantask", pop);
+  if (inp)
+    inp.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 350);
+    });
+  refresh();
+}
+
 function planClose() {
   const m = $("#planm");
   if (m) m.remove();
@@ -167,6 +237,7 @@ function planOpen(prefill = "") {
     <div class="planbox">
       <textarea id="plantask" class="planinp" rows="4" placeholder="${tr("Например: разбери договоры в папке, найди риски и сделай короткий отчёт")}"></textarea>
       ${planWhoHTML()}
+      ${planBudgetHTML()}
     </div>
     <div class="planfoot">
       <div class="plannote">${ic("mem")}${tr("учтём память и историю разговора")} · ${ic("users")}${tr("исполнители из подключённых ИИ")}</div>
@@ -185,6 +256,7 @@ function planOpen(prefill = "") {
   $("#plango", pop).onclick = planPropose;
   $("#planrecalc", pop).onclick = planPropose;
   planWhoWire(pop);
+  planBudgetWire(pop);
   loadPlanModels();
   const task = typeof prefill === "string" ? prefill.trim() : "";
   const inp = $("#plantask", pop);
@@ -199,6 +271,8 @@ async function planPropose() {
   const task = ($("#plantask") || {}).value?.trim() || "";
   const out = $("#planout");
   if (!task) return toast(tr("Напиши задачу"));
+  const { own, budget, economy } = planBudget();
+  if (own && !budget) return toast(tr("Укажи бюджет в долларах"));
   const b = $("#plango"),
     recalc = $("#planrecalc");
   if (!b || b.disabled) return;
@@ -209,9 +283,21 @@ async function planPropose() {
   if (out)
     out.innerHTML = `<div class="planwait"><i class="planspin"></i><span>${tr("Подбираю исполнителей из подключённых ИИ…")}</span></div>`;
   try {
-    const r = await post("/api/plan/propose", { task, chat: CHAT.id || "", planner: PLAN_WHO });
+    const r = await post("/api/plan/propose", {
+      task,
+      chat: CHAT.id || "",
+      planner: PLAN_WHO,
+      budget: own ? budget : null,
+      economy,
+    });
     PLAN_TASK = task;
     PLAN_PLANS = r.plans || [];
+    const bud = PLAN_PLANS[0] && PLAN_PLANS[0].budget;
+    if (bud && bud.recommended) {
+      PLAN_BUDGET_REC = Number(bud.recommended) || 0;
+      const rec = $("#planbudrec");
+      if (rec) rec.textContent = fmtUsd(PLAN_BUDGET_REC);
+    }
     const info = $("#planwhoinfo");
     const who = PLAN_PLANS[0] && PLAN_PLANS[0].planner;
     if (info && who) info.textContent = `${tr("Подобрал")}: ${who.name} · ${who.provider}`;
@@ -431,6 +517,10 @@ function planAsk(id) {
   const names = [...new Set(steps.map((s) => s.model_name || s.model).filter(Boolean))].join(" → ");
   const chatName = esc((CHAT.chat && CHAT.chat.title) || tr("новый разговор"));
   const est = plan.estimate || {};
+  const budwarn =
+    plan.budget && !plan.budget.fit
+      ? `<p class="hint pqwarn">${tr("Схема дороже бюджета:")} ${fmtUsd(plan.budget.min_usd)} > ${fmtUsd(plan.budget.usd)}. ${tr("Можно запустить всё равно или увеличить бюджет.")}</p>`
+      : "";
   const pop = document.createElement("div");
   pop.className = "modal planq";
   pop.id = "planq";
@@ -442,6 +532,7 @@ function planAsk(id) {
       <div class="pqrow pqmeta"><span>${ic("clock")}${planSecRange(est)}</span><span>${ic("coin")}${planTokRange(est)}</span>${plan.context ? `<span>${ic("mem")}${tr("память + история")}</span>` : ""}</div>
     </div>
     <p class="hint pqnote">${tr("План выполнится прямо в разговоре «") + chatName + tr("»; его можно остановить в любой момент.")}</p>
+    ${budwarn}
     <div class="pqact">
       <button class="btn g" data-pq="cancel">${tr("Отменить")}</button>
       <button class="btn l" data-pq="redo">${tr("Переделать")}</button>

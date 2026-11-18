@@ -1,205 +1,84 @@
-# Mnemai — архитектура по клиентскому пути
+# Architecture
 
-> Анализ актуального кода (`main` после `v2.5.7` + невыпущенные коммиты): какие фичи есть, как каждая
-> работает от первого шага клиента до модуля, что «навайбкодено», и какой должна быть чистая реализация.
-> Дата: 18.11.2026.
+[Русская версия](ARCHITECTURE.ru.md) · [Разбор по клиентскому пути](CLIENT_JOURNEY.md)
 
----
-
-## 1. Система в одном абзаце
-
-Mnemai — локальное desktop-приложение (Python + pywebview/QtWebEngine), которое держит **память владельца
-как папку Markdown** (`~/Mnemai`), подключает **любых ИИ** (Claude по подписке, ключи Anthropic/OpenAI/Gemini/
-OpenRouter/DeepSeek, локальные модели, Harness-агент) и даёт им **инструменты** (файлы, команды, веб, память,
-MCP) с разрешениями. Вокруг этого ядра: визуальный **конструктор схем** (цепочки из нескольких ИИ), обучение
-из логов владельца, синк/обновления, распознавание речи/OCR, шифрование, достижения.
-
-Слои:
+## Processes
 
 ```
-┌ UI (mnema/ui: 31 JS + CSS, hash-роутер: #chat #memory #settings) ┐
-│  composer, chat, plan, settings-scenes, memory panel, onboarding  │
-└──────────────┬────────────────────────────────────────────────────┘
-               │ HTTP 127.0.0.1:7461+ (X-Mnema-Token), ~80 ручных if path==
-┌──────────────▼────────────── application (api.py, api_chat.py, api_learn.py) ┐
-│  chat engine · tools · planner · providers · learn · achievements · settings │
-└──────────────┬───────────────────────────────────────────────────────────────┘
-               │ domain: vault (Markdown) · journal/ledger · clients · agent
-┌──────────────▼────────────── infra ──────────────────────────────────────────┐
-│  providers (HTTP/CLI/stdin) · web (search/fetch) · osapi · crypt/efs        │
-│  scribe/voice/ocr (локально) · sync/station · updater · mcp_server (stdio)  │
-└──────────────────────────────────────────────────────────────────────────────┘
+Mnemai.exe (mnema/desktop.py)
+ ├─ window: pywebview on Microsoft WebView2 → http://127.0.0.1:<port>/
+ ├─ tray icon (pystray): open, learn now, pause, proxy, autostart, exit
+ ├─ local API (mnema/api.py, a thread): the interface and the window's hooks
+ ├─ learner (mnema/learn/engine.py, a thread): reads the allowed sources on a timer
+ └─ llama-server (vendor/llama, a child process, only while a local model is used)
+
+mnemai-cli.exe / python -m mnema (mnema/cli.py)
+ └─ mcp — MCP server over stdio for Claude Code, Claude Desktop, Cursor
 ```
 
----
+One copy per user (a named mutex); a second launch only shows the first window. Exit stops the learner, the tray icon and the window; `GET /api/app/quit` does the same for scripts.
 
-## 2. Клиентский путь по этапам
+## The memory folder
 
-### 2.1 Первый запуск (онбординг)
-**Путь клиента:** открыл приложение → язык/тема → создать/открыть память → «расскажи о себе» → подключить ИИ.
+Plain Markdown, readable without Mnemai. Layout constants and access scopes are in `mnema/vault.py`.
 
-**Как устроено:** `mnema/__main__.py` → `desktop.py` поднимает окно и HTTP-сервер. `ui/js/08-onboarding.js`
-ведёт визард; `23-themes.js`, `22-languages.js`. Память создаёт `memory.init_vault` (`vault.py` — папка
-Markdown); «портрет» (2–3 предложения в `Profile.md`) — `portrait.py`. Подключение ИИ — `providers.py`
-(`status/fetch_models/check`), ключи в системном keyring (`secrets_store`), модель по умолчанию — `agent.json`.
-
-### 2.2 Ядро — чат (ежедневный путь)
-**Путь:** открыл чат → написал → отправил → карточка действия (если модель попросила инструмент) →
-«да/нет/всегда» → ответ → «откуда я это знаю» → память пополняется.
-
-**Как устроено:**
-- Отправка: `ui/js/19-chat.js` `sendMsg()` → `POST /api/chat/send`.
-- `chat/engine.py` (`2081` строк — главный «god-модуль»): собирает контекст (`memory.context_for`,
-  `agent`-правила), стримит модель через `chat/providers.py`, применяет `chat/economy.py` (что можно —
-  локально), читает/пишет память, гоняет обучение.
-- Действия: `chat/tools.py` (`2091` строк) — `pc_*`/`memory_*`/`web_*`/`mcp_call`/`mcp_smoke*`; `FORCE_ASK`
-  требует «да»; разрешения в `chat/selfask.py` (карточки), allowlist «всегда».
-- Живой статус: `GET /api/chat/poll` (поток токенов/фаза/план).
-
-### 2.3 Инструменты и MCP
-**Путь:** модель просит действие → карточка → клиент жмёт «да» → инструмент выполняется → результат модели.
-
-**Как устроено:** `chat/tools.py` (локальные действия) + `mcp_server.py` (`1723` строк — MCP поверх stdio
-для Claude Desktop/Code/Cursor и т.п.). Разрешения и скоупы клиентов — `clients.py`, `agent`-каталог.
-Полный прогон всех инструментов — `chat/mcpsmoke.py` (`mcp_smoke_all`, 57 инструментов, безопасная /tmp).
-
-### 2.4 Конструктор схем (визуальный план)
-**Путь:** «Схема» → задача → «Предложить варианты» → 3 варианта (Быстро/Оптимально/Качественно) с ценой и
-бюджетом → «Запустить» → цепочка шагов с live-статусами → итог.
-
-**Как устроено:** `ui/js/41-plan.js` + `chat/planner.py` (`1177` строк). `POST /api/plan/propose` (планировщик,
-бюджет `$`, экономия по умолчанию — наше недавнее), `POST /api/plan/run` (цепочка: каждый шаг — вызов ИИ,
-результаты передаются дальше), `GET /api/chat/poll` отдаёт `plan.status/steps`.
-
-### 2.5 Память
-**Путь:** вкладка «Память» → карточки/проекты/люди/решения → читать/править → журнал/undo.
-
-**Как устроено:** `vault.py` (папка Markdown + `Index.md`), `memory.py` (контекст, remember/forget/update,
-`context_for`), `learn/` (ledger: откуда факт, уверенность, stale), `journal.py` (аудит чтений/записей +
-undo), `retrieve.py` (локальный поиск, чтобы слать модели только нужное), `knowledge/`, `extra.py`
-(доп. папки), `obsidian` (подключение), `clients.py` (что видит каждый ассистент).
-
-### 2.6 Источники памяти (обучение)
-**Путь:** «настройки → обучение» → подключить чаты/почту/Telegram/Obsidian → периодический разбор.
-
-**Как устроено:** `learn/` + `api_learn.py` (`/api/learn/*`), `scribe.py`/`voice.py`/`ocr.py` (локальная
-транскрипция/OCR), `chat/attach.py` (файлы), `web.py` (поиск/фетч локально), `heat.py` (нагрузка локальной
-модели), `chat/consortium.py` (дискуссия 2–4 ИИ).
-
-### 2.7 Настройки
-**Путь:** шестерёнка → разделы (ИИ и модели / движок / правила / память / приватность / программа).
-
-**Как устроено:** `ui/js/26-settings.js` + `04-settings-scenes.js` (мини-сцены у каждого тумблера),
-`03-settings-cards.js`, `14-gear.js`. Бэкенд: `tuning.py` (движок/лимиты/пресеты), `agent` (каталог правил),
-`crypt.py`/`efs.py` (шифрование), `extra.py`, `clients.py`.
-
-### 2.8 Трей и жизненный цикл
-**Путь:** окно/трей → закрыть/скрыть → автозапуск → обновления → синк.
-
-**Как устроено:** `desktop.py` (`1610` строк): окно, трей, автозапуск, **вотчдог рендерера** (падение →
-перезагрузка страницы), **сторож памяти** (RSS, пороги 1500/3000 МБ), software-rendering + reduced-motion.
-`updater.py` (тихая проверка релизов), `sync.py`/`station.py` (синк «открытыми файлами»), `vpn_detect.py`.
-
----
-
-## 3. Карта «фича → эндпоинт → модуль»
-
-| Фича | Ключевые эндпоинты | Модуль |
+| Path | Scope | Content |
 |---|---|---|
-| Чат (отправка/стрим/стоп) | `/api/chat/send`, `/api/chat/poll`, `/api/chat/stop`, `/api/chat/redo`, `/api/chat/regenerate` | `engine.py`, `providers.py` |
-| Действия/разрешения | `/api/chat/action`, `/api/chat/sudo` | `tools.py`, `selfask.py` |
-| Инструменты (полный набор) | `mcp_call`/`mcp_smoke*` (через чат/MCP) | `tools.py`, `mcpsmoke.py`, `mcp_server.py` |
-| Схема задач | `/api/plan/models`, `/api/plan/propose`, `/api/plan/budget`, `/api/plan/run` | `planner.py` |
-| Память | `/api/memory/*`, `/api/remember`, `/api/forget`(через tools), `/api/undo`, `/api/journal`, `/api/context`, `/api/memory/why` | `memory.py`, `journal.py`, `learn/` |
-| Обучение | `/api/learn/*` | `learn/`, `api_learn.py` |
-| Провайдеры/модели | `/api/models`, `/api/providers`, `/api/providers/check`, `/api/providers/models` | `providers.py` |
-| Движок/эконом | `/api/engine` | `tuning.py` |
-| Правила ИИ | `/api/agent`, `/api/agent/pack` | `agent/` |
-| Рецепты задач | `/api/prompts*` | `chat/prompts.py` |
-| Голос/скрайб/OCR | `/api/voice/*`, `/api/scribe/*`, `/api/local/*` | `voice.py`, `scribe.py`, `ocr.py` |
-| Синк/станция | `/api/sync*` | `sync.py`, `station.py` |
-| Шифрование | `/api/crypto`, `/api/crypto/key` | `crypt.py`, `efs.py` |
-| Настройки/сброс | `/api/settings/reset`, `/api/session/*` | `api.py`, `osapi.py` |
-| Обновления | (фон) | `updater.py` |
-| Достижения | `/api/ach*` | `achievements.py` |
+| `00 Inbox/Inbox.md` | inbox | facts not sorted yet |
+| `10 Now.md` | — | generated summary for today |
+| `20 Projects/<name>/_Project.md` | projects | status, goal, journal of the project |
+| `30 People/<name>.md` | people | one card per person |
+| `60 Events/YYYY-MM.md` | decisions | decisions and status changes, newest first |
+| `70 Memory/Profile.md`, `Rules.md`, `Thoughts.md` | profile, rules, notes | who the owner is, how to work with him |
+| `70 Memory/Cards/<topic>.md` | cards | one card per topic; `#money`, `#health`, `#private` tags hide a heading |
+| `70 Memory/Fact archive/` | — | replaced facts, never sent to a model |
+| `90 System/Journal/`, `90 System/Recipes/` | — | readable journal, recipes of repeated tasks |
+| `95 Saves/` | — | a copy before the first change of the day |
+| `.mnema/` | — | access rules, journal with snapshots, tokens, learning state, chats |
 
----
+A fact is one line with its date. A status line carries `(статус ДД.ММ.ГГГГ)`; a newer status of the same thing replaces the old one in place, the old one goes to the fact archive and the change to the event feed (`memory.remember`, `memory._put_fact`).
 
-## 4. Что «навайбкодено» (реальные боли)
+## Who sees what
 
-1. **UI без системных тестов.** 31 JS-файл, кнопки проверяются только руками. В CI есть лишь
-   `tools/qa/gui_smoke.py` (открывает окно) — он не кликает кнопки. Отсюда «кнопки сложно проверить».
+`mnema/clients.py` holds one `Client` per AI: the scopes it reads, the scopes it may write, the tags it never sees, on/off. `memory.context_for(vault, client)` builds the context from that alone, so the chat, MCP and the extension share one rule. Cloud providers in the chat map to their client (`chat/providers.py` → `PROVIDERS[...]["client"]`); a model on this computer sees everything because nothing leaves it.
 
-2. **God-модули.** `engine.py` (2081), `tools.py` (2091), `providers.py` (1550), `desktop.py` (1610),
-   `mcp_server.py` (1723). Внутри — и HTTP-стриминг, и бизнес-логика, и форматирование, и UI-знание.
+## A chat message
 
-3. **80 ручных `if path == "/api/…"`** в трёх файлах. Нет роутера, схемы запросов/ответов, валидации,
-   единой обработки ошибок. Контракт «кнопка ↔ эндпоинт» существует только в памяти автора.
-
-4. **Глобальное состояние фронта** (`CHAT`, `PLAN_*`, `LS`), гонки. Пример, который мы уже чинили: после
-   ответа асинхронно генерируется заголовок чата тем же «модельным» потоком, и тест падал на `seen[-1]`.
-
-5. **Бизнес-логика в UI.** Композер, расчёт цен/бюджета отчасти, выбор исполнителей — часть решений живёт
-   в JS, а часть в Python; поведение дублируется и расходится.
-
-6. **Провайдеры — «адаптеры без общего контракта».** Каждый (harness/claude_code/API/локальные) со своим
-   стримом, ошибками, метриками; общий `complete()` есть, но ошибки/fallback размазаны.
-
-7. **Один процесс — всё.** Desktop-окно, HTTP-сервер, вотчдог, синк, скрайб, обучение — в одном процессе
-   Python. Падение рендерера отдельно отваливается, но остальное связано.
-
----
-
-## 5. Целевая архитектура (что переписать и как)
-
-**Принцип:** «тонкий UI поверх контрактного API + чистые доменные use-case + адаптеры-плагины». Ядро
-(память, инструменты, планы) — без UI, с тестами; desktop и MCP и station — три тонкие оболочки над ядром.
-
-### 5.1 Слои
 ```
-transport   HTTP (FastAPI-роутер, Pydantic-схемы) · MCP (stdio) · tray/window
-application use-cases (зачем): chat.send, chat.stream, tool.run, plan.propose/run, learn.review, memory.remember…
-domain      memory (vault+ledger+journal), chat (engine core без IO), tools (action registry), plan (chain)
-infra       providers (адаптеры с общим интерфейсом), web/os/osapi, crypt/efs, scribe/voice/ocr, sync, updater
+interface (ui/js/19-chat.js) ──POST /api/chat/send──▶ chat/engine.send
+  1. the message is saved; learning on it starts in the background (learn/engine.learn_episodes)
+  2. system prompt = behaviour rules (agent/profile.py) + memory this model may see (context_for)
+                     + how Mnemai works now (chat/selfknow.py) + knowledge-base sections if the question is about Mnemai
+  3. attached files: text extracted on the computer (docs.py); scans and images go as files where supported
+  4. web: only when the question needs fresh outside data (web.should_search), pages read locally
+  5. cloud model: secrets replaced with labels (outgoing.py), the request logged; local model: as is
+  6. the answer streams back; labels restored; an ```ask block becomes buttons; term glossary cut off
+interface polls /api/chat/poll and renders
 ```
 
-### 5.2 Конкретно
-1. **Единый роутер + схемы.** Все `/api/*` — декларативные маршруты с Pydantic request/response. Тогда UI и
-   тесты пишутся по контракту, а «кнопка = команда = эндпоинт» становится проверяемым.
-2. **Разбить god-модули.** `engine.py` → `chat/flow.py` (оркестрация), `chat/context.py`, `chat/stream.py`;
-   `tools.py` → `tools/` реестр с интерфейсом `def run(ctx) -> Result`; `providers.py` → `providers/` с
-   `class Provider(Protocol)`; `desktop.py` → `desktop/` (window, tray, watchdog, memory-guard — по файлу).
-3. **UI — тонкий слой.** State-хранилище (не глобальные `CHAT/PLAN_*`), кнопка = `dispatch(Command)` →
-   один эндпоинт. Расчёт бюджета/цен — только сервер, UI только рендерит.
-4. **UI-smoke в CI.** `tools/qa/ui_buttons.py` на CDP: открывает окно, кликает каждую кнопку, сверяет DOM.
-   Каждая кнопка — тест-кейс. Это закрывает главную дыру «кнопки сложно проверить».
-5. **Событийный журнал как фундамент.** `journal.py` (уже есть) — единственный audit log; undo, обучение,
-   «откуда я это знаю», синк — всё поверх него. Не отдельные записи в разных местах.
-6. **Инструменты = плагины.** Единый `Tool`-контракт (name/schema/run/force_ask), из него автоматически
-   генерируются и карточки разрешений, и MCP-тулы, и smoke. Один источник правды вместо `tools.py`+`mcp_server.py`.
-7. **Один core, три оболочки.** Тот же `application`-слой обслуживает desktop, MCP-сервер и station — не
-   три разные реализации памяти/инструментов.
+The consortium (`chat/consortium.py`) runs 2–4 models in turns with a format (council, debate, brainstorm, red team), roles, a chosen summarizer and a length limit; every speaker gets memory under its own access rules.
 
-### 5.3 Что уже крепкое (не переписывать, переносить)
-`vault.py` (Markdown-память), `memory/learn` (ledger, context_for), `planner.py` (бюджет/экономия — новое,
-покрыто тестами), `providers.py` (адаптеры и цены), `mcpsmoke.py`, `journal.py`, `agent`-каталог. Их —
-в `domain`, обернуть контрактами.
+## Learning
 
-### 5.4 Рекомендуемый порядок (дорожная карта)
-1. Контракт API: роутер + схемы (без изменения поведения) → тесты на эндпоинты.
-2. UI-smoke кнопок в CI (ловит текущие «мёртвые» кнопки).
-3. Вынести `tools` в реестр плагинов (убирает дубль `tools.py`↔`mcp_server.py`).
-4. Разбить `engine.py`/`providers.py` на use-case/адаптеры.
-5. Тонкий UI: state-хранилище + команды.
-6. Переиспользовать core в station/MCP.
+```
+sources (learn/sources.py, learn/sources_life.py)  → Episode(source, ref, ts, text)
+  only those switched on and allowed: settings.allowed() — "only Mnemai" blocks everything outside it
+brain (learn/brains.py): explicit signals, Claude Code, an API key, or a local model → candidate facts
+ledger (learn/ledger.py): repeats raise confidence; the day it was said (said_at) is kept
+decision (learn/engine.decide_why): write / ask / wait / skip, with the reason shown in the feed
+write: memory.remember(..., said=day) → journal, Now, Index regenerated
+```
 
----
+There is no waiting queue. From a conversation in Mnemai, a personal fact or a contradiction is asked once, right under that conversation (`chat["learn_ask"]`, answered through `/api/learn/review`); from anywhere else Mnemai decides by itself: personal goes to a hidden part, the newer fact replaces the older one (the old one goes to the fact archive), a weak guess waits to be seen again. Undoing a learned write means "no" for good.
 
-## 6. Шаблон «клиентский путь» (переиспользуемый для любого продукта)
+## What leaves the computer
 
-1. **Перечисли пути** клиента (первый запуск, ежедневное ядро, редкие сценарии).
-2. Для каждого пути: **шаги клиента → экран → действие системы → эндпоинт/модуль → состояние**.
-3. Свести в таблицу **«фича → эндпоинт → модуль»**.
-4. Пометить: **что тестируется**, что «на глаз», где god-модули и дублирование.
-5. Сформулировать **целевую архитектуру** (слои + контракты) и **порядок переписывания** (что сохранить,
-   что вынести, что переписать).
+`outgoing.py` swaps card numbers (Luhn-checked), passwords, API keys, tokens, phone, passport and SNILS numbers for labels before any cloud request and puts the real values back into the streamed answer. Every cloud request is a line in `.mnema/outgoing.jsonl`: when, to whom, why, how much memory of how much available, what was hidden (counts only).
+
+## Interface
+
+`mnema/ui/index.html` is the page shell; `css/app.css` the styles; `js/NN-*.js` classic scripts loaded in numeric order and sharing one global scope (`01-core.js` helpers first, `29-navigation.js` and `30-boot.js` last, because they run at load and call into the rest). Texts are written in Russian; `ui/i18n/<lang>.json` holds nine more languages, applied by walking the page.
+
+## Tests
+
+`tests/` — unit tests without network or real models (providers, search and brains are faked). `tools/qa/` — a click-through of the real interface on a throw-away memory. GitHub Actions run lint, format, unit tests and the interface checks on every push (`.github/workflows/tests.yml`).

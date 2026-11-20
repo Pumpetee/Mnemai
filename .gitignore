@@ -30,3 +30,7 @@ tools/qa/*.log
 packaging/mnema.png
 tools/qa/design/
 tools/qa/design-before/
+# local artifacts (BRD work sessions)
+target/
+.coverage
+.metrics/

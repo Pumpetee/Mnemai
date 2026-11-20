@@ -1,0 +1,15 @@
+<!doctype html><html lang="__LANG__"><head><meta charset="utf-8"><style>
+body{margin:0;font:15px/1.55 "Segoe UI",system-ui,sans-serif;background:#f4f3ef;color:#1d1d1f;display:grid;place-items:center;min-height:100vh}
+@media (prefers-color-scheme:dark){body{background:#0f1115;color:#e9e9ee}.box{background:#171a21!important;border-color:#2a2f3a!important}code{background:#232834!important}}
+.box{width:560px;background:#fff;border:1px solid #e5e3dc;border-radius:18px;padding:32px 36px}h1{font-size:22px;margin:0 0 12px}
+p{margin:0 0 14px;opacity:.85}code{display:block;padding:8px 10px;border-radius:8px;background:#f1efe9;word-break:break-all;margin:0 0 14px}
+.row{display:flex;gap:10px;flex-wrap:wrap}button{font:inherit;border-radius:10px;padding:9px 16px;border:1px solid #d9d6cc;background:transparent;color:inherit;cursor:pointer}
+button.main{background:#5b5bd6;border-color:#5b5bd6;color:#fff}#err{color:#c2413d;min-height:1.4em;margin-top:10px}</style></head>
+<body><div class="box"><h1>__T0__</h1><p>__T1__</p><code id="path">__PATH__</code><p>__T2__</p>
+<div class="row"><button class="main" id="pick">__T3__</button><button id="again">__T4__</button><button id="anew">__T5__</button></div><div id="err"></div></div>
+<script>
+const err=e=>document.getElementById('err').textContent=e||'';
+document.getElementById('pick').onclick=async()=>{const p=await pywebview.api.pick('folder');if(p)err(await pywebview.api.open_existing(p))};
+document.getElementById('again').onclick=async()=>err(await pywebview.api.open_existing(document.getElementById('path').textContent));
+document.getElementById('anew').onclick=()=>pywebview.api.start_new();
+</script></body></html>

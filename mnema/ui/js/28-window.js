@@ -21,3 +21,9 @@ window.mnemaAskClose = function () {
       }),
   );
 };
+
+// ---------------------------------------------------------------- open network settings (tray → desktop)
+window.mnemaOpenNet = function () {
+  if (location.hash === "#settings/net") go("settings", "net");
+  else location.hash = "settings/net";
+};

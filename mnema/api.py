@@ -10,32 +10,26 @@ Security:
 from __future__ import annotations
 
 import json
-import re
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .clients import Client, load_clients, save_clients
-from .journal import UndoError, events, undo, write_with_journal
-from . import __version__, api_chat, api_learn
-from .memory import PermissionDenied, context_for, generate_now, remember, token
-from .vault import Vault
 from . import osapi
+from .http_router import APP_HOOKS as APP_HOOKS, dispatch as _dispatch  # re-export: хуки окна читает desktop.py
+from .journal import UndoError
+from .memory import PermissionDenied, token
+from .vault import Vault
 
 UI = Path(__file__).resolve().parent / "ui" / "index.html"
-APP_HOOKS: dict = {}  # filled by the desktop program: show, info, autostart, switch
-# the owner's notes, not the generated layers (Now, Index), the journal, the saves or service files
-EDITABLE = re.compile(
-    r"^(?!.*\.\.)(?!.*/\.)(00 Inbox/[^/]+|70 Memory/(Profile|Rules|Thoughts)|70 Memory/Cards/[^/]+|"
-    r"20 Projects/[^/]+(/[^/]+)*|30 People/[^/]+|60 Events/[^/]+|80 Meetings/[^/]+(/[^/]+)?|"
-    r"90 System/(?:Recipes|Prompts)/[^/]+)\.md$"
-)
+# APP_HOOKS — хуки окна (show, info, autostart, switch, …): заполняет desktop.py, читает http_router.
 
 
 def make_handler(vault: Vault, port: int):
     tok = token(vault)
-    from . import net
+    from . import http_router, net
 
+    http_router.APP_PORT = port  # /api/app/* без окна отвечает этим портом
     net.load(vault)  # the owner's proxy: every AI, search and download goes through it
     from . import extra
 
@@ -96,7 +90,7 @@ def make_handler(vault: Vault, port: int):
                 return False
             if path.startswith("/api/"):
                 given = self.headers.get("X-Mnema-Token")
-                if given != tok:
+                if not given or not secrets.compare_digest(given, tok):
                     self.send(401, {"error": "нужен токен"})
                     return False
                 if (
@@ -110,6 +104,35 @@ def make_handler(vault: Vault, port: int):
                         return False
             return True
 
+        def _static(self, u, q, tok):
+            """Статика View одним местом: index с токеном, /ui/*.css|.js, /i18n/*.json и первые экраны.
+
+            Возвращает (code, body, ctype) или None, когда путь не статика. Пути и содержимое 1:1 с прежним.
+            """
+            if u.path.startswith("/i18n/") and u.path.endswith(".json"):  # interface translations
+                f = UI.parent / "i18n" / Path(u.path).name
+                return (
+                    200,
+                    osapi.os_words(f.read_text(encoding="utf-8")) if f.exists() else "{}",
+                    "application/json; charset=utf-8",
+                )
+            if u.path.startswith("/ui/") and u.path.endswith((".css", ".js")):  # the interface's own files
+                f = (UI.parent / u.path[4:]).resolve()
+                if UI.parent.resolve() in f.parents and f.is_file():
+                    kind = "text/css" if f.suffix == ".css" else "text/javascript"
+                    return 200, osapi.os_words(f.read_text(encoding="utf-8")), kind + "; charset=utf-8"
+                return 404, {"error": "нет такого файла"}, "application/json; charset=utf-8"
+            if u.path in ("/ui/setup.html", "/ui/missing.html"):  # первые экраны — та же статика
+                from .static_pages import missing_html, setup_html
+
+                if u.path == "/ui/setup.html":
+                    return 200, setup_html(q.get("lang")), "text/html; charset=utf-8"
+                return 200, missing_html(q.get("path", ""), q.get("lang", "ru")), "text/html; charset=utf-8"
+            if u.path == "/":
+                html = osapi.os_words(UI.read_text(encoding="utf-8")).replace("__MNEMA_TOKEN__", tok)
+                return 200, html, "text/html; charset=utf-8"
+            return None
+
         # -- routes
         def do_GET(self):
             if not self.guard():
@@ -117,101 +140,12 @@ def make_handler(vault: Vault, port: int):
             u = urlparse(self.path)
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
             try:
-                if u.path == "/api/ping":
-                    from .agent import profile as P
-
-                    return self.send(
-                        200,
-                        {
-                            "ok": True,
-                            "version": __version__,
-                            "lang": P.load(vault).get("lang") or "en",
-                        },
-                    )
-                if u.path == "/api/app/selftest":  # the built program checks its own parts (CI)
-                    from . import crypt, ocr
-
-                    from .learn import tg_api
-
-                    return self.send(
-                        200, {"ocr": ocr.selftest(), "crypt": crypt.selftest(), "telegram": tg_api.selftest()}
-                    )
-                if u.path.startswith("/api/app/"):
-                    name = u.path.rsplit("/", 1)[-1]
-                    hook = (
-                        APP_HOOKS.get(name) if name in ("show", "info", "switch", "quit", "vaults", "update") else None
-                    )
-                    return self.send(200, hook() if hook else {"desktop": False, "port": port})
-                r = api_chat.get(vault, u.path, q)
+                s = self._static(u, q, tok)
+                if s:
+                    return self.send(*s)
+                r = _dispatch(vault, "GET", u.path, q, None)
                 if r:
                     return self.send(*r)
-                if u.path.startswith("/api/learn/"):
-                    r = api_learn.get(vault, u.path, q)
-                    if r:
-                        return self.send(*r)
-                if u.path.startswith("/i18n/") and u.path.endswith(".json"):  # interface translations
-                    f = UI.parent / "i18n" / Path(u.path).name
-                    return self.send(
-                        200,
-                        osapi.os_words(f.read_text(encoding="utf-8")) if f.exists() else "{}",
-                        "application/json; charset=utf-8",
-                    )
-                if u.path.startswith("/ui/") and u.path.endswith((".css", ".js")):  # the interface's own files
-                    f = (UI.parent / u.path[4:]).resolve()
-                    if UI.parent.resolve() in f.parents and f.is_file():
-                        kind = "text/css" if f.suffix == ".css" else "text/javascript"
-                        return self.send(200, osapi.os_words(f.read_text(encoding="utf-8")), kind + "; charset=utf-8")
-                    return self.send(404, {"error": "нет такого файла"})
-                if u.path == "/":
-                    html = osapi.os_words(UI.read_text(encoding="utf-8")).replace("__MNEMA_TOKEN__", tok)
-                    return self.send(200, html, "text/html; charset=utf-8")
-                if u.path == "/api/context":
-                    from .agent import profile as P
-
-                    if not P.memory_on(vault):
-                        return self.send(200, {"text": "", "parts": 0, "off": True})
-                    part = int(q["part"]) if "part" in q else None
-                    text, total = context_for(vault, q.get("client", "claude"), part=part)
-                    return self.send(200, {"text": text, "parts": total})
-                if u.path == "/api/now":
-                    return self.send(200, {"text": generate_now(vault)})
-                if u.path == "/api/notes":
-                    scope = q.get("scope")
-                    notes = [n for n in vault.notes() if not scope or n.scope == scope]
-                    return self.send(
-                        200,
-                        [
-                            {
-                                "rel": n.rel,
-                                "title": n.title,
-                                "scope": n.scope,
-                                "status": n.meta.get("status", ""),
-                                "goal": n.meta.get("goal", ""),
-                                "updated": n.meta.get("updated", ""),
-                            }
-                            for n in notes
-                        ],
-                    )
-                if u.path == "/api/note":
-                    rel = q.get("rel", "")
-                    if not EDITABLE.match(rel):
-                        return self.send(400, {"error": "этот файл нельзя открыть"})
-                    raw = vault.read_raw(rel) or ""
-                    from .journal import _hash
-
-                    return self.send(200, {"rel": rel, "raw": raw, "hash": _hash(raw)})
-                if u.path == "/api/journal":
-                    return self.send(200, events(vault, int(q.get("limit", 100))))
-                if u.path == "/api/stale":
-                    return self.send(
-                        200,
-                        [
-                            {"rel": s.rel, "text": s.text, "age": s.age_days, "date": s.date.isoformat()}
-                            for s in vault.stale()
-                        ],
-                    )
-                if u.path == "/api/clients":
-                    return self.send(200, [c.__dict__ for c in load_clients(vault).values()])
                 return self.send(404, {"error": "нет такого пути"})
             except (KeyError, ValueError) as e:
                 return self.send(400, {"error": str(e).strip("'")})
@@ -225,64 +159,9 @@ def make_handler(vault: Vault, port: int):
             try:
                 b = self.body()
                 self._post = (u.path, b)
-                if u.path == "/api/remember":
-                    from .agent import profile as P
-
-                    if not P.memory_on(vault):
-                        return self.send(409, {"error": P.MEMORY_OFF, "off": True})
-                    ev = remember(
-                        vault, str(b.get("fact", "")), str(b.get("where", "inbox")), str(b.get("client", "owner"))
-                    )
-                    return self.send(200, {"id": ev["id"], "path": ev["paths"][0]})
-                if u.path.startswith("/api/app/"):
-                    name = u.path.rsplit("/", 1)[-1]
-                    hook = (
-                        APP_HOOKS.get(name)
-                        if name
-                        in ("autostart", "close_pref", "vault_open", "vault_forget", "vault_rename", "update_do")
-                        else None
-                    )
-                    return self.send(200, hook(b) if hook else {"desktop": False})
-                r = api_chat.post(vault, u.path, b if isinstance(b, dict) else {})
+                r = _dispatch(vault, "POST", u.path, {}, b)
                 if r:
                     return self.send(*r)
-                if u.path.startswith("/api/learn/"):
-                    r = api_learn.post(vault, u.path, b if isinstance(b, dict) else {})
-                    if r:
-                        return self.send(*r)
-                if u.path == "/api/undo":
-                    ev = undo(vault, str(b.get("id", "")))
-                    api_learn.on_undo(vault, str(b.get("id", "")))
-                    return self.send(200, {"ok": True, "summary": ev["summary"]})
-                if u.path == "/api/note":
-                    rel, raw = str(b.get("rel", "")), b.get("raw")
-                    if not EDITABLE.match(rel) or not isinstance(raw, str):
-                        return self.send(400, {"error": "этот файл нельзя править"})
-                    from .journal import _hash
-
-                    with vault.lock():
-                        if b.get("base") and _hash(vault.read_raw(rel) or "") != b["base"]:
-                            return self.send(
-                                409,
-                                {
-                                    "error": "Файл изменился, пока ты его правил: Mnemai дописала в него новое. "
-                                    "Открой его заново и повтори правку."
-                                },
-                            )
-                        ev = write_with_journal(vault, "owner", rel, raw, f"правка вручную: {rel}")
-                    generate_now(vault)
-                    return self.send(200, {"id": ev["id"]})
-                if u.path == "/api/clients":
-                    items = b if isinstance(b, list) else b.get("clients", [])
-                    clients = {}
-                    for it in items:
-                        known = {k: v for k, v in it.items() if k in Client.__dataclass_fields__}
-                        c = Client(**known)
-                        clients[c.id] = c
-                    if not clients:
-                        return self.send(400, {"error": "пустой список"})
-                    save_clients(vault, clients)
-                    return self.send(200, {"ok": True})
                 return self.send(404, {"error": "нет такого пути"})
             except PermissionDenied as e:
                 return self.send(403, {"error": str(e)})

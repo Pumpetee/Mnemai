@@ -366,19 +366,49 @@ const KIND = {
   preference: "предпочтение",
 };
 async function memHistory() {
-  const [evs, cl] = await Promise.all([api("/api/journal?limit=150"), api("/api/clients")]);
+  const [evs, cl, sv] = await Promise.all([
+    api("/api/journal?limit=150"),
+    api("/api/clients"),
+    api("/api/saves").catch(() => ({ saves: [] })),
+  ]);
   const undone = new Set(evs.filter((e) => e.undoes).map((e) => e.undoes));
   const who = (id) =>
       id === "learner" ? "Обучение" : id === "owner" ? "Ты" : (cl.find((c) => c.id === id) || { name: id }).name,
-    ACT = { read: "прочитал", write: "записал", undo: "откатил", learn: "обучение" };
+    ACT = {
+      read: "прочитал",
+      write: "записал",
+      undo: "откатил",
+      learn: "обучение",
+    };
+  const saves = (sv.saves || []).length
+    ? `<div class="card"><h2>Сейвы дня («95 Saves»)</h2><p class="hint">Копии заметок до первой правки дня — можно вернуть заметку к утренней версии.</p>${sv.saves
+        .map(
+          (s) =>
+            `<div class="jr"><b data-noi18n>${esc(s.name)}</b><span class="hint" data-noi18n>${esc(s.path)}</span><button class="btn g sm" data-sv="${esc(s.path)}">восстановить</button></div>`,
+        )
+        .join("")}</div>`
+    : "";
   $("#mt").innerHTML =
-    `<div class="card">${evs.map((e) => `<div class="jr"><span>${esc(e.ts.slice(5, 16).replace("T", " "))}</span><b>${esc(who(e.client))}</b><div><span class="hint">${esc(ACT[e.action] || e.action)}</span> ${esc(e.summary)}</div>${e.action === "write" && !undone.has(e.id) ? `<button class="btn l sm" data-u="${esc(e.id)}">откатить</button>` : "<span></span>"}</div>`).join("") || "Пока пусто."}</div>`;
+    `<div class="card">${evs.map((e) => `<div class="jr"><span>${esc(e.ts.slice(5, 16).replace("T", " "))}</span><b>${esc(who(e.client))}</b><div><span class="hint">${esc(ACT[e.action] || e.action)}</span> ${esc(e.summary)}</div>${e.action === "write" && !undone.has(e.id) ? `<button class="btn l sm" data-u="${esc(e.id)}">откатить</button>` : "<span></span>"}</div>`).join("") || "Пока пусто."}</div>` +
+    saves;
   $$("[data-u]").forEach(
     (b) =>
       (b.onclick = async () => {
         try {
           await post("/api/undo", { id: b.dataset.u });
           toast("Откатила");
+          memHistory();
+        } catch (e) {
+          toast(e.message);
+        }
+      }),
+  );
+  $$("[data-sv]").forEach(
+    (b) =>
+      (b.onclick = async () => {
+        try {
+          await post("/api/saves/restore", { path: b.dataset.sv });
+          toast("Восстановила из сейва");
           memHistory();
         } catch (e) {
           toast(e.message);
@@ -451,7 +481,13 @@ function mapLayout(topics, W, H) {
   const bs = topics.map((t, i) => {
     const r = (19 + 34 * Math.sqrt(topicCount(t) / max)) * shrink,
       a = (i / n) * Math.PI * 2 + 0.3;
-    return { t, i, r, x: cx + Math.cos(a) * W * 0.42, y: cy + Math.sin(a) * H * 0.36 };
+    return {
+      t,
+      i,
+      r,
+      x: cx + Math.cos(a) * W * 0.42,
+      y: cy + Math.sin(a) * H * 0.36,
+    };
   });
   // all the bubbles together take at most ~38% of the box: then they have room not to cover each other
   const area = bs.reduce((s, b) => s + Math.PI * b.r * b.r, 0),

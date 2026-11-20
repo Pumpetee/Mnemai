@@ -95,4 +95,6 @@ if text.strip():
     print(text[-4000:])
     ok, why = False, why + "; errors in app.log"
 print(("OK " if ok else "FAIL ") + why, flush=True)
+if not ok:  # GitHub parses this line and shows the reason in the run's annotations even without the raw log
+    print(f"::error title=Mnemai window smoke::{why}", flush=True)
 sys.exit(0 if ok else 1)

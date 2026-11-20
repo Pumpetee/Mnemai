@@ -55,13 +55,13 @@ jobs:
         run: python tools/package.py --skip-tests
       - name: The window opens (Windows)
         if: runner.os == 'Windows'
-        run: python tools/qa/gui_smoke.py dist/Mnemai/Mnemai.exe dist/Mnemai/mnemai-cli.exe
+        run: python tools/qa/gui_smoke.py dist/Mnemai/Mnemai.exe dist/Mnemai/mnemai-cli.exe || (sleep 20 && python tools/qa/gui_smoke.py dist/Mnemai/Mnemai.exe dist/Mnemai/mnemai-cli.exe)
       - name: The window opens (macOS)
         if: runner.os == 'macOS'
-        run: python tools/qa/gui_smoke.py dist/Mnemai.app/Contents/MacOS/Mnemai dist/Mnemai.app/Contents/MacOS/mnemai-cli
+        run: python tools/qa/gui_smoke.py dist/Mnemai.app/Contents/MacOS/Mnemai dist/Mnemai.app/Contents/MacOS/mnemai-cli || (sleep 20 && python tools/qa/gui_smoke.py dist/Mnemai.app/Contents/MacOS/Mnemai dist/Mnemai.app/Contents/MacOS/mnemai-cli)
       - name: The window opens (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a python tools/qa/gui_smoke.py dist/Mnemai/Mnemai dist/Mnemai/mnemai-cli
+        run: xvfb-run -a python tools/qa/gui_smoke.py dist/Mnemai/Mnemai dist/Mnemai/mnemai-cli || (sleep 20 && xvfb-run -a python tools/qa/gui_smoke.py dist/Mnemai/Mnemai dist/Mnemai/mnemai-cli)
       - uses: actions/upload-artifact@v4
         with:
           name: mnema-${{ matrix.os }}

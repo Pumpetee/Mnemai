@@ -93,8 +93,8 @@ finally:
 
 if text.strip():
     print(text[-4000:])
-    first = " / ".join(line.strip() for line in text.strip().splitlines()[:3])[:400]
-    ok, why = False, why + f"; errors in app.log: {first}"
+    tail = " / ".join(line.strip() for line in text.strip().splitlines()[-8:])[-700:]
+    ok, why = False, why + f"; errors in app.log (tail): {tail}"
 print(("OK " if ok else "FAIL ") + why, flush=True)
 if not ok:  # GitHub parses this line and shows the reason in the run's annotations even without the raw log
     print(f"::error title=Mnemai window smoke::{why}", flush=True)

@@ -144,7 +144,10 @@ function shareCard(spec, postText) {
   };
   $("[data-a='save']", pop).onclick = async () => {
     try {
-      const r = await post("/api/share/save", { png: url, name: "Mnemai " + (spec.kind || "") });
+      const r = await post("/api/share/save", {
+        png: url,
+        name: "Mnemai " + (spec.kind || ""),
+      });
       toast(tr("Сохранила") + ": " + r.path);
     } catch (e) {
       toast(e.message);
@@ -412,13 +415,23 @@ function shareSummary(i) {
     const sc = ((lines.find((l) => score.test(l)) || "").match(score) || [])[1];
     const verdict = lines.find((l) => !score.test(l) && !bullet.test(l)) || "";
     return shareCard(
-      { kind: tr("Прожарка"), big: sc ? sc + "/10" : "🔥", title: verdict, lines: bullets },
+      {
+        kind: tr("Прожарка"),
+        big: sc ? sc + "/10" : "🔥",
+        title: verdict,
+        lines: bullets,
+      },
       `${tr("Отдал на прожарку совету из нескольких ИИ")} (${names}). ${sc ? tr("Оценка") + ": " + sc + "/10." : ""}`,
     );
   }
   const head = (lines[0] || "").replace(/^Итог:\s*/i, "");
   shareCard(
-    { kind: tr((CONS_FORMATS[fmt] || CONS_FORMATS.council).n), title: head, sub: names, lines: bullets },
+    {
+      kind: tr((CONS_FORMATS[fmt] || CONS_FORMATS.council).n),
+      title: head,
+      sub: names,
+      lines: bullets,
+    },
     `${tr("Задал вопрос совету из нескольких ИИ")} (${names}) — ${tr("вот к чему они пришли.")}`,
   );
 }

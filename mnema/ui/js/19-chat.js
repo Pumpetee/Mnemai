@@ -1390,10 +1390,10 @@ function actionAsk(cid, p) {
   if (!live) return;
   live.insertAdjacentHTML(
     "afterend",
-    `<div class="actask" id="actask" data-id="${esc(p.id)}"><div class="actaskh">${ic(p.write ? "edit" : "file")}<b>${tr("Mnemai хочет")}</b></div>
+    `<div class="msg cardmsg"><div class="actask" id="actask" data-id="${esc(p.id)}"><div class="actaskh">${ic(p.write ? "edit" : "file")}<b>${tr("Mnemai хочет")}</b></div>
      <div class="actwhat" data-noi18n>${esc(p.what)}</div>
      <div class="row"><button class="btn sm" data-act="yes">${tr("Да")}</button><button class="btn g sm" data-act="always">${tr("Да для этого разговора")}</button><button class="btn g sm" data-act="no">${tr("Нет")}</button></div>
-     <p class="hint">${tr("Программы не запускаются, в интернет ничего не уходит. Запись можно откатить в «Память» → «История».")}</p></div>`,
+     <p class="hint">${tr("Программы не запускаются, в интернет ничего не уходит. Запись можно откатить в «Память» → «История».")}</p></div></div>`,
   );
   $$("#actask [data-act]").forEach(
     (b) =>
@@ -1422,12 +1422,12 @@ function sudoAsk(cid, p) {
   if (!live) return;
   live.insertAdjacentHTML(
     "afterend",
-    `<div class="actask" id="sudoask" data-id="${esc(p.id)}"><div class="actaskh">${ic("lock")}<b>${tr("Нужен пароль администратора")}</b></div>
+    `<div class="msg cardmsg"><div class="actask" id="sudoask" data-id="${esc(p.id)}"><div class="actaskh">${ic("lock")}<b>${tr("Нужен пароль администратора")}</b></div>
      <div class="actwhat" data-noi18n>${esc(p.command || "")}</div>
      ${p.wrong ? `<p class="hint">${tr("Пароль не подошёл — попробуй ещё раз.")}</p>` : ""}
      <input class="inp" id="sudopw" type="password" autocomplete="current-password" placeholder="${tr("пароль администратора")}">
      <div class="row"><button class="btn sm" id="sudook">${tr("Продолжить")}</button><button class="btn g sm" id="sudocancel">${tr("Отмена")}</button></div>
-     <p class="hint">${tr("Пароль останется на этом компьютере и не попадёт ни в переписку, ни к модели.")}</p></div>`,
+     <p class="hint">${tr("Пароль останется на этом компьютере и не попадёт ни в переписку, ни к модели.")}</p></div></div>`,
   );
   const waiting = () => {
     const el = $("#sudoask");
@@ -1748,14 +1748,12 @@ function learnAskHtml(q) {
   const acts =
     q.kind === "conflict"
       ? [
-          ["keep", tr("Теперь так")],
-          ["keep_old", tr("Было верно")],
-          ["keep_both", tr("Верно и то, и то")],
+          ["keep", tr("Да")],
+          ["keep_old", tr("Нет")],
         ]
       : [
-          ["keep", tr("Запомнить")],
-          ["keep_all", tr("Запомнить всё")],
-          ["reject", tr("Не надо")],
+          ["keep", tr("Да")],
+          ["reject", tr("Нет")],
         ];
   return `<div class="ask live lask" data-lask="${esc(q.item)}">
     <div class="askh"><span class="aski">${ic("mem")}</span><span class="askl">${tr("Уточню для памяти")}</span></div>
@@ -1780,19 +1778,12 @@ async function answerLearnAsk(card, action) {
     body.text = t;
   }
   try {
-    const r = await post("/api/learn/review", body);
+    await post("/api/learn/review", body);
     card.remove();
-    if (action === "keep_all") {
-      // «Запомнить всё» answers every question standing under this conversation: the rest of the queue goes too
-      $$("[data-lask]").forEach((c) => c.remove());
-      toast(`${tr("Запомнила")}: ${r.done || 1}`, 4500);
-      return;
-    }
     toast(
       {
         keep: tr("Запомнила"),
         edit: tr("Запомнила с поправкой"),
-        keep_both: tr("Запомнила оба"),
         keep_old: tr("Оставила как было"),
         reject: tr("Не запоминаю"),
       }[action],

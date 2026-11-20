@@ -49,7 +49,7 @@ IMAGE_MIME = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
-MAX_BYTES = 25 * 1024 * 1024
+MAX_BYTES = 100 * 1024 * 1024  # the owner's limit: one attachment is at most 100 MB
 MAX_TEXT = 60000
 
 
@@ -68,7 +68,7 @@ def save(vault: Vault, chat_id: str, files: list[dict]) -> list[dict]:
     for f in files or []:
         raw = base64.b64decode(str(f.get("data", "")).split(",")[-1] or b"")
         if len(raw) > MAX_BYTES:
-            raise ValueError(f"файл {f.get('name')} больше 25 МБ")
+            raise ValueError(f"файл {f.get('name')} больше 100 МБ")
         name = safe_name(f.get("name", "file"))
         p = folder / name
         i = 1

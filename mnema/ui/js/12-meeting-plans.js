@@ -1,37 +1,37 @@
-// ---------------------------------------------------------------- meetings: how to transcribe, as plans — what it costs, how fast, where the audio goes
+// ---------------------------------------------------------------- meetings: how to transcribe, as presets — what it costs, how fast, where the audio goes
 // Cloud price: OpenAI whisper-1, $0.006 per minute (OpenAI price list) → $0.36 per hour of recording.
 function scribePlans(sc, mode, compact, bare) {
   const hour = sc.rtf ? Math.max(1, Math.round(sc.rtf * 60)) : 0,
     spd = hour ? tr("час записи ≈") + " " + hour + " " + tr("мин") : tr("замерю на первой записи");
   const P = [
     [
-      "local",
-      "💻",
-      "Бесплатно на компьютере",
+      "private",
+      "🔒",
+      "Private",
       "free",
       "Бесплатно",
       [
         ["💰", "0 ₽"],
         ["⏱", spd],
-        ["🔒", tr("запись не уходит с компьютера")],
+        ["🔒", tr("только локальные модели: запись не уходит с компьютера")],
       ],
     ],
     [
-      "auto",
-      "🧠",
-      "Сам решает",
-      "free",
-      "Бесплатно",
+      "quality",
+      "☁️",
+      "Quality",
+      "paid",
+      "Платно",
       [
-        ["💰", tr("0 ₽, пока компьютер успевает")],
-        ["⏱", tr("замеряет на первой минуте записи")],
-        ["🔒", tr("в облако — только после вопроса")],
+        ["💰", tr("≈ $0.36 за час записи, по твоему ключу")],
+        ["⏱", tr("качественная расшифровка, компьютер не грузит")],
+        ["☁️", tr("запись уходит в облако")],
       ],
     ],
     [
-      "partial",
-      "⚖️",
-      "Длинные — в облако",
+      "fast",
+      "⚡",
+      "Fast",
       "mix",
       "Частично платно",
       [
@@ -40,24 +40,11 @@ function scribePlans(sc, mode, compact, bare) {
         ["☁️", tr("длинные записи уходят в облако")],
       ],
     ],
-    [
-      "cloud",
-      "☁️",
-      "Облачный Whisper",
-      "paid",
-      "Платно",
-      [
-        ["💰", tr("≈ $0.36 за час записи, по твоему ключу")],
-        ["⏱", tr("быстро, компьютер не грузит")],
-        ["☁️", tr("запись уходит в облако")],
-      ],
-    ],
   ];
   const LOOK = {
-    local: ["#10b981", "#14b8a6"],
-    auto: ["#6366f1", "#a855f7"],
-    partial: ["#f59e0b", "#f97316"],
-    cloud: ["#0ea5e9", "#6366f1"],
+    private: ["#10b981", "#14b8a6"],
+    quality: ["#0ea5e9", "#6366f1"],
+    fast: ["#f59e0b", "#f97316"],
   };
   const ul = (rows) =>
     `<ul>${rows.map(([i, x]) => `<li>${ic({ "💰": "coin", "⏱": "clock", "🔒": "lock", "☁️": "cloud" }[i])}<span>${x}</span></li>`).join("")}</ul>`;
@@ -68,7 +55,7 @@ function scribePlans(sc, mode, compact, bare) {
     ) => `<button class="splan ${k === mode ? "on" : ""}" data-plan="${k}" style="--d:${n * 0.05}s;--c1:${LOOK[k][0]};--c2:${LOOK[k][1]}"><span class="medal2 spi"><span>${icn}</span></span><b>${tr(t)}</b><em class="stag ${cls}">${tr(tag)}</em>
     ${compact || bare ? "" : ul(rows)}${k === mode ? `<i class="spck">${ic("check")}</i>` : ""}</button>`,
   ).join("")}</div>${compact ? `<div class="spdet">${ul((P.find((x) => x[0] === mode) || P[0])[5])}</div>` : ""}
-    ${(mode === "cloud" || mode === "partial") && !sc.cloud_ready ? `<div class="snokey">${ic("x")}${tr("Для облака нужен ключ OpenAI или свой адрес — без него расшифрую на компьютере бесплатно.")}</div>` : ""}`;
+    ${(mode === "quality" || mode === "fast") && !sc.cloud_ready ? `<div class="snokey">${ic("x")}${tr("Для облака нужен ключ OpenAI или свой адрес — без него расшифрую на компьютере бесплатно.")}</div>` : ""}`;
 }
 const SQ_MED = {
   auto: ["🤖", "#6366f1", "#a855f7"],

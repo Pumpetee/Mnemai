@@ -1,12 +1,10 @@
 """Where a meeting is transcribed: on this computer (free, private, as fast as the processor) or by a cloud Whisper
 (fast, paid by the owner's own key, the audio leaves the computer).
 
-Modes (Настройки → Записи встреч):
-- auto    — measures this computer on the first minute of the recording. Fits — transcribes here and says how long it
-            will take. Too slow — asks: give it to the cloud Whisper or wait. Without a key it says how long and waits.
-- local   — always here.
-- partial — short recordings here, long ones to the cloud without asking (the owner is told).
-- cloud   — always the cloud when there is a key, otherwise here.
+Presets (Настройки → Записи встреч):
+- private — only local models: always on this computer, nothing leaves it.
+- quality — quality: the cloud Whisper when there is a key, otherwise here.
+- fast    — the fastest models: short recordings here, long ones to the cloud without asking (the owner is told).
 Every choice is shown to the owner: in the bar above the chat and, if the window is hidden, as a tray notification.
 """
 
@@ -21,7 +19,8 @@ from pathlib import Path
 
 from .vault import Vault
 
-MODES = ("auto", "local", "partial", "cloud")
+MODES = ("private", "quality", "fast")
+OLD_MODES = {"local": "private", "cloud": "quality", "partial": "fast", "auto": "quality"}  # presets before 20.11.2026
 SR = 16000
 CHUNK_S = 600  # 10 minutes of 16 kHz mono wav ≈ 19 MB: under the 25 MB upload limit
 SAMPLE_S = 60  # how much of the recording the speed test reads
@@ -32,7 +31,8 @@ def settings(vault: Vault) -> dict:
     from .agent import profile as P
 
     p = P.load(vault)
-    mode = p.get("scribe_mode") if p.get("scribe_mode") in MODES else "auto"
+    raw = p.get("scribe_mode") or "quality"
+    mode = raw if raw in MODES else OLD_MODES.get(raw, "quality")
     return {
         "mode": mode,
         "base": (p.get("scribe_base") or "").rstrip("/"),

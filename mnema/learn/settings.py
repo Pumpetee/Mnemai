@@ -107,11 +107,11 @@ DEFAULT = {
     # himself; then it is never changed for him.
     "brain": {"kind": "auto", "model": "", "endpoint": "", "api_key": "", "provider": "anthropic", "chosen": False},
     "auto_confidence": 0.8,  # mixed mode: write silently at or above this
-    "ask_cooldown_minutes": 60,  # one question about memory per conversation in this many minutes, not one per fact
+    "ask_cooldown_minutes": 10,  # one question about memory per conversation in this many minutes, not one per fact
     "sensitive_tags": ["money", "health", "private"],
     "never": [],  # "don't learn things like this": phrases and topics
     "forget_after_days": 60,  # learned once, never repeated, never confirmed → offer to forget
-    "interval_minutes": 15,
+    "interval_minutes": 60,  # the timer: one learning pass per hour
     "max_episodes_per_run": 200,
     "initial": {"done": False, "days": 90},
     # May Mnemai look outside its own chat and memory folder (other programs, the browser, the web)? None — not asked

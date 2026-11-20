@@ -279,12 +279,15 @@ class Planner(unittest.TestCase):
         messages = _messages(v, chat["id"])
         ready = next(m for m in messages if m.get("kind") == "plan")["plan"]
         result = next(m for m in messages if m.get("kind") == "plan_result")
-        self.assertEqual(len(calls), 2)  # two honest attempts of step 1, no call for step 2
+        # two honest attempts of step 1 (the model answered nothing twice), then ONE retry of the same step on
+        # another model (local qwen3), which also answered nothing — no call for step 2
+        self.assertEqual(len(calls), 4)
         self.assertEqual(ready["status"], "stopped")
         self.assertEqual(ready["stop_reason"], "empty_step")
         self.assertEqual(ready["steps"][0]["status"], "empty")
         self.assertEqual(ready["steps"][0]["actions"], 0)
         self.assertTrue(ready["steps"][0]["note"])
+        self.assertEqual(ready["steps"][0]["retried"]["reason"], "empty_step")  # the step was retried, once
         self.assertEqual(ready["steps"][1]["status"], "stopped")  # the rest is not run
         self.assertIn("не выполнялся", ready["steps"][1]["note"])
         self.assertIn("шаге 1 из 2", result["text"])
@@ -379,13 +382,15 @@ class Planner(unittest.TestCase):
             PL.run(v, chat["id"], plan)
             _wait(chat["id"])
 
-        self.assertEqual(len(calls), 3)  # the same action three times is a loop, not work
+        # the same action three times is a loop, not work; the step is retried once on another model, which loops too
+        self.assertEqual(len(calls), 6)
         messages = _messages(v, chat["id"])
         ready = next(m for m in messages if m.get("kind") == "plan")["plan"]
         result = next(m for m in messages if m.get("kind") == "plan_result")
         self.assertEqual(ready["status"], "stopped")
         self.assertEqual(ready["stop_reason"], "loop")
         self.assertEqual(ready["steps"][0]["status"], "stopped")
+        self.assertEqual(ready["steps"][0]["retried"]["reason"], "loop")
         self.assertIn("три раза", result["text"])
         self.assertEqual(result["plan"]["stop_reason"], "loop")
 

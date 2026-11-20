@@ -92,6 +92,8 @@ def clean(cfg: dict | None) -> dict | None:
         raise ValueError("для консорциума нужны хотя бы два ИИ")
     out = {"members": members[:MAX_MEMBERS], "rounds": max(1, min(MAX_ROUNDS, int(cfg.get("rounds") or 2)))}
     out["format"] = cfg.get("format") if cfg.get("format") in FORMATS else "council"
+    # roles stay in the config for compatibility, but the discussion uses fixed roles (fixed_role) — the owner's
+    # decision 20.11.2026: ведущий, участники, суммаризатор; a picked role no longer changes the discussion.
     out["roles"] = {r: v for r, v in (cfg.get("roles") or {}).items() if r in out["members"] and v in ROLES and v}
     out["summarizer"] = cfg.get("summarizer") if cfg.get("summarizer") in out["members"] else ""
     out["length"] = cfg.get("length") if cfg.get("length") in LENGTHS else "normal"
@@ -253,6 +255,18 @@ ROLES = {
     "client": "Клиент: смотришь глазами покупателя или пользователя",
 }
 LENGTHS = {"short": (80, 120), "normal": (150, 180), "long": (300, 350)}
+
+
+def fixed_role(cfg: dict, ref: str, final: bool = False) -> str:
+    """The discussion's roles are fixed by the owner's decision (20.11.2026): ведущий, участники, суммаризатор.
+    The first member leads, the others participate, and the chosen summarizer sums up in the last round. Roles the
+    owner picked earlier (ROLES) are no longer used in the discussion."""
+    if final and ref == cfg.get("summarizer"):
+        return "Ты — суммаризатор: подводишь итог обсуждения."
+    members = cfg.get("members") or []
+    if members and ref == members[0]:
+        return "Ты — ведущий: открываешь обсуждение и задаёшь направление."
+    return "Ты — участник: отвечай на вопрос владельца и опирайся на доводы других."
 
 
 def order(cfg: dict, r: int) -> list:
@@ -440,9 +454,8 @@ def run(
         cfg = CH.load_chat(vault, cid).get("consortium") or chat["consortium"]
         fmt = cfg.get("format", "council")
         words, fwords = LENGTHS.get(cfg.get("length"), LENGTHS["normal"])
-        role = ROLES.get((cfg.get("roles") or {}).get(ref, ""), "")
         side = side_of(cfg, ref)
-        extra = (f"\n- Твоя роль — {role}. Смотри на вопрос с этой стороны." if role else "") + (
+        extra = f"\n- {fixed_role(cfg, ref, final)}" + (
             f"\n- Твоя сторона в дебатах: {side}." if side and not final else ""
         )
         look = bool(cfg.get("search", True))

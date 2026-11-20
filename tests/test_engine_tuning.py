@@ -52,13 +52,14 @@ class TestTuning(unittest.TestCase):
 
         tuning.save(self.v, {"precise": 0, "month": 5000})
         P.save(
-            self.v, {"scribe_mode": "cloud", "tools_ask": True, "tool_folders": ["C:/work"], "extra_folders": ["D:/n"]}
+            self.v,
+            {"scribe_mode": "quality", "tools_ask": True, "tool_folders": ["C:/work"], "extra_folders": ["D:/n"]},
         )
         code, _ = api_chat.post(self.v, "/api/settings/reset", {})
         self.assertEqual(code, 200)
         e, p = tuning.get(self.v), P.load(self.v)
         self.assertEqual((e["mode"], e["precise"], e["month"]), ("balance", 2, 0))
-        self.assertEqual((p["scribe_mode"], p["tools_ask"]), ("auto", False))
+        self.assertEqual((p["scribe_mode"], p["tools_ask"]), ("quality", False))
         self.assertEqual((p["tool_folders"], p["extra_folders"]), (["C:/work"], ["D:/n"]))  # folders stay
 
     def test_old_settings_pick_the_nearest_step(self):

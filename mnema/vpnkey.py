@@ -325,7 +325,7 @@ def connect(vault, key: str, service: str = "") -> dict:
         except (ValueError, RuntimeError) as e:
             last = str(e)
         stop()
-    raise ValueError(f"не подключилось: {last}")
+    raise ValueError(f"не подключилось: {last} — введи ключ вручную или возьми другой")
 
 
 def resume(vault) -> dict | None:
@@ -348,7 +348,7 @@ def resume(vault) -> dict | None:
         r = net.check(f"socks5://127.0.0.1:{port}", timeout=8)  # brought up is not the same as working
         if not r["ok"]:
             err = (
-                f"VPN «{d['name']}» не отвечает ({r['error']}). Проверь ключ, возьми другой или выключи VPN — "
+                f"VPN «{d['name']}» не отвечает ({r['error']}). Введи ключ вручную, возьми другой или выключи VPN — "
                 "Настройки → VPN и прокси."
             )
             P.save(vault, {"vpn_error": err})

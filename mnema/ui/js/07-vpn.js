@@ -12,7 +12,11 @@ const VPN_APPS = [
 ];
 let VPN_SCAN = null;
 function vpnScan(force) {
-  if (force || !VPN_SCAN) VPN_SCAN = api("/api/net/detect").catch(() => ({ proxies: [], tunnels: [] }));
+  if (force || !VPN_SCAN)
+    VPN_SCAN = api("/api/net/detect").catch(() => ({
+      proxies: [],
+      tunnels: [],
+    }));
   return VPN_SCAN;
 }
 function vpnMatch(d, [name, kind, ports]) {
@@ -71,8 +75,17 @@ async function bindVpnButtons(box, onConnect, onManual) {
           return;
         }
         msg.className = "vpnmsg no";
-        msg.innerHTML = `${ic("x")}<span>${a[1] === "tunnel" ? `${esc(name)} ${tr("не запущен. Открой его и подключись — Mnemai пойдёт через него сама, настраивать ничего не нужно.")}` : `${esc(name)} ${tr("не найден. Открой")} ${esc(name)}, ${tr("включи подключение и нажми эту кнопку ещё раз.")}`}</span><button class="btn l sm" data-again>${tr("Проверить ещё раз")}</button>`;
+        msg.innerHTML = `${ic("x")}<span>${a[1] === "tunnel" ? `${esc(name)} ${tr("не запущен. Открой его и подключись — Mnemai пойдёт через него сама, настраивать ничего не нужно.")}` : `${esc(name)} ${tr("не найден. Открой")} ${esc(name)}, ${tr("включи подключение и нажми эту кнопку ещё раз — или введи ключ вручную, Mnemai подключится сама.")}`}</span><button class="btn l sm" data-again>${tr("Проверить ещё раз")}</button><button class="btn g sm" data-vkmanual3>${tr("Ввести ключ вручную")}</button>`;
         $("[data-again]", msg).onclick = () => b.click();
+        $("[data-vkmanual3]", msg).onclick = () => {
+          // auto-detect failed: lead to the manual key entry in the VPN card
+          const nb = $("#netcard");
+          if (!nb) return;
+          const mb = $("#vkbox", nb);
+          mb.hidden = false;
+          $("#vkkey", nb).focus();
+          nb.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
       }),
   );
 }

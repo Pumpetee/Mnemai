@@ -53,13 +53,15 @@ class Prices(unittest.TestCase):
 
 
 class EconomyAndBudget(unittest.TestCase):
-    def test_economy_plan_takes_no_strong_models(self):
+    def test_economy_plan_puts_a_strong_model_only_on_the_critical_steps(self):
         v = _vault()
         with patch.object(PR, "status", lambda vault: STATUS):
             plans = PL.fallback_plans(v, "Напиши письмо клиенту", economy=True)
-        models = {s["model"] for p in plans for s in p["steps"]}
-        self.assertTrue(models)
-        self.assertFalse([m for m in models if "openrouter" in m], models)
+        strong = {s["model"] for p in plans for s in p["steps"] if s["role"] in ("Критик", "Проверка")}
+        others = {s["model"] for p in plans for s in p["steps"] if s["role"] not in ("Критик", "Проверка")}
+        self.assertTrue(strong)
+        self.assertTrue(any("openrouter" in m for m in strong))  # критика/проверка — сильная модель
+        self.assertFalse([m for m in others if "openrouter" in m], others)
 
     def test_quality_still_has_more_steps_than_fast(self):
         v = _vault()

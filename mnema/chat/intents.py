@@ -85,6 +85,62 @@ SITE_BASE = {
     "kinopoisk": ("https://www.kinopoisk.ru", "https://www.kinopoisk.ru/index.php?kp_query={q}"),
 }
 
+# «Открой этот сайт» (решение владельца 20.11.2026): a link from the message or an attachment opens in the
+# system browser. The link itself is not in this command — it comes from the conversation, so the intent only
+# recognises the phrase; the sender resolves the link from the chat.
+THIS_SITE = re.compile(
+    r"^\s*(?:пожалуйста[,\s]+)?(?:открой(?:те)?|открывай(?:те)?|open)\s+(?:мне\s+)?"
+    r"(?:этот\s+сайт|эту\s+(?:ссылку|страницу|линк)|этот\s+линк|this\s+(?:site|link))\s*[.!?]*$",
+    re.I,
+)
+LINK_RE = re.compile(r"https?://[^\s<>\"'«»\)\]\}]+", re.I)
+
+
+def is_this_site(text: str) -> bool:
+    """The owner's «открой этот сайт» command: the link to open is in the conversation, not in these words."""
+    return bool(THIS_SITE.match(POLITE.sub("", (text or "").strip())))
+
+
+def _first_link(text: str) -> str | None:
+    m = LINK_RE.search(text or "")
+    return m.group(0).rstrip(".,!?;:") if m else None
+
+
+def _file_link(f: dict) -> str | None:
+    """The first link inside an attachment: its extracted text, then the text read off a picture."""
+    for key in ("text_path", "ocr_path"):
+        p = f.get(key)
+        if p:
+            try:
+                link = _first_link(Path(p).read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                link = None
+            if link:
+                return link
+    return _first_link(str(f.get("text") or ""))
+
+
+def link_from(chat: dict) -> str | None:
+    """The link for «открой этот сайт»: the previous owner message (the command itself is the last one) or an
+    attachment — of that message, or of the command message itself."""
+    msgs = [m for m in (chat.get("messages") or []) if m.get("role") == "user"]
+    if not msgs:
+        return None
+    older = msgs[:-1] if is_this_site(msgs[-1].get("text") or "") else msgs
+    for m in reversed(older):
+        link = _first_link(m.get("text") or "")
+        if link:
+            return link
+        for f in m.get("files") or []:
+            link = _file_link(f)
+            if link:
+                return link
+    for f in msgs[-1].get("files") or []:  # the link may be attached to the command message itself
+        link = _file_link(f)
+        if link:
+            return link
+    return None
+
 
 def _site_key(word: str) -> str:
     low = word.lower()
@@ -376,6 +432,8 @@ def _run(vault: Vault, tool: str, args: dict) -> tuple[str, str]:
         )
         return line + ".", ""
     result, line, _ = MC.run_action(vault, {"tool": tool, **args}, "owner")
+    if tool == "open_link":
+        return "Готово — открыла ссылку.", result
     if tool == "open_app":
         if args.get("label") == "ссылка":
             return "Готово — открыла ссылку.", result
@@ -423,7 +481,7 @@ def answer(vault: Vault, call: dict) -> str:
     ):
         if not _is_tools_ok(vault, tool):
             return "Эти действия сейчас выключены в настройках."
-    if tool in ("run_command", "open_app") and not _is_tools_ok(vault, tool):
+    if tool in ("run_command", "open_app", "open_link") and not _is_tools_ok(vault, tool):
         return "Доступ к компьютеру выключен в настройках."
     if tool == "search_text":
         if not _is_tools_ok(vault, "read_file"):
@@ -446,7 +504,7 @@ def _is_tools_ok(vault: Vault, tool: str) -> bool:
     prof = P.load(vault)
     if prof.get("tools") is False:
         return False
-    if tool in ("run_command", "open_app") and prof.get("pc_access") is False:
+    if tool in ("run_command", "open_app", "open_link") and prof.get("pc_access") is False:
         return False
     if tool == "remember" and not P.memory_on(vault):
         return False

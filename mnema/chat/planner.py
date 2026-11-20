@@ -25,8 +25,13 @@ PROVIDER_SECONDS = 300
 FREE = {"local", "ollama", "strata"}  # runs on this computer: no token price
 STRONG = {"claude_code", "anthropic", "openai", "gemini", "openrouter", "codex"}
 OUT_CHARS = {"короткий": 700, "план": 1200, "черновик": 3500, "критика": 1000, "финал": 2200, "ответ": 1500}
-SPEED = {"local": 40.0, "ollama": 45.0, "strata": 60.0}  # chars per second on this computer
+# The estimates come from a table of average model metrics, not from the planner model's own guesses. The table
+# holds only the numbers already measured in this codebase (owner decision 20.11.2026: «оценка по таблице средних
+# показателей моделей»): local models stream 40–60 chars/s, cloud models ~220 chars/s, and a token is ~3.2 chars
+# on input and output alike. No other numbers are invented for the table.
+AVG_SPEED = {"local": 40.0, "ollama": 45.0, "strata": 60.0}  # chars per second on this computer
 CLOUD_SPEED = 220.0  # chars per second of cloud streaming, a rough but honest order of magnitude
+CHARS_PER_TOKEN = 3.2
 RECOMMEND_FACTOR = 1.5  # a margin over the cheap «Качественно» estimate: a recommendation must not cut the budget
 RECOMMEND_MIN = 0.01
 
@@ -200,7 +205,8 @@ def _planner(rows: list[dict], wanted: str) -> dict:
         "claude_code",
         "openrouter",
     )
-    return next((r for pid in order for r in rows if r["pid"] == pid), rows[0])
+    pool = [r for r in rows if not _weak(str(r["model"]) + " " + str(r["name"]))]  # auto never picks a lite planner
+    return next((r for pid in order for r in (pool or rows) if r["pid"] == pid), (pool or rows)[0])
 
 
 def _memory(vault: Vault, pid: str) -> str:
@@ -232,19 +238,52 @@ def _history(vault: Vault, cid: str, limit: int = 8, per: int = 1400) -> list[st
     return out[-limit:]
 
 
+def _special(model_ref: str) -> bool:
+    """The owner's specialized scaledown helpers (…/extract, …/summarize): almost free and too narrow for a
+    general step. They are never chosen as a fresh executor while an ordinary model is available."""
+    return "extract" in (model_ref or "").lower() or "summarize" in (model_ref or "").lower()
+
+
+WEAK_MODELS = ("lite", "nano", "tiny", "mini", "preview", ":free")
+
+
+def _weak(model_ref: str) -> bool:
+    """Weak lite-class models: too limited for general steps. «Быстро» may take them (cheapest is the point),
+    the thorough plans never choose them as executors while an ordinary model is available."""
+    return any(marker in (model_ref or "").lower() for marker in WEAK_MODELS)
+
+
+# roles where the quality of the step matters more than its price: such a step may stay dear even above the
+# 2× cap — at most two per plan
+CRITICAL_ROLES = ("крит", "провер", "финал", "итог", "стратег", "ревью")
+
+
+def _critical_role(step: dict) -> bool:
+    role = (step.get("role") or "").lower()
+    return any(word.startswith(stem) for word in role.split() for stem in CRITICAL_ROLES)
+
+
 def _pick(rows: list[dict], want: int, used: set[str]) -> dict | None:
+    """One executor for a step: tier first, and never a specialized scaledown model while an ordinary one is
+    free — otherwise the extract/summarize helpers would take over every step."""
     if not rows:
         return None
+
+    def ordinary(pool: list[dict]) -> list[dict]:
+        out = [r for r in pool if not _special(str(r["model"]) + " " + str(r["name"]))]
+        if want >= 2:  # «Быстро» (want=1) may take the cheapest weak model; the thorough plans may not
+            out = [r for r in out if not _weak(str(r["model"]) + " " + str(r["name"]))]
+        return out or pool
 
     def first_free(pool: list[dict]) -> dict | None:
         return next((row for row in pool if row["model"] not in used), None)
 
-    hit = first_free([r for r in rows if r["tier"] == want])
+    hit = first_free(ordinary([r for r in rows if r["tier"] == want]))
     if hit:
         return hit
     # economy may run out of cheap executors before it runs out of steps: reuse the cheapest suitable model
     # instead of drifting to an expensive one just because it happens to be free
-    allowed = [r for r in _by_cost(rows) if r["tier"] <= max(want, 2)]
+    allowed = ordinary([r for r in _by_cost(rows) if r["tier"] <= max(want, 2)])
     return first_free(allowed) or (allowed or _by_cost(rows))[0]
 
 
@@ -253,7 +292,8 @@ def _est_chars(text: str) -> int:
 
 
 def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
-    """Where the numbers come from: memory+history+task+previous answers+instruction, output by role, speed by provider."""
+    """Where the numbers come from: memory+history+task+previous answers+instruction, output by role, speed and
+    token density by the table of average model metrics (AVG_SPEED / CLOUD_SPEED / CHARS_PER_TOKEN)."""
     previous = 0
     total_tokens = total_tokens_hi = 0.0
     total_seconds = total_seconds_hi = total_seconds_lo = 0.0
@@ -263,14 +303,14 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
         input_chars = 500 + context_chars + _est_chars(task) + previous + _est_chars(instruction)
         out_chars = OUT_CHARS.get(str(step.get("out") or "ответ"), 1500)
         pid = str(step.get("model") or "").split(":", 1)[0]
-        speed = SPEED.get(pid, CLOUD_SPEED)
+        speed = AVG_SPEED.get(pid, CLOUD_SPEED)
         seconds = 2.5 + out_chars / speed + 1.2
-        tokens = round(input_chars / 3.2 + out_chars / 3.2)
+        tokens = round(input_chars / CHARS_PER_TOKEN + out_chars / CHARS_PER_TOKEN)
         tokens_hi = round(tokens * 2.0)  # a real chain came out 1.6× the point estimate
         seconds_hi = round(seconds * 2.2, 1)  # and the real time was about 2×
         seconds_lo = round(seconds * 0.5, 1)  # a short Harness answer took 5 s where the point said 11 s
         price_in, price_out = _price(pid, step.get("model_name") or step.get("model") or "")
-        cost = (input_chars / 3.2) * price_in / 1e6 + (out_chars / 3.2) * price_out / 1e6
+        cost = (input_chars / CHARS_PER_TOKEN) * price_in / 1e6 + (out_chars / CHARS_PER_TOKEN) * price_out / 1e6
         step["est"] = {
             "tokens": tokens,
             "tokens_min": tokens,
@@ -278,8 +318,8 @@ def estimate(plan: dict, task: str, context_chars: int = 0) -> dict:
             "seconds": round(seconds, 1),
             "seconds_min": seconds_lo,
             "seconds_max": seconds_hi,
-            "in": round(input_chars / 3.2),
-            "out": round(out_chars / 3.2),
+            "in": round(input_chars / CHARS_PER_TOKEN),
+            "out": round(out_chars / CHARS_PER_TOKEN),
             "cost": round(cost, 6),
             "cost_min": round(cost, 6),
             "cost_max": round(cost * 2.0, 6),
@@ -391,6 +431,55 @@ def _fit_budget(plan: dict, rows: list[dict], budget: float, task: str, context_
         "min_usd": round(float(est.get("cost_min") or 0), 4),
         "downgraded": downgraded,
     }
+    return plan
+
+
+def _cap_expensive_steps(plan: dict, rows: list[dict], task: str, context_chars: int) -> dict:
+    """Owner decision 20.11.2026: a dear model «pays off» only when it is not more than 2× the price of the cheap
+    step. The baseline is taken inside the plan — the cheapest paid step of this very plan (a free local model is
+    not a price to double); a step above 2× drops to the model of the plan's cheapest paid step. A specialized
+    scaledown model (extract/summarize) never becomes a fresh target; if there is nothing else to downgrade to,
+    the step stays as it is."""
+    steps = plan.get("steps") or []
+    if len({s.get("model") for s in steps}) <= 1:
+        return plan  # all steps are on one model: nothing to compare or downgrade to
+
+    def step_price(step: dict) -> float:
+        pid = str(step.get("model") or "").split(":", 1)[0]
+        return sum(_price(pid, step.get("model_name") or step.get("model") or ""))
+
+    paid = [s for s in steps if step_price(s) > 0]
+    if not paid:
+        return plan  # only free models: no price to double
+    baseline = min(step_price(s) for s in paid)
+    cap = baseline * 2.0
+    target = next(
+        (
+            s
+            for s in sorted(paid, key=step_price)
+            if not _special(str(s.get("model") or "") + " " + str(s.get("model_name") or ""))
+            and not _weak(str(s.get("model") or "") + " " + str(s.get("model_name") or ""))
+        ),
+        None,
+    )
+    if target is None:
+        return plan  # every paid step is a specialized scaledown: no ordinary model to downgrade to
+    kept = 0  # at most two dear steps may stay when their role is quality-critical
+    changed = False
+    for step in steps:
+        pid = str(step.get("model") or "").split(":", 1)[0]
+        if pid in FREE:
+            continue  # free steps are never touched
+        if step.get("model") == target.get("model") or step_price(step) <= cap + 1e-9:
+            continue
+        if _critical_role(step) and kept < 2:
+            kept += 1  # критика/проверка/финал и похожие: качество важнее цены, но не больше двух
+            continue
+        step["model"], step["model_name"], step["provider"] = target["model"], target["model_name"], target["provider"]
+        step["downgraded"] = True
+        changed = True
+    if changed:
+        estimate(plan, task, context_chars)
     return plan
 
 
@@ -533,27 +622,26 @@ def _step(rows: list[dict], used: set[str], role: str, out: str, instruction: st
 
 
 def fallback_plans(vault: Vault, task: str, context_chars: int = 0, economy: bool = True) -> list[dict]:
-    """Three ready schemes. Economy (on by default) takes cheap executors and splits the work into simple
-    self-contained steps; the strong tier is used only when the owner switched economy off."""
+    """Three ready schemes. Economy is always on by the owner's decision (20.11.2026) and cannot be switched off:
+    the parameter stays for callers that still send it. Executors follow the role: criticism/checking gets a
+    strong model when one is connected, drafting/planning a medium one, plain routine cheap or local."""
+    del economy  # the owner decided economy is permanent — the value of the parameter is ignored
     rows = available(vault)
     if not rows:
         raise ValueError("нет подключённых моделей: подключи хотя бы одну в Настройках → ИИ и модели")
-    cheap = 1 if economy else 2
-    quality_wants = [1, 1, 1, 1, 1] if economy else [3, 3, 2, 3, 2]
+    quality_wants = [2, 2, 3, 2, 2]  # разбор/черновик — средние, критика — сильная, финал — средняя
     used: set[str] = set()
     fast = [_step(rows, used, "Ответ", "ответ", "Реши задачу сразу, по существу, без плана и черновиков.", want=1)]
     used.clear()
     balanced = [
-        _step(
-            rows, used, "Разбор", "план", "Разбей задачу на 2–4 простые подзадачи и верни только их список.", want=cheap
-        ),
+        _step(rows, used, "Разбор", "план", "Разбей задачу на 2–4 простые подзадачи и верни только их список.", want=2),
         _step(
             rows,
             used,
             "Черновик",
             "черновик",
             "Сделай черновик результата по списку подзадач. Работай только по списку, не пересказывай задачу.",
-            want=cheap,
+            want=2,
         ),
         _step(
             rows,
@@ -561,7 +649,7 @@ def fallback_plans(vault: Vault, task: str, context_chars: int = 0, economy: boo
             "Проверка",
             "критика",
             "Проверь черновик: ошибки, пропуски, ясность. Верни короткий список правок.",
-            want=cheap if economy else 2,
+            want=3,
         ),
     ]
     used.clear()
@@ -669,9 +757,11 @@ def propose(
 ) -> list[dict]:
     """Ask a cheap connected AI to choose the roles and executors; fall back to the built-in schemes.
 
-    economy (on by default) asks for cheap executors and simple self-contained steps, and every offered
-    variant is fitted into the budget (a custom one, or the recommended cheap estimate plus a margin).
+    economy is always on by the owner's decision (20.11.2026) — the parameter stays for callers that still send
+    it, but switching economy off is impossible: every offered variant uses cheap executors, simple self-contained
+    steps, a model above 2× the cheap step's price is downgraded, and the variant is fitted into the budget.
     """
+    economy = True  # the owner decided economy is permanent — the value of the parameter is ignored
     task = (task or "").strip()
     if not task:
         raise ValueError("напиши задачу")
@@ -697,15 +787,14 @@ def propose(
         listing = "\n".join(f"- {r['model']} — {r['name']} ({r['provider']})" for r in rows[:40])
         system = PLAN_PROMPT
         system += f"\n\nБюджет схемы: не более ${budget_usd:.2f}. Смета каждого варианта — не больше бюджета."
-        if economy:
-            system += (
-                "\nЭкономия включена: дроби задачу на простые самодостаточные шаги. Каждый шаг — понятная задача "
-                "с явными входами и выходами; исполнителю не нужна история разговора, только переданные данные. "
-                "Бери дешёвые модели (harness, deepseek, локальные); дорогую модель — только если шаг окупается "
-                "и это заметно повышает качество, не больше одного-двух таких шагов."
-            )
-        else:
-            system += "\nЭкономия выключена: можно брать сильные модели, если это оправдано качеством."
+        system += (
+            "\nЭкономия включена всегда (выключить нельзя): дроби задачу на простые самодостаточные шаги. "
+            "Каждый шаг — понятная задача с явными входами и выходами; исполнителю не нужна история разговора, "
+            "только переданные данные. Исполнителей подбирай по роли: критика/проверка/итог — сильная модель; "
+            "черновик/разбор/семантика — средняя; простая рутина — дешёвая или локальная. Не ставь все шаги на "
+            "одну дешёвую модель; дорогих (дороже 2× цены дешёвого шага) — не больше двух, и только там, где "
+            "качество шага важно. Не бери слабые lite/nano/tiny/mini/preview-модели — для шагов они не годятся."
+        )
         if memory:
             system += (
                 "\n\nПамять о владельце (кто он, его правила, проекты — учитывай при выборе шагов):\n" + memory[-8000:]
@@ -735,6 +824,7 @@ def propose(
         p["context"] = context_info
         p["economy"] = economy
         estimate(p, task, context_chars=context_chars)
+        _cap_expensive_steps(p, rows, task, context_chars)  # a dear model pays off only within 2× of the cheap step
         _fit_budget(p, rows, budget_usd, task, context_chars)
         p["budget"]["recommended"] = recommended
     result = _justify(plans)
@@ -826,6 +916,28 @@ def _fallback_row(vault: Vault, failed_pid: str):
     return rows[0]
 
 
+def _retry_row(vault: Vault, failed: dict, used: set[str]) -> dict | None:
+    """The model for one retry of a failed step: another connected model — never the same one, never a weak lite
+    model while an ordinary one exists, preferably a different provider or a stronger tier, and not a model the
+    plan already uses."""
+    failed_model = str(failed.get("model") or "")
+    failed_pid = failed_model.split(":", 1)[0]
+    try:
+        rows = [r for r in available(vault) if r["model"] != failed_model]
+    except Exception:  # noqa: BLE001 — no retry is not a reason to fail differently
+        return None
+    if not rows:
+        return None
+    ordinary = [
+        r
+        for r in rows
+        if not _weak(str(r["model"]) + " " + str(r["name"])) and not _special(str(r["model"]) + " " + str(r["name"]))
+    ]
+    pool = ordinary or rows
+    pool.sort(key=lambda r: (0 if r["pid"] != failed_pid else 1, -r["tier"], sum(_price(r["pid"], r["name"]))))
+    return next((r for r in pool if r["model"] not in used), pool[0])
+
+
 def _progress(plan: dict, steps: list[dict], current: int = -1) -> dict:
     """A small snapshot for the live plan card: statuses only, never full step outputs."""
     rows = []
@@ -842,6 +954,7 @@ def _progress(plan: dict, steps: list[dict], current: int = -1) -> dict:
                 "actual": step.get("actual"),
                 "est": step.get("est"),
                 "note": step.get("note"),
+                "retried": step.get("retried"),
             }
         )
     return {
@@ -939,7 +1052,10 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
 
             tools_on = TL.enabled(vault)
             tool_rule = TL.rule(vault) if tools_on else ""
-            for i, step in enumerate(steps):
+            retries = 2  # at most this many step retries in the whole plan
+            i = 0
+            while i < len(steps):
+                step = steps[i]
                 step["actions"] = 0
                 if g["stop"]:
                     stop_reason, stop_at = "owner", i
@@ -1109,7 +1225,11 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     )
                 else:
                     step["status"] = "ok"
-                    step["note"] = ""
+                    step["note"] = (
+                        f"шаг повторён на модели {step.get('model_name') or step.get('model')}"
+                        if step.get("retried")
+                        else ""
+                    )
                 made.append(answer)
                 g["plan_progress"] = _progress(plan, steps)
                 g["text"] = _live_text(steps)
@@ -1117,8 +1237,26 @@ def run(vault: Vault, cid: str, plan: dict) -> dict:
                     CH._update_msg(vault, cid, mid, {"plan": plan})  # switching back mid-run shows the statuses
                 except Exception:  # noqa: BLE001 — a progress write must never break the plan
                     pass
+                if not g["stop"] and stop_reason in ("loop", "empty_step") and retries > 0 and not step.get("retried"):
+                    replacement = _retry_row(vault, step, {s["model"] for j, s in enumerate(steps) if j != i})
+                    if replacement is not None:
+                        old = f"{step.get('model') or ''} ({step.get('model_name') or ''})".strip()
+                        step["retried"] = {"from": old, "reason": stop_reason}
+                        for key in ("status", "note", "actual", "output", "est", "error"):
+                            step.pop(key, None)
+                        step["actions"] = 0
+                        step["model"], step["model_name"], step["provider"] = (
+                            replacement["model"],
+                            replacement["name"],
+                            replacement["provider"],
+                        )
+                        made.pop()  # the failed attempt's text is not the step's result
+                        stop_reason, stop_at = "", -1
+                        retries -= 1
+                        continue  # the same step once more, on another model
                 if stop_reason:
                     break
+                i += 1
             g["phase"] = "собираю итог"  # the last step is done; the result card is being written
             if stop_at >= 0:
                 for later in steps[stop_at + 1 :]:

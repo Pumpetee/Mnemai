@@ -748,7 +748,8 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
     except Exception as e:
         return f"Не сделано: {e}"
     force_ask = call["tool"] in getattr(TL, "FORCE_ASK", set())
-    allowed = (not force_ask and not P.load(vault).get("tools_ask", False)) or call["tool"] in (
+    ask_each = call["tool"] in getattr(TL, "ASK_EACH_CALL", set())
+    allowed = (not force_ask and not ask_each and not P.load(vault).get("tools_ask", False)) or call["tool"] in (
         load_chat(vault, cid).get("tools_ok") or []
     )
     if not allowed:
@@ -777,7 +778,7 @@ def _act(vault: Vault, cid: str, g: dict, call: dict, client: str, model: str) -
             )
             return "Владелец не разрешил это действие. Не повторяй его; ответь без него или спроси, как быть."
         if choice == "always" and call["tool"] not in getattr(TL, "FORCE_ASK", set()):
-            # a broad MCP action is never put on the permanent allowlist: one call, one decision
+            # a smoke run is never put on the permanent allowlist: one run, one decision; mcp_call can be allowed
             modify_chat(
                 vault, cid, lambda c: c.__setitem__("tools_ok", sorted(set(c.get("tools_ok") or []) | {call["tool"]}))
             )
@@ -1107,6 +1108,10 @@ def send(
     plain = not opener and not chat.get("consortium") and not files and not quote and not chat.get("private")
     if plain:
         call = IN.fast_action(vault, text)
+        if call is None and IN.is_this_site(text):  # «открой этот сайт»: the link comes from the conversation
+            link = IN.link_from(chat)
+            if link:
+                call = {"tool": "open_link", "url": link, "label": "ссылка"}
     install = None
     if plain and call is None:
         try:

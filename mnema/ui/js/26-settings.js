@@ -65,7 +65,10 @@ async function drawVaults() {
         const rename = async () => {
           const name = await askText("Как назвать эту память?", v.name, "Папка на диске сохранит своё имя.");
           if (name === null) return;
-          const r = await post("/api/app/vault_rename", { path: v.path, name }).catch((e) => ({ error: e.message }));
+          const r = await post("/api/app/vault_rename", {
+            path: v.path,
+            name,
+          }).catch((e) => ({ error: e.message }));
           if (r.error) return toast(r.error);
           drawVaults();
         };
@@ -91,7 +94,10 @@ async function drawVaults() {
             }))
           )
             return;
-          const r = await post("/api/app/vault_forget", { path: v.path, delete: true }).catch((e) => ({
+          const r = await post("/api/app/vault_forget", {
+            path: v.path,
+            delete: true,
+          }).catch((e) => ({
             error: e.message,
           }));
           if (r.error) return toast(r.error);
@@ -179,7 +185,11 @@ async function drawTg() {
     "tgrgo",
     () =>
       filled("tgaid", "tgahash", "tgphone") &&
-      rdp({ api_id: $("#tgaid").value, api_hash: $("#tgahash").value, phone: $("#tgphone").value }),
+      rdp({
+        api_id: $("#tgaid").value,
+        api_hash: $("#tgahash").value,
+        phone: $("#tgphone").value,
+      }),
   );
   on("tgcodego", () => filled("tgcode") && rdp({ code: $("#tgcode").value }));
   on("tgpwgo", () => filled("tgpw") && rdp({ password: $("#tgpw").value }));
@@ -241,7 +251,13 @@ async function tgPick(cur) {
     $("[data-x]", pop).onclick = () => pop.remove();
     $("#tgok", pop).onclick = async () => {
       try {
-        await post("/api/telegram", { chats: [...chosen.values()].map(({ id, name, kind }) => ({ id, name, kind })) });
+        await post("/api/telegram", {
+          chats: [...chosen.values()].map(({ id, name, kind }) => ({
+            id,
+            name,
+            kind,
+          })),
+        });
       } catch (e) {
         return toast(e.message);
       }
@@ -294,7 +310,12 @@ async function obsidianPick(prof) {
       $("#obsother", pop).onclick = async () => {
         const p = await window.pywebview.api.pick("folder");
         if (p) {
-          d.vaults.push({ path: p, name: p.split(/[\\/]/).pop(), notes: "", open: false });
+          d.vaults.push({
+            path: p,
+            name: p.split(/[\\/]/).pop(),
+            notes: "",
+            open: false,
+          });
           chosen.add(p);
           draw();
         }
@@ -302,7 +323,10 @@ async function obsidianPick(prof) {
     $("#obsok", pop).onclick = async () => {
       const known = new Set(d.vaults.map((v) => v.path));
       const keep = extraFolders(prof).filter((x) => !known.has(x));
-      await post("/api/agent", { extra_folders: [...keep, ...chosen], team_vault: "" }).catch((e) => toast(e.message));
+      await post("/api/agent", {
+        extra_folders: [...keep, ...chosen],
+        team_vault: "",
+      }).catch((e) => toast(e.message));
       pop.remove();
       toast(chosen.size ? tr("Obsidian подключён: заметки читаются в фоне") : tr("Obsidian отключён"));
       viewSettings(SETCUR);
@@ -380,18 +404,21 @@ function parseProxy(u) {
 function proxyForm(cur, pwSet, sys) {
   const p = parseProxy(cur),
     m = p.mode;
-  return `<div class="pxf">${vpnButtons()}<div class="pxmanual" ${m === "http" || m === "socks5" ? "" : "hidden"}><div class="seg pxmode">${[
-    ["system", "Как в Windows"],
-    ["off", "Напрямую"],
-    ["http", "HTTP"],
-    ["socks5", "SOCKS5"],
-  ]
-    .map(([k, l]) => `<button data-pm="${k}" class="${m === k ? "on" : ""}">${l}</button>`)
-    .join("")}</div>
+  return (
+    `<div class="pxf">${vpnButtons()}<div class="vpnkeyoff"><button class="btn g sm" data-vkmanual2>${tr("Ввести ключ вручную")}</button><span class="hint">${tr("VPN не нашёлся сам? Введи ключ вручную — Mnemai подключится сама.")}</span></div><div class="pxmanual" ${m === "http" || m === "socks5" ? "" : "hidden"}>` +
+    `<div class="seg pxmode">${[
+      ["system", "Как в Windows"],
+      ["off", "Напрямую"],
+      ["http", "HTTP"],
+      ["socks5", "SOCKS5"],
+    ]
+      .map(([k, l]) => `<button data-pm="${k}" class="${m === k ? "on" : ""}">${l}</button>`)
+      .join("")}</div>
    <div class="hint pxsys" ${m === "system" ? "" : "hidden"}>${sys ? `Windows сейчас использует <b>${esc(sys)}</b> — его и возьму.` : "В Windows прокси не задан — пойду напрямую."}</div>
    <div class="pxfields" ${m === "http" || m === "socks5" ? "" : "hidden"}><div class="pxrow"><div class="fld"><span>Адрес</span><input data-px="host" value="${esc(p.host || "")}" placeholder="127.0.0.1"></div><div class="fld"><span>Порт</span><input data-px="port" value="${esc(p.port || "")}" placeholder="${m === "socks5" ? "1080" : "8080"}"></div></div>
    <div class="pxrow"><div class="fld"><span>Логин, если нужен</span><input data-px="user" value="${esc(p.user || "")}" autocomplete="off"></div><div class="fld"><span>Пароль</span><input data-px="pw" type="password" placeholder="${pwSet ? "сохранён" : ""}" autocomplete="new-password"></div></div></div>
-   <div class="row" style="margin-top:10px"><button class="btn l" data-pxa="check">Проверить</button><button class="btn" data-pxa="save">Сохранить</button><span class="hint pxres"></span></div></div></div>`;
+   <div class="row" style="margin-top:10px"><button class="btn l" data-pxa="check">Проверить</button><button class="btn" data-pxa="save">Сохранить</button><span class="hint pxres"></span></div></div></div>`
+  );
 }
 function bindProxyForm(box, onSave) {
   let mode = $(".pxmode .on", box).dataset.pm;
@@ -426,7 +453,10 @@ function bindProxyForm(box, onSave) {
     r.textContent = "проверяю…";
     r.style.color = "";
     try {
-      const x = await post("/api/net/check", { proxy: u, ...(pw() !== null ? { password: pw() } : {}) });
+      const x = await post("/api/net/check", {
+        proxy: u,
+        ...(pw() !== null ? { password: pw() } : {}),
+      });
       r.textContent = x.ok ? `работает · ${x.via} · ${x.ms} мс` : `не работает: ${x.error}`;
       r.style.color = x.ok ? "var(--ok)" : "var(--bad)";
     } catch (e) {
@@ -452,6 +482,17 @@ function bindProxyForm(box, onSave) {
       mm.hidden = !mm.hidden;
     },
   );
+  const mk2 = $("[data-vkmanual2]", box);
+  if (mk2)
+    mk2.onclick = () => {
+      // auto-detect found nothing: lead to the manual key entry above
+      const nb = $("#netcard");
+      if (!nb) return;
+      const mb = $("#vkbox", nb);
+      mb.hidden = false;
+      $("#vkkey", nb).focus();
+      nb.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
   if (0)
     $('[data-pxa="find"]', box).onclick = async (e) => {
       const b = e.currentTarget,
@@ -499,7 +540,11 @@ async function viewSettings(arg) {
     api("/api/models"),
     api("/api/learn/status"),
     api("/api/learn/brain"),
-    api("/api/prompts").catch(() => ({ prompts: [], mode: "second", auto: true })),
+    api("/api/prompts").catch(() => ({
+      prompts: [],
+      mode: "second",
+      auto: true,
+    })),
     api("/api/engine").catch(() => null),
     api("/api/scribe/settings").catch(() => null),
     api("/api/efs").catch(() => null),
@@ -522,7 +567,10 @@ async function viewSettings(arg) {
   const allModels = ms.providers
     .filter((p) => p.ready)
     .flatMap((p) =>
-      p.models.map((m) => ({ v: p.id + ":" + m.id, l: (p.id === "claude_code" ? "" : p.name + " · ") + m.name })),
+      p.models.map((m) => ({
+        v: p.id + ":" + m.id,
+        l: (p.id === "claude_code" ? "" : p.name + " · ") + m.name,
+      })),
     );
   const groups = {};
   Object.entries(ls.sources).forEach(([k, m]) => {
@@ -575,7 +623,7 @@ async function viewSettings(arg) {
     <div class="card" data-sec="security" id="seccard"><h2>${tr("Защита данных")}</h2>
      <div class="tg" style="padding:0 0 10px;border:0"><button class="sw ${prof.redact !== false ? "on" : ""}" id="secred"></button><div><b>${tr("Скрывать секреты от облачных ИИ")}</b><p>${tr("Номера карт, пароли, ключи, телефоны, паспорта и СНИЛС заменяются метками до отправки, в ответ настоящие значения подставляются на компьютере.")}</p></div></div>
      ${efs ? `<div class="tg" style="padding:0 0 10px;border:0"><button class="sw ${efs.on ? "on" : ""}" id="secefs" ${efs.supported ? "" : "disabled"}></button><div><b>${tr("Шифровать папку памяти")}</b><p>${efs.supported ? tr("Средствами Windows: файлы на диске зашифрованы ключом твоей учётной записи, без входа в неё их не прочитать, даже вынув диск. Для тебя и Mnemai всё работает как раньше.") : esc(tr(efs.reason))}</p>${efs.on ? `<button class="btn g sm" id="secbk" style="margin-top:6px">${tr("Сохранить ключ восстановления")}</button>` : ""}</div></div>` : ""}
-     ${cry ? `<div class="tg" style="padding:0 0 10px;border:0"><button class="sw ${cry.on ? "on" : ""}" id="seccry"></button><div><b>${tr("Шифровать память паролем")}</b><p>${tr("Mnemai сама шифрует заметки, разговоры и журнал, на любой системе. Без пароля их не прочитать, даже скопировав папку. Obsidian и другие редакторы эти файлы не откроют. Забудешь пароль — память не вернуть.")}</p>${cry.on ? `<p class="hint">${tr("Зашифровано файлов")}: ${cry.files}</p><div class="tg" style="padding:6px 0 0;border:0"><button class="sw sm ${cry.remembered ? "on" : ""}" id="seccrem"></button><div><b>${tr("Помнить пароль на этом компьютере")}</b><p>${tr("Mnemai открывается без вопроса, ключ хранится в защищённом хранилище системы. Выключи, чтобы пароль спрашивался при каждом запуске.")}</p></div></div><button class="btn g sm" id="seccpw" style="margin-top:6px">${tr("Сменить пароль")}</button>` : ""}</div></div>` : ""}
+     ${cry ? `<div class="tg" style="padding:0 0 10px;border:0"><button class="sw ${cry.on ? "on" : ""}" id="seccry"></button><div><b>${tr("Шифровать память паролем")}</b><p>${tr("Mnemai сама шифрует заметки, разговоры и журнал, на любой системе. Без пароля их не прочитать, даже скопировав папку. Obsidian и другие редакторы эти файлы не откроют. Шифруются только текст-файлы — бинарные (PDF, картинки, записи) остаются открытыми. Забудешь пароль — восстанови его по ключу восстановления: он показывается один раз при включении шифрования.")}</p>${cry.on ? `<p class="hint">${tr("Зашифровано файлов")}: ${cry.files}</p><div class="tg" style="padding:6px 0 0;border:0"><button class="sw sm ${cry.remembered ? "on" : ""}" id="seccrem"></button><div><b>${tr("Помнить пароль на этом компьютере")}</b><p>${tr("Mnemai открывается без вопроса, ключ хранится в защищённом хранилище системы. Выключи, чтобы пароль спрашивался при каждом запуске.")}</p></div></div><button class="btn g sm" id="seccpw" style="margin-top:6px">${tr("Сменить пароль")}</button><button class="btn l sm" id="secrec" style="margin-top:6px">${tr("Восстановить пароль")}</button>` : ""}</div></div>` : ""}
      <div class="row"><button class="btn l" id="secout">${ic("eye")}${tr("Что ушло наружу")}</button><button class="btn g" id="secacc">${ic("lock")}${tr("Кто из ИИ что видит")}</button></div></div>
     ${themeCard()}
     ${compCard()}
@@ -674,6 +722,7 @@ async function viewSettings(arg) {
       };
     if ($("#seccry")) $("#seccry").onclick = () => cryptoModal(cry.on ? "off" : "on", again);
     if ($("#seccpw")) $("#seccpw").onclick = () => cryptoModal("password", again);
+    if ($("#secrec")) $("#secrec").onclick = () => cryptoModal("recover", again);
     if ($("#seccrem"))
       $("#seccrem").onclick = async (e) => {
         const b = e.currentTarget,
@@ -734,7 +783,11 @@ async function viewSettings(arg) {
             toast(tr("Сначала разреши смотреть другие программы — переключатель выше"));
             return;
           }
-          await saveL({ sources: { [b.dataset.src]: { enabled: !s.sources[b.dataset.src].enabled } } });
+          await saveL({
+            sources: {
+              [b.dataset.src]: { enabled: !s.sources[b.dataset.src].enabled },
+            },
+          });
           again();
         }),
     );
@@ -791,7 +844,13 @@ async function viewSettings(arg) {
         (i.onchange = () =>
           saveL(
             {
-              sources: { [i.dataset.s]: { options: { [i.dataset.opt]: i.type === "checkbox" ? i.checked : i.value } } },
+              sources: {
+                [i.dataset.s]: {
+                  options: {
+                    [i.dataset.opt]: i.type === "checkbox" ? i.checked : i.value,
+                  },
+                },
+              },
             },
             "Сохранено",
           )),
@@ -923,7 +982,11 @@ async function viewSettings(arg) {
       ),
     );
     const collect = () => {
-      const p = { auto_confidence: +$("#auto").value / 100, forget_after_days: +$("#fdays").value, brain: {} };
+      const p = {
+        auto_confidence: +$("#auto").value / 100,
+        forget_after_days: +$("#fdays").value,
+        brain: {},
+      };
       for (const [id, k] of [
         ["bprov", "provider"],
         ["bkey", "api_key"],
@@ -975,7 +1038,10 @@ async function viewSettings(arg) {
       const v = $("#team").value.trim();
       if (!v) return toast(tr("Укажи папку"));
       await save(
-        { extra_folders: [...extraFolders(prof).filter((x) => x !== v), v], team_vault: "" },
+        {
+          extra_folders: [...extraFolders(prof).filter((x) => x !== v), v],
+          team_vault: "",
+        },
         "Папка добавлена",
       );
       viewSettings(SETCUR);
@@ -993,7 +1059,10 @@ async function viewSettings(arg) {
       (b) =>
         (b.onclick = async () => {
           await save(
-            { extra_folders: extraFolders(prof).filter((_, k) => k !== +b.dataset.xdel), team_vault: "" },
+            {
+              extra_folders: extraFolders(prof).filter((_, k) => k !== +b.dataset.xdel),
+              team_vault: "",
+            },
             "Папка убрана",
           );
           viewSettings(SETCUR);
@@ -1040,7 +1109,12 @@ async function viewSettings(arg) {
     $$("[data-actdel]").forEach(
       (b) =>
         (b.onclick = async () => {
-          await save({ tool_folders: actFolders.filter((_, k) => k !== +b.dataset.actdel) }, "Папка убрана");
+          await save(
+            {
+              tool_folders: actFolders.filter((_, k) => k !== +b.dataset.actdel),
+            },
+            "Папка убрана",
+          );
           viewSettings(SETCUR);
         }),
     );
@@ -1223,7 +1297,11 @@ function bindTiles(fetch = true) {
       }),
   );
   $$(".aitile [data-ccinstall]").forEach(
-    (b) => (b.onclick = () => post("/api/open_url", { url: "https://code.claude.com/docs/en/setup" }).catch(() => {})),
+    (b) =>
+      (b.onclick = () =>
+        post("/api/open_url", {
+          url: "https://code.claude.com/docs/en/setup",
+        }).catch(() => {})),
   );
   $$(".aitile [data-codexlogin]").forEach(
     (b) =>
@@ -1238,7 +1316,10 @@ function bindTiles(fetch = true) {
   );
   $$(".aitile [data-codexinstall]").forEach(
     (b) =>
-      (b.onclick = () => post("/api/open_url", { url: "https://developers.openai.com/codex/cli" }).catch(() => {})),
+      (b.onclick = () =>
+        post("/api/open_url", {
+          url: "https://developers.openai.com/codex/cli",
+        }).catch(() => {})),
   );
   $$(".aitile [data-chk]").forEach(
     (b) =>
@@ -1296,7 +1377,11 @@ function bindProv() {
           e = $("[data-e]", row);
         b.disabled = true;
         b.textContent = "ищу модели…";
-        await post("/api/providers", { id, key: k ? k.value : undefined, endpoint: e ? e.value : undefined });
+        await post("/api/providers", {
+          id,
+          key: k ? k.value : undefined,
+          endpoint: e ? e.value : undefined,
+        });
         const r = await post("/api/providers/models", { id });
         b.disabled = false;
         b.textContent = "Сохранить и найти модели";
@@ -1350,8 +1435,12 @@ function consName(ref) {
   const [pid, mid] = String(ref).split(/:(.*)/);
   if (pid === "claude_code")
     return (
-      { "": "Claude", sonnet: "Claude Sonnet", opus: "Claude Opus", haiku: "Claude Haiku" }[mid || ""] ||
-      "Claude " + mid
+      {
+        "": "Claude",
+        sonnet: "Claude Sonnet",
+        opus: "Claude Opus",
+        haiku: "Claude Haiku",
+      }[mid || ""] || "Claude " + mid
     );
   const p = (CHAT.providers || []).find((x) => x.id === pid);
   const m = p && p.models.find((x) => x.id === mid);
@@ -1449,7 +1538,12 @@ function consPlan(n, fmt) {
   fmt = CONS_FORMATS[fmt] ? fmt : "council";
   let keys;
   if (fmt === "council") {
-    const P = { 1: ["own"], 2: ["own", "final"], 3: ["own", "check", "final"], 4: ["own", "check", "better", "final"] };
+    const P = {
+      1: ["own"],
+      2: ["own", "final"],
+      3: ["own", "check", "final"],
+      4: ["own", "check", "better", "final"],
+    };
     keys =
       P[n] ||
       Array.from({ length: n }, (_, r) =>
@@ -1759,7 +1853,13 @@ async function consortModal(full = false, preset = "") {
       sel.forEach((r) => {
         if (roles[r]) rl[r] = roles[r];
       });
-      const opts = { format: fmt, roles: rl, summarizer: summ, length: len, search: look },
+      const opts = {
+          format: fmt,
+          roles: rl,
+          summarizer: summ,
+          length: len,
+          search: look,
+        },
         cfg = { members: sel, rounds, ...opts };
       pop.remove();
       LS.set("cons_def", {
@@ -1770,7 +1870,13 @@ async function consortModal(full = false, preset = "") {
       });
       if (join) {
         try {
-          await post("/api/chat/cons", { chat: CHAT.id, action: "start", members: sel, rounds, ...opts });
+          await post("/api/chat/cons", {
+            chat: CHAT.id,
+            action: "start",
+            members: sel,
+            rounds,
+            ...opts,
+          });
           const c = await api("/api/chat?id=" + CHAT.id);
           renderChat(c);
           $("#msgs").insertAdjacentHTML(
@@ -1981,7 +2087,10 @@ const PROV_HOW = {
     t: "Ключ берётся в Google AI Studio: aistudio.google.com → Get API key.",
     u: "https://aistudio.google.com",
   },
-  openrouter: { t: "Один ключ на сотни моделей разных компаний: openrouter.ai/keys.", u: "https://openrouter.ai/keys" },
+  openrouter: {
+    t: "Один ключ на сотни моделей разных компаний: openrouter.ai/keys.",
+    u: "https://openrouter.ai/keys",
+  },
   deepseek: {
     t: "Ключ берётся на platform.deepseek.com, раздел API keys. Оплата по расходу, отдельно от чата DeepSeek.",
     u: "https://platform.deepseek.com/api_keys",
@@ -2224,24 +2333,31 @@ function youCard(prof, ag) {
   </div>`;
 }
 
-// Mnemai's own encryption: turn on (a new password twice), turn off (the password), change the password
+// Mnemai's own encryption: turn on (a new password twice, then the recovery key shown once), turn off (the
+// password), change the password, restore a forgotten password by the recovery key
 function cryptoModal(mode, done) {
   const pop = document.createElement("div");
   pop.className = "modal cryptm";
   const T = {
     on: [
       "Зашифровать память",
-      "Придумай пароль не короче 8 знаков. Его нельзя восстановить: забудешь — память не вернуть. Obsidian и другие редакторы эти файлы открыть не смогут.",
+      "Придумай пароль не короче 8 знаков. После включения покажется ключ восстановления — сохрани его: он показывается один раз, по нему восстанавливается забытый пароль. Шифруются только текст-файлы: бинарные (PDF, картинки, записи) остаются открытыми. Obsidian и другие редакторы эти файлы открыть не смогут.",
       "Зашифровать",
     ],
     off: ["Снять шифрование", "Файлы памяти снова станут обычными. Введи пароль.", "Снять"],
     password: ["Сменить пароль", "Файлы не переписываются — меняется только ключ к ним.", "Сменить"],
+    recover: [
+      "Восстановить пароль",
+      "Введи ключ восстановления — он показывался один раз при включении шифрования — и придумай новый пароль не короче 8 знаков.",
+      "Восстановить",
+    ],
   }[mode];
   const f = (id, ph, ac) => `<input type="password" id="${id}" placeholder="${tr(ph)}" autocomplete="${ac}">`;
   pop.innerHTML = `<div class="card"><h2>${tr(T[0])}</h2><p class="hint">${tr(T[1])}</p>
     ${mode === "on" ? f("cp1", "Пароль", "new-password") + f("cp2", "Ещё раз", "new-password") + `<label class="ulrem"><input type="checkbox" id="cprem" checked> ${tr("Помнить на этом компьютере")}</label>` : ""}
     ${mode === "off" ? f("cp1", "Пароль", "current-password") : ""}
     ${mode === "password" ? f("cp0", "Старый пароль", "current-password") + f("cp1", "Новый пароль", "new-password") + f("cp2", "Ещё раз", "new-password") : ""}
+    ${mode === "recover" ? `<input type="text" id="rc0" placeholder="${tr("Ключ восстановления")}" autocomplete="off">` + f("cp1", "Новый пароль", "new-password") + f("cp2", "Ещё раз", "new-password") : ""}
     <div class="ulerr" id="cperr"></div>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn l" data-x>${tr("Отмена")}</button><button class="btn" data-ok>${tr(T[2])}</button></div></div>`;
   document.body.appendChild(pop);
@@ -2249,27 +2365,62 @@ function cryptoModal(mode, done) {
   $("[data-x]", pop).onclick = () => pop.remove();
   $("[data-ok]", pop).onclick = async () => {
     const v = (id) => ($("#" + id, pop) || {}).value || "";
+    if (mode === "recover" && !v("rc0").trim()) return err("Введи ключ восстановления");
     if (mode !== "off" && v("cp1").length < 8) return err("Пароль — не короче 8 знаков");
     if (mode !== "off" && v("cp1") !== v("cp2")) return err("Пароли не совпадают");
     const ok = $("[data-ok]", pop);
     ok.disabled = true;
-    ok.textContent = tr(mode === "password" ? "Меняю…" : mode === "on" ? "Шифрую…" : "Расшифровываю…");
+    ok.textContent = tr(
+      mode === "password"
+        ? "Меняю…"
+        : mode === "on"
+          ? "Шифрую…"
+          : mode === "recover"
+            ? "Восстанавливаю…"
+            : "Расшифровываю…",
+    );
     try {
       const body =
         mode === "on"
-          ? { action: "on", password: v("cp1"), remember: $("#cprem", pop).checked }
+          ? {
+              action: "on",
+              password: v("cp1"),
+              remember: $("#cprem", pop).checked,
+            }
           : mode === "off"
             ? { action: "off", password: v("cp1") }
-            : { action: "password", old: v("cp0"), new: v("cp1") };
+            : mode === "recover"
+              ? { action: "recover", recovery: v("rc0"), password: v("cp1") }
+              : { action: "password", old: v("cp0"), new: v("cp1") };
       const d = await post("/api/crypto", body);
-      pop.remove();
-      toast(
-        mode === "on"
-          ? tr("Память зашифрована") + ` (${d.files})`
-          : mode === "off"
-            ? tr("Шифрование снято")
-            : tr("Пароль сменён"),
-      );
+      if (mode === "on" && d.recovery) {
+        // the recovery key is shown exactly once, right after encryption was turned on
+        pop.innerHTML = `<div class="card"><h2>${tr("Ключ восстановления")}</h2>
+          <p class="hint">${tr("Сохрани этот ключ — он показывается один раз. Забудешь пароль — восстановишь память только по нему: «Настройки → Шифровать память паролем → Восстановить пароль».")}</p>
+          <div class="recovery-key" id="rck" data-noi18n>${esc(d.recovery)}</div>
+          <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn l" data-x>${tr("Готово")}</button><button class="btn" id="rccopy">${tr("Скопировать")}</button></div></div>`;
+        $("#rccopy", pop).onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(d.recovery);
+          } catch (e) {}
+          toast(tr("Ключ скопирован — сохрани его в надёжном месте"));
+        };
+        $("[data-x]", pop).onclick = () => {
+          pop.remove();
+          toast(tr("Память зашифрована") + ` (${d.files})`);
+        };
+      } else {
+        pop.remove();
+        toast(
+          mode === "on"
+            ? tr("Память зашифрована") + ` (${d.files})`
+            : mode === "off"
+              ? tr("Шифрование снято")
+              : mode === "recover"
+                ? tr("Пароль восстановлен")
+                : tr("Пароль сменён"),
+        );
+      }
       done && done();
     } catch (e) {
       err(e.message);
@@ -2277,5 +2428,5 @@ function cryptoModal(mode, done) {
       ok.textContent = tr(T[2]);
     }
   };
-  setTimeout(() => ($("#cp0", pop) || $("#cp1", pop)).focus(), 50);
+  setTimeout(() => ($("#rc0", pop) || $("#cp0", pop) || $("#cp1", pop)).focus(), 50);
 }

@@ -72,7 +72,12 @@ class Formats(unittest.TestCase):
         self.assertIn("Круг «Позиции»", calls[0]["system"])
         self.assertIn("Твоя сторона в дебатах: ЗА", calls[0]["system"])
         self.assertIn("Твоя сторона в дебатах: ПРОТИВ", calls[1]["system"])
-        self.assertIn("Твоя роль — Финансист", calls[1]["system"])
+        # the roles are fixed by the owner's decision: the first member leads, the rest participate (a role the
+        # owner picked earlier no longer changes the discussion), the chosen summarizer sums up in the last round
+        self.assertIn("Ты — ведущий", calls[0]["system"])
+        self.assertIn("Ты — участник", calls[1]["system"])
+        self.assertNotIn("Финансист", calls[1]["system"])
+        self.assertIn("Ты — суммаризатор", calls[5]["system"])
         self.assertIn("Не больше 80 слов", calls[0]["system"])
         self.assertEqual([c["model"] for c in calls[3:]], ["opus", "haiku", "sonnet"])  # the summarizer speaks last
         self.assertIn("ТЫ ПОДВОДИШЬ ИТОГ", calls[5]["system"])

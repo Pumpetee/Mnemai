@@ -183,7 +183,7 @@ DEFAULT = {
     "prompts_never": [],  # requests the owner said "don't offer for these" about (term signatures)
     "scribe_keep_audio": False,
     "scribe_summary_model": "",  # meetings: which model sums up ("" — the chat's model)        # meetings: keep the audio after transcription (the transcript is always kept)
-    "scribe_mode": "auto",  # meetings: auto (by this computer's speed) | local | partial | cloud
+    "scribe_mode": "quality",  # meetings: presets private (only local models) | quality | fast (fastest models)
     "scribe_base": "",  # own OpenAI-compatible address for the cloud Whisper ("" — the OpenAI key)
     "scribe_cloud_model": "",
     "scribe_rtf": 0,  # last measured: seconds of work per second of audio on this computer

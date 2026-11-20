@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import random
 import re
 import threading
 
@@ -135,7 +134,7 @@ def quiz_facts(vault: Vault) -> list[dict]:
 
 def quiz(vault: Vault, size: int = QUIZ_SIZE) -> dict:
     facts = quiz_facts(vault)
-    random.shuffle(facts)
+    facts.sort(key=lambda f: (len(f["text"]), f["where"]))  # simple first: short facts before long ones
     picked, seen = [], set()
     for f in facts:  # different notes first: a quiz about one card is dull
         if f["where"] not in seen:

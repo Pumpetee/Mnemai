@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import os
 import re
 import secrets
 import shutil
+from pathlib import Path
 
 from .clients import Client, get_client, save_clients, DEFAULT_CLIENTS
 from .journal import log_event, write_with_journal
@@ -115,21 +117,58 @@ def init_vault(vault: Vault) -> list[str]:
             created.append(rel)
     for d in FOLDERS:
         (vault.root / d).mkdir(parents=True, exist_ok=True)
-    vault.service.mkdir(exist_ok=True)
+    vault.service.mkdir(mode=0o700, exist_ok=True)
+    if os.name != "nt":
+        try:
+            os.chmod(vault.service, 0o700)  # a folder from an older version may be group/world-readable
+        except OSError:
+            pass
     if not (vault.service / "clients.json").exists():
         save_clients(vault, {c.id: c for c in DEFAULT_CLIENTS})
     if not (vault.service / "token").exists():
-        (vault.service / "token").write_text(secrets.token_urlsafe(24), encoding="utf-8")
+        _write_token(vault.service / "token")
     generate_now(vault)
     return created
+
+
+def _write_token(f: Path) -> None:
+    """The local-API token opens the whole app: on POSIX it must never be readable by other local users."""
+    f.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name != "nt":
+        try:
+            fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(secrets.token_urlsafe(24))
+        except FileExistsError:
+            return
+        except OSError:
+            pass
+        else:
+            try:
+                os.chmod(f, 0o600)
+                os.chmod(f.parent, 0o700)
+            except OSError:
+                pass
+            return
+    if not f.exists():
+        f.write_text(secrets.token_urlsafe(24), encoding="utf-8")
+        if os.name != "nt":  # the fallback path has no guaranteed mode: make it owner-only here too
+            try:
+                os.chmod(f, 0o600)
+            except OSError:
+                pass
 
 
 def token(vault: Vault, kind: str = "token") -> str:
     """kind="token" — full access for the local app."""
     f = vault.service / kind
     if not f.exists():
-        vault.service.mkdir(parents=True, exist_ok=True)
-        f.write_text(secrets.token_urlsafe(24), encoding="utf-8")
+        _write_token(f)
+    elif os.name != "nt":
+        try:
+            os.chmod(f, 0o600)  # a token file from an older version may be group/world-readable
+        except OSError:
+            pass
     return f.read_text(encoding="utf-8").strip()
 
 
@@ -900,3 +939,63 @@ def context_for(
         return "", len(chunks)
     head = f"[Память владельца, часть {part + 1} из {len(chunks)}]\n"
     return head + chunks[part], len(chunks)
+
+
+# ---------------------------------------------------------------- «95 Saves»: day snapshots and attachments kept
+
+
+def list_saves(vault: Vault) -> list[dict]:
+    """«95 Saves»: the day snapshots made before the first change of the day (journal.save_copy)."""
+    from .vault import SAVES
+
+    d = vault.root / SAVES
+    if not d.exists():
+        return []
+    return [{"path": f.relative_to(vault.root).as_posix(), "name": f.name} for f in sorted(d.rglob("*.md"))]
+
+
+def restore_save(vault: Vault, save_rel: str) -> dict:
+    """Put a day snapshot back into its note: journaled and undoable like any other write (BP-07, решение 20.11.2026)."""
+    from .vault import SAVES
+
+    save_rel = (save_rel or "").strip()
+    if not save_rel.startswith(SAVES + "/"):
+        save_rel = SAVES + "/" + save_rel
+    p = vault.root / save_rel
+    if not p.is_file():
+        raise ValueError("сейв не найден")
+    stem = save_rel[len(SAVES) + 1 :][:-3] if save_rel.endswith(".md") else save_rel[len(SAVES) + 1 :]
+    m = re.match(r"^(.*)_(\d{4}-\d{2}-\d{2})$", stem)
+    if not m:
+        raise ValueError("это не сейв дня")
+    rel = m.group(1) + ".md"
+    text = p.read_text(encoding="utf-8")
+    ev = write_with_journal(vault, "owner", rel, text, f"восстановление из сейва: {save_rel}")
+    return {"ok": True, "rel": rel, "id": ev["id"]}
+
+
+def move_chat_files_to_saves(vault: Vault, chat_id: str) -> list[str]:
+    """When a chat is deleted its attachments stay: they are moved into «95 Saves» (BP-16, решение 20.11.2026)."""
+    from .vault import SAVES
+
+    src = vault.service / "chats" / chat_id / "files"
+    if not src.is_dir():
+        return []
+    dest = vault.root / SAVES / "attachments" / chat_id
+    dest.mkdir(parents=True, exist_ok=True)
+    moved = []
+    for f in sorted(src.iterdir()):
+        if not f.is_file():
+            continue
+        tgt = dest / f.name
+        i = 1
+        while tgt.exists():
+            tgt = dest / f"{f.stem}_{i}{f.suffix}"
+            i += 1
+        shutil.move(str(f), str(tgt))
+        moved.append(tgt.relative_to(vault.root).as_posix())
+    try:  # only the now-empty files folder; the chat file itself is removed by the caller
+        src.rmdir()
+    except OSError:
+        pass
+    return moved

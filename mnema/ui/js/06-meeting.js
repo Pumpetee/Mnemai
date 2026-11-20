@@ -1,14 +1,10 @@
 // ---------------------------------------------------------------- meeting: one window, three steps — record, transcribe, sum up
-const MEET_HOW = {
-  auto: [
-    "Сам по скорости компьютера",
-    "Замерит компьютер на первой минуте. Успевает — расшифрует здесь бесплатно, не успевает — спросит про облако.",
-  ],
-  local: ["На этом компьютере", "Бесплатно, запись не уходит с компьютера. Скорость зависит от процессора."],
-  partial: ["Длинные — в облако", "Короткие записи здесь, длинные сразу в облачный Whisper. Сообщит, куда отдал."],
-  cloud: ["Облачный Whisper", "Быстро. Запись уходит в облачный Whisper и оплачивается по твоему ключу."],
+const MEET_Q = {
+  auto: "авто",
+  small: "быстрее",
+  medium: "точнее",
+  "large-v3": "максимум",
 };
-const MEET_Q = { auto: "авто", small: "быстрее", medium: "точнее", "large-v3": "максимум" };
 async function meetModal(fileToImport) {
   if ($(".meetm")) return;
   const [sc, ag, ms] = await Promise.all([api("/api/scribe/settings"), api("/api/agent"), api("/api/models")]);
@@ -47,13 +43,13 @@ async function meetModal(fileToImport) {
   };
   const hour = sc.rtf ? Math.max(1, Math.round(sc.rtf * 60)) : 0;
   const draw = () => {
-    const cloudMode = st.mode === "cloud" || st.mode === "partial",
+    const cloudMode = st.mode === "quality" || st.mode === "fast",
       noKey = cloudMode && !sc.cloud_ready,
       sm = models.find((m) => m.v === st.model);
     pop.innerHTML = `<div class="card"><div class="mmhead"><div><h2>${fileToImport ? tr("Расшифровать запись") : tr("Запись встречи")}${hq("scribe")}</h2><p class="hint">${fileToImport ? esc(fileToImport.name) : tr("Три шага, всё настраивается здесь и запоминается.")}</p></div><a href="#" class="mmset" data-mset title="${tr("Настройки расшифровки и итогов")}">${ic("set")}${tr("Настроить")}</a><button class="lmx" data-x>×</button></div>
      <div class="mpipe">
       <div class="mstep s1"><div class="msh"><span class="mn">1</span><div class="mico rec">${ic("mic")}<i></i><i></i></div><b>${fileToImport ? tr("Запись") : tr("Запись")}</b></div>
-        <p>${fileToImport ? tr("Готовый файл: аудио или видео.") : tr("Микрофон и звук компьютера пишутся отдельно — в расшифровке видно, кто говорит.")}</p>
+        <p>${fileToImport ? tr("Готовый файл: аудио или видео.") : tr("Микрофон и звук компьютера пишутся отдельно — в расшифровке видно, кто говорит.") + " " + tr("Запись длится не дольше 5 часов.")}</p>
         ${fileToImport ? "" : `<label class="mchk"><input type="checkbox" data-k="upload" ${st.upload ? "checked" : ""}><span>${tr("Запись уже есть — загрузить")}<small>${tr("аудио или видео с компьютера")}</small></span></label>`}
         ${st.upload && !fileToImport ? `<div class="mfile"><button class="btn l sm" data-k="pick">${ic("folder")}${st.file ? tr("Другой файл…") : tr("Выбрать файл…")}</button><span>${st.file ? esc(st.file.name) : tr("файл не выбран")}</span><input type="file" data-k="fin" accept="audio/*,video/*,.m4a,.ogg,.opus,.amr,.mp3,.wav,.mp4,.mkv,.webm" hidden></div>` : ""}
         <label class="mchk"><input type="checkbox" data-k="keep" ${st.keep ? "checked" : ""}><span>${tr("Сохранить аудиозапись")}<small>${tr("иначе после расшифровки останется только текст")}</small></span></label>
@@ -62,7 +58,7 @@ async function meetModal(fileToImport) {
       <div class="mstep s2"><div class="msh"><span class="mn">2</span><div class="mico">${ic("wave")}</div><b>${tr("Расшифровка")}</b></div>
         ${scribePlans(sc, st.mode, true)}
         ${
-          st.mode !== "cloud"
+          st.mode !== "quality"
             ? `<div class="mrowq"><span>${tr("Точность на компьютере")}</span><div class="seg sm">${Object.entries(
                 MEET_Q,
               )
@@ -70,7 +66,7 @@ async function meetModal(fileToImport) {
                 .join("")}</div></div>`
             : ""
         }
-        <div class="mfact">${hour && st.mode !== "cloud" ? `${ic("gear")}${tr("Этот компьютер расшифровывает час записи примерно за")} ${hour} ${tr("мин")}` : st.mode !== "cloud" ? `${ic("gear")}${tr("Скорость замерю на первой записи")}` : ""}${cloudMode ? `<span class="${sc.cloud_ready ? "ok" : "no"}">${ic(sc.cloud_ready ? "check" : "x")}${sc.cloud_ready ? tr("Облачный Whisper готов") + ": " + esc(tr(sc.cloud_from)) : tr("Нет ключа для облачного Whisper")}</span>${noKey ? `<a href="#" data-gokey>${tr("Подключить")}</a>` : ""}` : ""}</div></div>
+        <div class="mfact">${hour && st.mode !== "quality" ? `${ic("gear")}${tr("Этот компьютер расшифровывает час записи примерно за")} ${hour} ${tr("мин")}` : st.mode !== "quality" ? `${ic("gear")}${tr("Скорость замерю на первой записи")}` : ""}${cloudMode ? `<span class="${sc.cloud_ready ? "ok" : "no"}">${ic(sc.cloud_ready ? "check" : "x")}${sc.cloud_ready ? tr("Облачный Whisper готов") + ": " + esc(tr(sc.cloud_from)) : tr("Нет ключа для облачного Whisper")}</span>${noKey ? `<a href="#" data-gokey>${tr("Подключить")}</a>` : ""}` : ""}</div></div>
       <div class="marrow"><i></i></div>
       <div class="mstep s3"><div class="msh"><span class="mn">3</span><div class="mico">${ic("chat")}</div><b>${tr("Итоги")}</b></div>
         <p>${tr("Коротко: о чём говорили, что решили, какие задачи и за кем. Появятся в новом разговоре.")}</p>
@@ -134,8 +130,14 @@ async function meetModal(fileToImport) {
       const b = $("#mgo", pop);
       b.disabled = true;
       try {
-        await post("/api/scribe/settings", { mode: st.mode, model: st.quality });
-        await post("/api/agent", { scribe_keep_audio: st.keep, scribe_summary_model: st.model });
+        await post("/api/scribe/settings", {
+          mode: st.mode,
+          model: st.quality,
+        });
+        await post("/api/agent", {
+          scribe_keep_audio: st.keep,
+          scribe_summary_model: st.model,
+        });
         MIC_KEEP = st.keep;
         const f = fileToImport || (st.upload ? st.file : null);
         if (f) {
@@ -144,7 +146,12 @@ async function meetModal(fileToImport) {
             fr.onload = () => r(fr.result);
             fr.readAsDataURL(f);
           });
-          await post("/api/scribe/import", { filename: f.name, data, model: st.model, name: st.name });
+          await post("/api/scribe/import", {
+            filename: f.name,
+            data,
+            model: st.model,
+            name: st.name,
+          });
           toast(tr("Расшифровываю запись"));
         } else {
           await post("/api/scribe/start", { name: st.name });

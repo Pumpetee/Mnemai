@@ -17,6 +17,7 @@ lands next to it as «<name> (с другого устройства <дата>)
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import hashlib
 import json
@@ -33,6 +34,8 @@ from .vault import GENERATED, SAVES, Vault
 KINDS = ("gdrive", "dropbox", "folder", "station")
 NAMES = {"gdrive": "Google Drive", "dropbox": "Dropbox", "folder": "Своя папка", "station": "MCP-станция"}
 SUB = "Mnemai"
+CHANGE_MIN = 600  # BP-13: изменения запускают синк не чаще раза в 10 минут
+RETRY_MIN = 300  # BP-13: недоступная цель — повтор через 5 минут
 _lock = threading.Lock()
 _last: dict[str, dict] = {}
 
@@ -115,11 +118,12 @@ class StationTarget:
         from . import net
 
         q = "?rel=" + urllib.parse.quote(rel) if rel else ""
+        token = base64.urlsafe_b64encode(self.token.encode("utf-8")).decode("ascii")  # HTTP headers are latin-1
         req = urllib.request.Request(
             self.url + path + q,
             data=data,
             method=method,
-            headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/octet-stream"},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"},
         )
         with net.urlopen(req, timeout=60) as r:
             return r.read()
@@ -450,9 +454,12 @@ def run(vault: Vault, only: str = "") -> list[dict]:
         return [{"error": "уже синхронизируется"}]
     try:
         out = []
-        for t in settings(vault)["targets"]:
-            if not t.get("on", True) or (only and t.get("id") != only):
-                continue
+        targets = settings(vault)["targets"]
+        if only:  # a manual pass of one target
+            chosen = [t for t in targets if t.get("id") == only]
+        else:  # BP-13: one active target at a time — legacy profiles with several on sync the first one
+            chosen = [t for t in targets if t.get("on", True)][:1]
+        for t in chosen:
             try:
                 r = sync_target(vault, t)
             except Exception as e:
@@ -479,23 +486,89 @@ def last(vault: Vault, tid: str) -> dict:
     return _last.get(f"{vault.root}|{tid}", {})
 
 
-class Syncer(threading.Thread):
-    """Every N minutes, inside the app."""
+def active(vault: Vault) -> dict | None:
+    """The one active target (BP-13: a single active target at a time)."""
+    for t in settings(vault)["targets"]:
+        if t.get("on", True):
+            return t
+    return None
 
-    def __init__(self, vault: Vault):
+
+def fingerprint(root: Path) -> dict[str, tuple[int, int]]:
+    """(rel → (size, mtime_ns)) of the files sync cares about — a cheap change detector, no hashing."""
+    out: dict[str, tuple[int, int]] = {}
+    if not root.exists():
+        return out
+    for p in root.rglob("*"):
+        if not p.is_file() or not wanted(p.relative_to(root).as_posix()):
+            continue
+        try:
+            st = p.stat()
+        except OSError:  # a file gone between the listing and the stat: not a change worth reporting
+            continue
+        out[p.relative_to(root).as_posix()] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+def next_delay(results: list[dict], minutes: int) -> float:
+    """BP-13: after a pass — 5 minutes when a target was unreachable, else the regular N minutes."""
+    if any(r.get("error") for r in results):
+        return RETRY_MIN
+    return max(1, minutes) * 60
+
+
+class Syncer(threading.Thread):
+    """The owner's schedule (BP-13): one pass soon after the app starts, then on changes at most every
+    10 minutes, and a retry in 5 minutes when a target was unreachable. Manual passes go through sync.run."""
+
+    def __init__(self, vault: Vault, first_wait: float = 30.0, poll: float = 15.0):
         super().__init__(daemon=True, name="mnema-sync")
         self.vault = vault
         self.stop_event = threading.Event()
+        self.first_wait = first_wait  # the first pass, soon after start
+        self.poll = poll  # how often the loop wakes up to notice changes
+        self._fp: dict[str, tuple[int, int]] | None = None
+        self._last_pass = 0.0
+        self._next_run = 0.0
+
+    def stop(self) -> None:
+        self.stop_event.set()
+
+    def _changed(self) -> bool:
+        """True when a wanted file appeared, changed or disappeared since the previous check."""
+        fp = fingerprint(self.vault.root)
+        changed = self._fp is not None and fp != self._fp
+        self._fp = fp
+        return changed
 
     def run(self) -> None:
-        self.stop_event.wait(30)
+        self._fp = fingerprint(self.vault.root)  # the memory as it was when the app started
+        self._next_run = time.time() + self.first_wait
         while not self.stop_event.is_set():
+            if self.stop_event.wait(self.poll):
+                break
+            now = time.time()
+            if self._changed():  # a change wakes the pass early, but not before the 10-minute cooldown
+                self._next_run = min(self._next_run, max(now, self._last_pass + CHANGE_MIN))
+            if now < self._next_run:
+                continue
             try:
-                if settings(self.vault)["targets"]:
-                    run(self.vault)
-            except Exception:
-                pass
-            self.stop_event.wait(max(1, settings(self.vault)["minutes"]) * 60)
+                s = settings(self.vault)
+                targets, minutes = s["targets"], max(1, int(s.get("minutes") or 10))
+            except Exception:  # locked memory or unreadable profile: retry shortly, the owner may unlock it
+                self._last_pass = now
+                self._next_run = now + RETRY_MIN
+                continue
+            if not targets:
+                self._next_run = now + 60
+                continue
+            try:
+                results = run(self.vault)
+            except Exception:  # noqa: BLE001 — a failed pass must not end the sync loop
+                results = []
+            self._last_pass = time.time()
+            self._fp = fingerprint(self.vault.root)  # what the pass itself wrote is not a change
+            self._next_run = self._last_pass + next_delay(results, minutes)
 
 
 # ---------------------------------------------------------------- setting up targets
@@ -521,7 +594,7 @@ def add(vault: Vault, kind: str, path: str = "", url: str = "", token: str = "")
         from .learn.settings import _vid
 
         secrets_store.put(_vid(vault), "sync.station." + tid, token.strip())
-    targets = [t for t in s["targets"] if t.get("id") != tid]
+    targets = [{**t, "on": False} for t in s["targets"] if t.get("id") != tid]  # BP-13: one active target at a time
     targets.append({"id": tid, "kind": kind, "path": path, "url": url, "on": True})
     P.save(vault, {"sync": {"targets": targets, "minutes": s["minutes"]}})
     return settings(vault)

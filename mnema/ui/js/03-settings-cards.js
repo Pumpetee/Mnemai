@@ -187,19 +187,7 @@ async function outgoingModal(days) {
     refreshStatus();
   };
 }
-// ---------------------------------------------------------------- meetings: this computer or the cloud Whisper
-const SCRIBE_MODES = {
-  auto: "Сам по скорости компьютера",
-  local: "Только на компьютере",
-  partial: "Длинные — в облако",
-  cloud: "Всегда облако",
-};
-const SCRIBE_HINT = {
-  auto: "Замеряет компьютер на первой минуте записи. Успевает — расшифровывает здесь бесплатно. Не успевает — спрашивает, отдать ли облачному Whisper.",
-  local: "Бесплатно и ничего не уходит с компьютера. На слабом компьютере долго.",
-  partial: "Короткие записи — здесь, длинные сразу в облачный Whisper. Каждый раз сообщает, куда отдал.",
-  cloud: "Быстро, запись уходит облачному Whisper и оплачивается по твоему ключу. Нет ключа — расшифровывает здесь.",
-};
+// ---------------------------------------------------------------- meetings: presets Private / Quality / Fast
 // the meetings card: the way a meeting goes — recording → transcript → summary → memory — drawn as four steps.
 // Each step says what happens and holds its own settings; the presets set the whole way at once.
 let SCR_X = { models: [], summary: "", keep: false, step: "text" };
@@ -209,7 +197,7 @@ const SCR_PRESETS = [
     "🔒",
     "#10b981",
     "#14b8a6",
-    "Приватно",
+    "Private",
     [
       ["Где", "Бесплатно на компьютере"],
       ["Кто подводит", "модель на компьютере"],
@@ -217,14 +205,14 @@ const SCR_PRESETS = [
     ],
   ],
   [
-    "balance",
-    "⚖️",
+    "quality",
+    "☁️",
+    "#0ea5e9",
     "#6366f1",
-    "#a855f7",
-    "Баланс",
+    "Quality",
     [
-      ["Где", "Сам решает"],
-      ["Точность", "Авто"],
+      ["Где", "Облачный Whisper"],
+      ["", "≈ $0.36 за час записи"],
     ],
   ],
   [
@@ -232,22 +220,21 @@ const SCR_PRESETS = [
     "⚡",
     "#f59e0b",
     "#f97316",
-    "Быстро",
+    "Fast",
     [
-      ["Где", "Облачный Whisper"],
-      ["", "≈ $0.36 за час записи"],
+      ["Где", "короткие здесь, длинные в облако"],
+      ["", "≈ $0.36 за час длинной записи"],
     ],
   ],
 ];
 // the same names as on the cards below the steps, so the step and its settings read alike
 const SCR_WHERE = {
-  local: "Бесплатно на компьютере",
-  auto: "Сам решает",
-  partial: "Длинные — в облако",
-  cloud: "Облачный Whisper",
+  private: "Бесплатно на компьютере",
+  quality: "Облачный Whisper",
+  fast: "Короткие — здесь, длинные — в облако",
 };
 function scribePreset(c) {
-  return { local: "private", auto: "balance", cloud: "fast" }[c.mode] || "";
+  return { private: "private", quality: "quality", fast: "fast" }[c.mode] || "";
 }
 function scribeFlow(c) {
   const q = (SQ.find((x) => x[0] === c.quality) || SQ[0])[1];
@@ -255,11 +242,11 @@ function scribeFlow(c) {
   const mod = SCR_X.models.find((m) => m.v === SCR_X.summary);
   const text =
     `${tr("Где")}: ${tr(SCR_WHERE[c.mode] || "")}` +
-    (c.mode !== "cloud"
+    (c.mode !== "quality"
       ? `
 ${tr("Точность")}: ${tr(q)}`
       : "") +
-    (hour && c.mode !== "cloud"
+    (hour && c.mode !== "quality"
       ? `
 ${tr("час записи ≈")} ${hour} ${tr("мин")}`
       : "");
@@ -279,12 +266,12 @@ ${tr("час записи ≈")} ${hour} ${tr("мин")}`
 function scribeStep(c) {
   const s = SCR_X.step;
   if (s === "rec")
-    return `<p class="mfd">${tr("Mnemai пишет микрофон и звук компьютера двумя дорожками: в расшифровке сразу видно, где ты, а где собеседник, без угадывания по голосу. Можно не записывать, а загрузить готовый файл: mp3, m4a, wav, видео. Всё ложится в папку памяти «80 Meetings», в папку с датой и названием встречи.")}</p>
+    return `<p class="mfd">${tr("Mnemai пишет микрофон и звук компьютера двумя дорожками: в расшифровке сразу видно, где ты, а где собеседник, без угадывания по голосу. Можно не записывать, а загрузить готовый файл: mp3, m4a, wav, видео. Всё ложится в папку памяти «80 Meetings», в папку с датой и названием встречи.")} ${tr("Запись длится не дольше 5 часов.")}</p>
    <div class="tg" style="padding:6px 0 0;border:0"><button class="sw ${SCR_X.keep ? "on" : ""}" id="scrkeep"></button><div><b>${tr("Хранить аудио")}</b><p>${tr("Выключено: остаётся только текст, запись удаляется. Включено: файл встречи лежит рядом с расшифровкой.")}</p></div></div>`;
   if (s === "text")
     return `<p class="mfd">${tr("Речь превращается в текст. На компьютере работает Whisper: бесплатно, запись никуда не уходит. Облачный Whisper быстрее и не грузит компьютер, но платный и получает запись. Тишину, выдуманные фразы и эхо из колонок Mnemai вырезает сама.")}</p>
    <div class="shd"><b>${tr("Где")}</b><span class="hint">${tr("где расшифровывать")}</span></div>${scribePlans(c, c.mode, false, true)}
-   ${c.mode !== "cloud" ? `<div class="shd"><b>${tr("Точность")}</b><span class="hint">${tr("на компьютере")}</span></div>${scribeQuality(c.quality)}` : ""}
+   ${c.mode !== "quality" ? `<div class="shd"><b>${tr("Точность")}</b><span class="hint">${tr("на компьютере")}</span></div>${scribeQuality(c.quality)}` : ""}
    <details class="scrown"><summary>${tr("Облачный Whisper: свой адрес и ключ")}${c.cloud_ready ? ` · ✓ ${tr("готов")}: ${tr(c.cloud_from)}` : ""}</summary><div class="row" style="margin-top:6px"><input class="inp" id="scrbase" placeholder="https://…/v1" value="${esc(c.base || "")}" style="min-width:260px"><input class="inp" id="scrmodel" placeholder="whisper-1" value="${esc(c.model || "")}" style="width:150px"><input class="inp" id="scrkey" type="password" placeholder="${tr("ключ")}" style="width:200px"><button class="btn g sm" id="scrsave">${tr("Сохранить")}</button></div></details>`;
   if (s === "sum")
     return `<p class="mfd">${tr("Готовая расшифровка уходит одним сообщением выбранной модели: о чём встреча, что решили, какие задачи и за кем. Итоги приходят новым разговором в чате — там же можно попросить письмо участникам или план. Локальная модель — бесплатно и без интернета.")}</p>
@@ -349,9 +336,7 @@ function bindScribeCard() {
           SCR_X.keep = false;
           await agent({ scribe_keep_audio: false });
         }
-        await set(
-          k === "private" ? { mode: "local" } : k === "fast" ? { mode: "cloud" } : { mode: "auto", model: "auto" },
-        );
+        await set({ mode: k });
         toast(tr("Сохранено"));
       }),
   );
@@ -359,7 +344,11 @@ function bindScribeCard() {
   $$("[data-sq]", c).forEach((b) => (b.onclick = () => set({ model: b.dataset.sq })));
   if ($("#scrsave", c))
     $("#scrsave", c).onclick = () =>
-      set({ base: $("#scrbase", c).value, cloud_model: $("#scrmodel", c).value, key: $("#scrkey", c).value });
+      set({
+        base: $("#scrbase", c).value,
+        cloud_model: $("#scrmodel", c).value,
+        key: $("#scrkey", c).value,
+      });
   if ($("#scrkeep", c))
     $("#scrkeep", c).onclick = async () => {
       SCR_X.keep = !SCR_X.keep;

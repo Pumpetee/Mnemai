@@ -46,7 +46,39 @@ def log_event(
     from .fsutil import append_text
 
     append_text(f, json.dumps(ev, ensure_ascii=False) + "\n")
+    rotate(vault)
     return ev
+
+
+JOURNAL_ROTATE_MB = 10
+JOURNAL_ROTATE_KEEP = 5
+
+
+def rotate(vault: Vault, mb: int | None = None, keep: int | None = None) -> dict | None:
+    """Rotate journal.jsonl: over `mb` megabytes it is archived with the date; the latest `keep` archives stay.
+
+    The owner's decision (20.11.2026): the threshold is 10 MB and 5 archives are kept. An archived file keeps
+    its encrypted form, like the journal itself.
+    """
+    mb = JOURNAL_ROTATE_MB if mb is None else mb
+    keep = JOURNAL_ROTATE_KEEP if keep is None else keep
+    f = _jfile(vault)
+    try:
+        size = f.stat().st_size
+    except OSError:
+        return None
+    if size <= mb * 1024 * 1024:
+        return None
+    arc = f.parent / f"journal-{time.strftime('%Y-%m-%d')}.jsonl"
+    i = 1
+    while arc.exists():  # a second rotation on the same day: keep both, the older one is dropped by the limit
+        i += 1
+        arc = f.parent / f"journal-{time.strftime('%Y-%m-%d')}-{i}.jsonl"
+    f.rename(arc)
+    olds = sorted(f.parent.glob("journal-*.jsonl"))
+    for old in olds[:-keep]:
+        old.unlink(missing_ok=True)
+    return {"archived": arc.name, "kept": min(len(olds), keep)}
 
 
 SAVES_KEEP = 2

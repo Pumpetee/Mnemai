@@ -22,7 +22,15 @@ async function welcomeFlow() {
   let i = 0,
     memChoice = MEM.on, // a new memory folder starts off; the owner turns it on here
     dl = false,
-    lock = { on: false, pw: "", pw2: "", remember: true, show: false, busy: false, err: "" }, // «Защитить паролем»
+    lock = {
+      on: false,
+      pw: "",
+      pw2: "",
+      remember: true,
+      show: false,
+      busy: false,
+      err: "",
+    }, // «Защитить паролем»
     choice = claude ? "claude" : "local"; // what the owner talks to first; either card can be picked
   const finish = async () => {
     await post("/api/local/offer", { state: "done" }).catch(() => {});
@@ -148,9 +156,28 @@ async function welcomeFlow() {
         lock.busy = true;
         draw();
         try {
-          await post("/api/crypto", { action: "on", password: lock.pw, remember: lock.remember });
+          const d = await post("/api/crypto", {
+            action: "on",
+            password: lock.pw,
+            remember: lock.remember,
+          });
           S.splice(i, 1); // done: the step is not shown again on «Назад»
           lock.pw = lock.pw2 = "";
+          if (d.recovery) {
+            // the recovery key is shown exactly once, right here in the wizard
+            pop.innerHTML = `<div class="card"><h2>${tr("Ключ восстановления")}</h2>
+              <p class="hint">${tr("Сохрани этот ключ — он показывается один раз. Забудешь пароль — восстановишь память только по нему: «Настройки → Шифровать память паролем → Восстановить пароль».")}</p>
+              <div class="recovery-key" data-noi18n>${esc(d.recovery)}</div>
+              <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn l" id="rccopy">${tr("Скопировать")}</button><button class="btn" id="rcdone">${tr("Дальше")}</button></div></div>`;
+            $("#rccopy", pop).onclick = async () => {
+              try {
+                await navigator.clipboard.writeText(d.recovery);
+              } catch (e) {}
+              toast(tr("Ключ скопирован — сохрани его в надёжном месте"));
+            };
+            $("#rcdone", pop).onclick = () => draw();
+            return;
+          }
           toast(tr("Память зашифрована"));
         } catch (err) {
           lock.err = err.message;
@@ -282,7 +309,7 @@ function lockStep(L) {
         <div class="wpwm s${sc}"><i></i><i></i><i></i><i></i><span>${L.pw ? tr(lab) : ""}</span></div>
         <div class="wpw"><input id="wpw2" type="${L.show ? "text" : "password"}" autocomplete="new-password" placeholder="${tr("Ещё раз")}" value="${esc(L.pw2)}"></div>
         <label class="ulrem"><input type="checkbox" id="wpwrem" ${L.remember ? "checked" : ""}> ${tr("Помнить на этом компьютере — не спрашивать при каждом запуске")}</label>
-        <p class="wwarn">${ic("x")}${tr("Забудешь пароль — память не вернуть. Запиши его в менеджер паролей.")}</p>
+        <p class="wwarn">${ic("x")}${tr("После включения покажется ключ восстановления — сохрани его: он показывается один раз, по нему восстанавливается забытый пароль. Шифруются только текст-файлы; бинарные (PDF, картинки, записи) остаются открытыми.")}</p>
         ${L.err ? `<div class="ulerr">${esc(tr(L.err))}</div>` : ""}${L.busy ? `<div class="hint">${tr("Шифрую…")}</div>` : ""}</div>`
         : ""
     }</div>`;
@@ -378,7 +405,11 @@ async function sourcesAsk() {
     const src = {};
     on.forEach((k) => (src[k] = { enabled: true }));
     try {
-      await post("/api/learn/settings", { sources: src, outside: yes, found_asked: true });
+      await post("/api/learn/settings", {
+        sources: src,
+        outside: yes,
+        found_asked: true,
+      });
     } catch (e) {
       toast(e.message);
       return;

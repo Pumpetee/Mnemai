@@ -467,6 +467,37 @@ def _check_password(pw: str) -> None:
         raise ValueError("пароль — не короче 8 знаков")
 
 
+# ---------------------------------------------------------------- recovery key
+
+RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no I, O, 0, 1: hard to misread or mishear
+
+
+def _new_recovery() -> str:
+    return "-".join("".join(secrets.choice(RECOVERY_ALPHABET) for _ in range(5)) for _ in range(4))
+
+
+def recover(root: Path, recovery: str, new_password: str) -> dict:
+    """A forgotten password is restored only by the recovery key, shown once when encryption was turned on.
+
+    The memory key is unwrapped by the recovery key and re-wrapped by the new password; the recovery key itself
+    stays the same and keeps working (the owner's decision, 20.11.2026).
+    """
+    install()
+    cfg = config(root)
+    if not cfg:
+        raise ValueError("память не зашифрована")
+    if "recovery" not in cfg:
+        raise ValueError("это шифрование включали без ключа восстановления — пароль восстановить нельзя")
+    try:
+        key = _unwrap(cfg["recovery"], recovery)
+    except BadPassword:
+        raise BadPassword("ключ восстановления не подходит") from None
+    _check_password(new_password)
+    _write_cfg(root, {"v": 1, "id": cfg["id"], "recovery": cfg["recovery"], **_wrap(key, new_password)})
+    _register(root, cfg["id"], key)
+    return {"files": seal(root)}
+
+
 # ---------------------------------------------------------------- the whole folder
 
 
@@ -515,20 +546,25 @@ def seal(root: Path, progress=None) -> int:
 
 
 def enable(root: Path, password: str, remember: bool = True, progress=None) -> dict:
-    """Encrypt the memory folder with a new password. Returns {"files": n}."""
+    """Encrypt the memory folder with a new password. Returns {"files": n, "recovery": key}.
+
+    The recovery key is generated here and returned to be shown exactly once; only its wrapped form is stored
+    (the owner's decision, 20.11.2026). A forgotten password is restored by recover() and this key only.
+    """
     install()
     root = Path(root)
     if enabled(root):
         raise ValueError("память уже зашифрована")
     _check_password(password)
     kid, key = secrets.token_hex(8), secrets.token_bytes(32)
-    _write_cfg(root, {"v": 1, "id": kid, **_wrap(key, password)})
+    recovery = _new_recovery()
+    _write_cfg(root, {"v": 1, "id": kid, **_wrap(key, password), "recovery": _wrap(key, recovery)})
     _register(root, kid, key)
     if _unwrap(config(root), password) != key:  # the key file reads back before any note is touched
         raise OSError("ключ не записался")
     if remember:
         _remember(root, key)
-    return {"files": seal(root, progress)}
+    return {"files": seal(root, progress), "recovery": recovery}
 
 
 def disable(root: Path, password: str, progress=None) -> dict:

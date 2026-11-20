@@ -20409,6 +20409,72 @@ button.xft:hover {
 .pqnote {
   margin: 0 0 14px;
 }
+.pqsteps {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8px * var(--den));
+  max-height: 260px;
+  overflow: auto;
+  margin: 0 0 14px;
+  padding-right: 2px;
+}
+.pqstep {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg2);
+}
+.pqstep .pnum {
+  grid-column: 1;
+  grid-row: 1;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--acc);
+  color: #fff;
+  font-size: calc(11.5px * var(--fs));
+  font-weight: 700;
+  flex: none;
+}
+.pqstep .pqrole {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 90px;
+}
+.pqstep .pqmodel {
+  grid-column: 3;
+  grid-row: 1;
+  max-width: 170px;
+}
+.pqstep .pqinstr {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 34px;
+  font-size: calc(12.5px * var(--fs));
+}
+@media (max-width: 900px) {
+  .pqstep {
+    grid-template-columns: auto 1fr;
+  }
+  .pqstep .pqmodel {
+    grid-column: 2;
+    grid-row: 2;
+    max-width: none;
+  }
+  .pqstep .pqinstr {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+}
 .pqact {
   display: flex;
   justify-content: flex-end;
@@ -20948,4 +21014,25 @@ button.xft:hover {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+/* cards of the action ask and the sudo ask live inside the centred chat column, not at the window's left edge */
+.msg.cardmsg {
+  padding: 0 calc(28px * var(--den));
+}
+.msg.cardmsg .actask {
+  margin-left: 44px;
+  margin-right: 0;
+}
+/* the planner choice stays out of the way: one quiet line, the options only after «сменить» */
+.planwholine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 8px;
+  color: var(--ink2);
+  font-size: calc(13px * var(--fs));
+}
+.planwholine a {
+  color: var(--acc);
+  text-decoration: underline dotted;
 }

@@ -50,6 +50,7 @@ TOOLS = (
     "remember",
     "run_command",
     "open_app",
+    "open_link",
     "mcp_call",
     "mcp_smoke",
     "mcp_smoke_readonly",
@@ -63,13 +64,16 @@ WRITES = {
     "remember",
     "run_command",
     "open_app",
+    "open_link",
     "mcp_call",
     "mcp_smoke",
     "mcp_smoke_readonly",
     "mcp_smoke_all",
 }
 # even when «не спрашивать» is on, these must get one explicit owner confirmation: they can touch the whole machine
-FORCE_ASK = {"mcp_call", "mcp_smoke", "mcp_smoke_readonly", "mcp_smoke_all"}
+FORCE_ASK = {"mcp_smoke", "mcp_smoke_readonly", "mcp_smoke_all"}
+# an MCP tool call asks one «да» each time, but «Да для этого разговора» allows it for the conversation
+ASK_EACH_CALL = {"mcp_call"}
 TEXT_EXT = {".md", ".txt", ".csv", ".json", ".html", ".htm", ".xml", ".yml", ".yaml", ".log", ".ini", ".tsv"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".html", ".md", ".txt", ".csv"}
 MAX_READ = 60_000
@@ -144,7 +148,10 @@ TERMINAL_RULE = """```mnema run_command command="одна команда тер�
 ```mnema open_app name="chrome"
 ```
 (открывает программу или ссылку на этом компьютере: "chrome", "firefox", "telegram", "code", или https://… — Mnemai
-сама найдёт установленную программу. Для «открой хром» используй это, а не догадки про имя команды в терминале.)"""
+сама найдёт установленную программу. Для «открой хром» используй это, а не догадки про имя команды в терминале.)
+```mnema open_link url="https://…"
+```
+(открывает ссылку в системном браузере владельца.)"""
 
 SMALL_RULE = """Файлы: чтобы прочитать файл, напиши блок ```mnema read_file path="путь"``` и остановись.
 Чтобы создать файл: ```mnema write_file path="путь"``` с текстом внутри блока. Папки: {folders}
@@ -270,6 +277,7 @@ POSITIONAL = {
     "list_files": "path",
     "find_files": "query",
     "open_app": "name",
+    "open_link": "url",
     "run_command": "command",
 }
 
@@ -504,6 +512,7 @@ def what(vault: Vault, call: dict) -> str:
         )
         + _command(call)[:200],
         "open_app": f"открыть программу: {call.get('name', '')}",
+        "open_link": f"открыть ссылку: {call.get('url', '')}",
     }[t]
 
 
@@ -1521,6 +1530,12 @@ def run(vault: Vault, call: dict, client: str = "owner") -> tuple[str, str, str]
                 "доступ к компьютеру выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»"
             )
         return _open_app(vault, call, client)
+    if t == "open_link":
+        if not pc_enabled(vault):
+            raise Refused(
+                "доступ к компьютеру выключен владельцем: включить — Настройки → Программа → «Действия на компьютере»"
+            )
+        return _open_app(vault, {"name": " ".join(str(call.get("url") or "").split()).strip()}, client)
     raw_path = call.get("path") or call.get("file") or call.get("filename") or call.get("target") or ""
     p = resolve(vault, raw_path)
     if t == "list_files":

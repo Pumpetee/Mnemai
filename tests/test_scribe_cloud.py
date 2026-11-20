@@ -91,7 +91,7 @@ class TestCloud(Base):
 class TestDecision(Base):
     """The whole flow with a slow fake computer: where it goes and what the owner is told."""
 
-    def run_meeting(self, mode, answer=None, rtf=2.0):
+    def run_meeting(self, mode, rtf=2.0):
         P.save(self.v, {"scribe_mode": mode})
         d = self.dir / "meet"
         d.mkdir()
@@ -114,10 +114,6 @@ class TestDecision(Base):
             scribe._launch(self.v, d, "Планёрка", [(f, "Запись")], 0, "")
             s = scribe.st(self.v)
             for _ in range(100):
-                if s.get("status") == "ask" and answer:
-                    s["choice"] = answer
-                    s["_answer"].set()
-                    answer = None
                 if s.get("status") in ("done", "error"):
                     break
                 time.sleep(0.05)
@@ -128,31 +124,36 @@ class TestDecision(Base):
             SC.load, SC.measure, scribe._whisper, scribe.transcribe = orig
             CH.send = orig_send
 
-    def test_partial_sends_long_to_cloud_and_says_so(self):
-        s, md = self.run_meeting("partial")
+    def test_fast_sends_long_to_cloud_and_says_so(self):
+        s, md = self.run_meeting("fast")
         self.assertEqual((s["status"], s["where"]), ("done", "cloud"))
         self.assertIn("отдаю облачному Whisper", s["notice"])
         self.assertIn("распознано облачным Whisper", md)
 
-    def test_auto_asks_and_owner_keeps_it_local(self):
-        s, md = self.run_meeting("auto", answer="local")
+    def test_quality_with_key_goes_to_cloud(self):
+        s, md = self.run_meeting("quality")
+        self.assertEqual((s["status"], s["where"]), ("done", "cloud"))
+        self.assertIn("пресет Quality", s["notice"])
+        self.assertIn("распознано облачным Whisper", md)
+
+    def test_private_stays_local_even_on_a_slow_computer(self):
+        s, md = self.run_meeting("private", rtf=2.0)
         self.assertEqual((s["status"], s["where"]), ("done", "local"))
         self.assertEqual(CALLS, [])  # nothing left the computer
-        self.assertIn("Расшифровываю на компьютере, примерно 58 мин", s["notices"])
         self.assertIn("распознано на этом компьютере", md)
 
     def test_audio_is_removed_unless_kept(self):
-        s, _ = self.run_meeting("local")
+        s, _ = self.run_meeting("private")
         self.assertEqual(s["status"], "done")
         self.assertFalse((self.dir / "meet" / "запись.wav").exists())
         self.assertTrue((self.dir / "meet" / "Расшифровка.md").exists())
         shutil.rmtree(self.dir / "meet")
         P.save(self.v, {"scribe_keep_audio": True})
-        self.run_meeting("local")
+        self.run_meeting("private")
         self.assertTrue((self.dir / "meet" / "запись.wav").exists())
 
     def test_fast_computer_stays_local_without_asking(self):
-        s, _ = self.run_meeting("auto", rtf=0.2)
+        s, _ = self.run_meeting("fast", rtf=0.2)
         self.assertEqual((s["status"], s["where"]), ("done", "local"))
         self.assertIn("Расшифровываю на компьютере, примерно 6 мин", s["notices"])
         self.assertEqual(P.load(self.v)["scribe_rtf"], 0.2)

@@ -160,7 +160,7 @@ function fmtUsd(v) {
 
 function planBudgetHTML() {
   return `<div class="planbudget">
-    <label class="plancheck"><input type="checkbox" id="planeconomy" checked><span>⚡ ${tr("Экономия включена")}</span></label>
+    <span class="plancheck">⚡ ${tr("Экономия включена")}</span>
     <span class="planhint" id="planeconomynote">${tr("задачи дробятся на простые шаги, дорогие модели — только если окупаются")}</span>
     <div class="planmoney">
       <span class="planmlabel">${tr("Бюджет:")}</span>
@@ -173,22 +173,18 @@ function planBudgetHTML() {
 function planBudget() {
   const own = !!($("#planbudown") || {}).checked;
   const v = parseFloat(($("#planbudval") || {}).value || "");
-  return { own, budget: Number.isFinite(v) && v > 0 ? v : null, economy: !!($("#planeconomy") || {}).checked };
+  return { own, budget: Number.isFinite(v) && v > 0 ? v : null };
 }
 
 function planBudgetWire(pop) {
   const auto = $("#planbudauto", pop),
     own = $("#planbudown", pop),
-    val = $("#planbudval", pop),
-    econ = $("#planeconomy", pop);
+    val = $("#planbudval", pop);
   const sync = () => {
     if (val) val.disabled = !(own && own.checked);
-    const note = $("#planeconomynote", pop);
-    if (note) note.style.opacity = econ && econ.checked ? "" : ".55";
   };
   if (auto) auto.onchange = sync;
   if (own) own.onchange = sync;
-  if (econ) econ.onchange = sync;
   sync();
   const rec = $("#planbudrec", pop);
   const refresh = async () => {
@@ -271,7 +267,7 @@ async function planPropose() {
   const task = ($("#plantask") || {}).value?.trim() || "";
   const out = $("#planout");
   if (!task) return toast(tr("Напиши задачу"));
-  const { own, budget, economy } = planBudget();
+  const { own, budget } = planBudget();
   if (own && !budget) return toast(tr("Укажи бюджет в долларах"));
   const b = $("#plango"),
     recalc = $("#planrecalc");
@@ -288,7 +284,6 @@ async function planPropose() {
       chat: CHAT.id || "",
       planner: PLAN_WHO,
       budget: own ? budget : null,
-      economy,
     });
     PLAN_TASK = task;
     PLAN_PLANS = r.plans || [];
@@ -369,8 +364,9 @@ function planWhoHTML() {
     `<button type="button" class="pwopt ${PLAN_WHO === v ? "on" : ""}" data-pw="${v}"><b>${tr(title)}</b><small>${tr(sub)}</small></button>`;
   const customOn = !["auto", "strong", "medium", "local"].includes(PLAN_WHO);
   return `<div class="planwho">
-    <div class="planwhoh"><span>${tr("Исполнителей подбирает")}</span><small>${tr("от планировщика зависят качество, время и цена схемы")}</small></div>
-    <div class="planwhoopts">
+    <div class="planwhoh"><span>${tr("Исполнителей подбирает")}</span><small>${tr("Mnemai подберёт сам: лучшие модели для каждого шага")}</small></div>
+    <div class="planwholine"><b id="planwholabel">${esc(planWhoLabel())}</b> · <a href="#" id="planwhoswitch">${tr("сменить")}</a></div>
+    <div class="planwhoopts" id="planwhoopts" hidden>
       ${chip("auto", "Авто", "дешёвая и быстрая")}
       ${chip("strong", "Сильная", "умнее план")}
       ${chip("medium", "Средняя", "баланс цены и качества")}
@@ -400,6 +396,13 @@ function planWhoWire(pop) {
   );
   const all = $("#planwhoall", pop);
   if (all) all.onclick = () => planModelPicker();
+  const sw = $("#planwhoswitch", pop);
+  if (sw)
+    sw.onclick = (e) => {
+      e.preventDefault();
+      const opts = $("#planwhoopts", pop);
+      if (opts) opts.hidden = !opts.hidden;
+    };
 }
 
 async function loadPlanModels() {
@@ -440,8 +443,8 @@ function planModelPicker() {
   pop.id = "planpick";
   pop.innerHTML = `<div class="card ppcard">
     <button class="lmx" data-x title="${tr("Закрыть")}">×</button>
-    <h2>${tr("Кого поставить планировщиком?")}</h2>
-    <p class="hint">${tr("Это модель, которая будет подбирать исполнителей для шагов, а не выполнять шаги. Цены — ориентир за 1 млн токенов; локальные — $0.")}</p>
+    <h2>${tr("Планировщик (необязательно)")}</h2>
+    <p class="hint">${tr("По умолчанию Mnemai выбирает сам. Здесь можно задать вручную, кто будет подбирать исполнителей шагов; цены — ориентир за 1 млн токенов.")}</p>
     <input class="inp" id="ppsearch" placeholder="${tr("Поиск по модели или провайдеру")}">
     <div class="ppwrap"><table class="pptable"><thead><tr><th>${tr("Модель")}</th><th>${tr("Провайдер")}</th><th>${tr("Вход / 1М")}</th><th>${tr("Выход / 1М")}</th><th>${tr("Хорошо для")}</th><th>${tr("Класс")}</th><th></th></tr></thead><tbody id="pprows"></tbody></table></div>
     <p class="ppnote" id="ppmore"></p>
@@ -456,9 +459,16 @@ function planModelPicker() {
   const rows = PLAN_MODELS.length ? PLAN_MODELS : planWhoList();
   const draw = () => {
     const q = ($("#ppsearch", pop).value || "").trim().toLowerCase();
+    const junk = (m) => /preview|:free$|test/i.test(String(m.model || "") + " " + String(m.name || ""));
     const all = rows
       .filter((m) => !q || (m.name + " " + m.provider + " " + m.model).toLowerCase().includes(q))
-      .sort((a, b) => (a.free === b.free ? a.price_in - b.price_in || a.name.localeCompare(b.name) : a.free ? -1 : 1));
+      .filter((m) => q || !junk(m))
+      .sort(
+        (a, b) =>
+          (b.tier || 0) - (a.tier || 0) ||
+          (a.free === b.free ? a.price_in - b.price_in : a.free ? 1 : -1) ||
+          a.name.localeCompare(b.name),
+      );
     const list = all.slice(0, 60);
     const more = $("#ppmore", pop);
     if (more)
@@ -488,12 +498,56 @@ function planModelPicker() {
         }
         const info = $("#planwhoinfo");
         if (info) info.textContent = `${tr("Планировщик")}: ${planWhoLabel()}`;
+        const lbl2 = $("#planwholabel");
+        if (lbl2) lbl2.textContent = planWhoLabel();
       };
     });
   };
   $("#ppsearch", pop).oninput = draw;
   draw();
   $("#ppsearch", pop).focus();
+}
+
+function planModelOptions(current) {
+  const rows = PLAN_MODELS.length ? PLAN_MODELS : planWhoList();
+  return rows
+    .map(
+      (m) =>
+        `<option value="${esc(m.model)}"${m.model === current ? " selected" : ""}>${esc(m.name)} · ${esc(m.provider)}</option>`,
+    )
+    .join("");
+}
+
+function planStepsEditHTML(steps) {
+  return steps
+    .map(
+      (s, i) =>
+        `<div class="pqstep"><span class="pnum">${i + 1}</span><input class="inp pqrole" data-ps="${i}" value="${esc(s.role || "Шаг")}" placeholder="${tr("роль")}"><textarea class="inp pqinstr" data-ps="${i}" rows="2" placeholder="${tr("инструкция")}">${esc(s.instruction || "")}</textarea><select class="inp pqmodel" data-ps="${i}">${planModelOptions(s.model)}</select></div>`,
+    )
+    .join("");
+}
+
+function planApplyEdits(plan) {
+  const steps = plan.steps || [];
+  const rows = PLAN_MODELS.length ? PLAN_MODELS : planWhoList();
+  $$("#planq input.pqrole").forEach((el) => {
+    const i = Number(el.dataset.ps);
+    if (steps[i] && el.value.trim()) steps[i].role = el.value.trim();
+  });
+  $$("#planq textarea.pqinstr").forEach((el) => {
+    const i = Number(el.dataset.ps);
+    if (steps[i]) steps[i].instruction = el.value.trim();
+  });
+  $$("#planq select.pqmodel").forEach((el) => {
+    const i = Number(el.dataset.ps);
+    const m = rows.find((x) => x.model === el.value);
+    if (steps[i] && m) {
+      steps[i].model = m.model;
+      steps[i].model_name = m.name;
+      steps[i].provider = m.provider;
+    }
+  });
+  return plan;
 }
 
 function planCloseAsk() {
@@ -531,6 +585,8 @@ function planAsk(id) {
       <div class="pqrow"><span class="planbadge">${esc(plan.title || tr("План"))}</span><span class="pqmeta">${steps.length} ${planStepsWord(steps.length)} · ${esc(names)}</span></div>
       <div class="pqrow pqmeta"><span>${ic("clock")}${planSecRange(est)}</span><span>${ic("coin")}${planTokRange(est)}</span>${plan.context ? `<span>${ic("mem")}${tr("память + история")}</span>` : ""}</div>
     </div>
+    <p class="hint pqnote">${tr("Шаги можно править до запуска: роль, инструкция и исполнитель.")}</p>
+    <div class="pqsteps">${planStepsEditHTML(steps)}</div>
     <p class="hint pqnote">${tr("План выполнится прямо в разговоре «") + chatName + tr("»; его можно остановить в любой момент.")}</p>
     ${budwarn}
     <div class="pqact">
@@ -554,7 +610,7 @@ function planAsk(id) {
         planPropose();
       } else {
         planCloseAsk();
-        planApply(plan);
+        planApply(planApplyEdits(plan));
       }
     };
   });

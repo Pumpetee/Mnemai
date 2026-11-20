@@ -64,6 +64,12 @@ class OsApi(unittest.TestCase):
             with open(Path(d) / "app.lock", "w") as other:  # a second copy can't take the lock
                 with self.assertRaises(OSError):
                     fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            for h in list(getattr(OS, "_instance", [])):  # the held instance lock must not leak a file handle
+                try:
+                    h.close()
+                except OSError:
+                    pass
+            OS._instance.clear()
 
     def test_keys_without_a_system_store_stay_in_the_owner_file(self):
         from mnema.learn import secrets_store as S

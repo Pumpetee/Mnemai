@@ -5,7 +5,8 @@ recorded as two separate channels, so the transcript shows who speaks without gu
 hallucinations ("Спасибо за просмотр") and speaker echo picked up by the microphone are cut out.
 
 Audio and transcript are files in the memory folder, «80 Meetings/<дата> <название>/». Where speech is recognised —
-here or by a cloud Whisper — is decided by Настройки → Записи встреч (see scribe_cloud.py); the owner is always told.
+here or by a cloud Whisper — is decided by a preset (Private / Quality / Fast, see scribe_cloud.py); the owner is
+always told. A recording lasts no more than 5 hours, then it stops by itself.
 The summary request goes to the chosen chat model, as with any message.
 """
 
@@ -25,6 +26,7 @@ from .vault import Vault
 
 SR = 16000
 BLOCK = 4000
+MAX_RECORD_S = 5 * 60 * 60  # the owner's limit: a meeting recording lasts no more than 5 hours
 AUDIO_EXT = {
     ".wav",
     ".mp3",
@@ -110,6 +112,7 @@ def status(vault: Vault) -> dict:
     s["available"], s["reason"] = ok, why
     if s.get("status") == "recording" and s.get("started"):
         s["elapsed"] = int(time.time() - s["started"])
+        s["max_seconds"] = MAX_RECORD_S
     return s
 
 
@@ -163,16 +166,32 @@ def start(vault: Vault, name: str = "") -> dict:
         errors=errors,
         mic=mic.name,
         speaker=speaker.name,
+        max_seconds=MAX_RECORD_S,
         _stop=stop_evt,
         _threads=threads,
     )
+    s["_limit"] = threading.Timer(MAX_RECORD_S, lambda: _limit(vault))
+    s["_limit"].daemon = True
+    s["_limit"].start()
     return status(vault)
+
+
+def _limit(vault: Vault) -> None:
+    """The owner's limit: a recording stops by itself after 5 hours."""
+    s = st(vault)
+    if s.get("status") != "recording":
+        return
+    s["notice"] = f"Запись остановлена: лимит {MAX_RECORD_S // 3600} часов"
+    stop(vault)
 
 
 def stop(vault: Vault, model_ref: str = "") -> dict:
     s = st(vault)
     if s.get("status") != "recording":
         raise ValueError("запись не идёт")
+    t = s.get("_limit")
+    if t:
+        t.cancel()
     s["_stop"].set()
     for t in s["_threads"]:
         t.join(timeout=5)
@@ -309,7 +328,6 @@ def _launch(vault: Vault, d: Path, name: str, tracks: list, duration: int, model
         progress=0.0,
         started=time.time(),
         notices=[],
-        _answer=threading.Event(),
     )
 
     def say(text: str) -> None:
@@ -335,12 +353,12 @@ def _launch(vault: Vault, d: Path, name: str, tracks: list, duration: int, model
             work_s = sum(len(a) / SC.SR for a, _ in audios)
             cfg, cloud = SC.settings(vault), SC.creds(vault)
             where, model, measured = "local", None, None
-            if cfg["mode"] == "cloud" and cloud:
+            if cfg["mode"] == "quality" and cloud:
                 where = "cloud"
-                say("Расшифровываю облачным Whisper: так выбрано в настройках")
-            elif cfg["mode"] == "cloud":
+                say("Расшифровываю облачным Whisper: пресет Quality")
+            elif cfg["mode"] == "quality":
                 say("Ключа для облачного Whisper нет — расшифровываю на компьютере")
-            elif cfg["mode"] in ("auto", "partial") and work_s > 120:
+            elif cfg["mode"] == "fast" and work_s > 120:
                 s["phase"] = "загружаю модель распознавания"
                 model = _whisper(mname, threads)
                 s["phase"] = "замеряю скорость компьютера"
@@ -355,26 +373,9 @@ def _launch(vault: Vault, d: Path, name: str, tracks: list, duration: int, model
                 s["estimate"] = round(est)
                 if SC.fits(est, total):
                     say(f"Расшифровываю на компьютере, примерно {SC.minutes(est)}")
-                elif cloud and cfg["mode"] == "partial":
+                elif cloud:
                     where = "cloud"
                     say(f"На компьютере вышло бы {SC.minutes(est)} — отдаю облачному Whisper, так выбрано в настройках")
-                elif cloud:
-                    s.update(
-                        status="ask",
-                        phase="",
-                        question=f"На этом компьютере расшифровка займёт примерно "
-                        f"{SC.minutes(est)}. Отдать облачному Whisper? Будет быстрее, "
-                        f"но запись уйдёт с компьютера и оплатится по ключу.",
-                    )
-                    SC.notify("Mnemai: расшифровка встречи ждёт решения — компьютер или облако")
-                    s["_answer"].wait(timeout=900)
-                    where = "cloud" if s.get("choice") == "cloud" else "local"
-                    s.update(status="transcribing", question="")
-                    say(
-                        "Отдаю облачному Whisper"
-                        if where == "cloud"
-                        else f"Расшифровываю на компьютере, примерно {SC.minutes(est)}"
-                    )
                 else:
                     say(
                         f"Расшифровка на компьютере займёт примерно {SC.minutes(est)}. Быстрее — с ключом OpenAI: "

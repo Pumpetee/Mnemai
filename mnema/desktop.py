@@ -336,8 +336,11 @@ class App:
 
         threading.Thread(target=lambda: sync.run(self.vault) if self.vault else None, daemon=True).start()
 
-    def sync_indicator(self) -> str:
-        """The tray indicator (BP-13: индикатор в трее): the active target and its last result."""
+    def sync_indicator(self, *_) -> str:
+        """The tray indicator (BP-13: индикатор в трее): the active target and its last result.
+
+        pystray calls a menu item's text callable with the item itself, Qt's tray calls it with no arguments:
+        the stray positional argument is accepted here so the tray thread never dies on a TypeError."""
         from . import sync
 
         if not self.vault:

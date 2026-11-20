@@ -249,11 +249,13 @@ class TestFirstRunContract(unittest.TestCase):
         code, body = self.req("/api/app/create", {"path": str(mem)})
         self.assertEqual(code, 200)
         self.assertEqual(body["ok"], True)
-        self.assertEqual(body["path"], str(mem))
+        # the answer may be the resolved path: macOS temp is under /private/var, Windows may shorten names
+        self.assertEqual(Path(body["path"]).resolve(), mem.resolve())
         self.assertTrue((mem / "70 Memory" / "Profile.md").is_file())
         code, body = self.req("/api/app/open_existing", {"path": str(mem), "lang": "ru"})
         self.assertEqual(code, 200)
-        self.assertEqual(body, {"ok": True, "path": str(mem)})
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(Path(body["path"]).resolve(), mem.resolve())
         shutil.rmtree(mem.parent, ignore_errors=True)
 
     def test_open_existing_missing_folder(self):

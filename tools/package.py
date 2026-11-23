@@ -103,12 +103,24 @@ def check_windows_dependencies(app: Path) -> list[str]:
 
 README = """Mnemai {v} — память о тебе для любого ИИ / your memory for any AI
 
-Как запустить: распакуй папку куда угодно и открой Mnemai.exe.
+ВАЖНО: сначала распакуйте ВСЮ папку на диск («Извлечь всё» / Extract all), потом запускайте
+Mnemai.exe из неё. Не запускайте Mnemai.exe прямо из окна архива (ZIP, WinRAR, 7-Zip):
+тогда Windows покажет ошибку «Failed to load Python DLL … python313.dll» — это не поломка
+программы, а неполная распаковка.
+Ещё проще: скачайте установщик Mnemai-Setup.exe с github.com/Pumpetee/Mnemai/releases —
+он поставит программу сам.
+
+IMPORTANT: extract the whole folder to disk first («Extract all»), then run Mnemai.exe from
+that folder. Do not run Mnemai.exe straight from the archive window (ZIP, WinRAR, 7-Zip): Windows
+then says «Failed to load Python DLL … python313.dll» — that is an incomplete extraction, not a
+broken program. Even easier: get the Mnemai-Setup.exe installer from
+github.com/Pumpetee/Mnemai/releases — it installs the program for you.
+
 Ничего заранее ставить не нужно. Если в Windows нет компонента Microsoft WebView2,
 Mnemai поставит его сама при первом запуске (нужен интернет, один раз).
 
-How to run: unpack anywhere and open Mnemai.exe. Nothing to install beforehand.
-If Windows lacks Microsoft WebView2, Mnemai installs it on first start (internet needed once).
+Nothing to install beforehand. If Windows lacks Microsoft WebView2, Mnemai installs it on first
+start (internet needed once).
 
 Windows 10 / 11, 64-bit.
 Данные / data: ~/.mnema (настройки) и папка памяти, которую выберешь при первом запуске.
@@ -158,8 +170,12 @@ def build_windows(skip_tests: bool) -> Path:
     z.unlink(missing_ok=True)
     say("архив")
     with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        # the instruction goes into the archive first: a person who opens the ZIP sees it before Mnemai.exe
+        readme = app / "README.txt"
+        zf.write(readme, Path("Mnemai") / "ПРОЧТИ ПЕРВЫМ — как запустить.txt")
+        zf.write(readme, Path("Mnemai") / "README.txt")
         for p in sorted(app.rglob("*")):
-            if p.is_file():
+            if p.is_file() and p != readme:
                 zf.write(p, Path("Mnemai") / p.relative_to(app))
     h = hashlib.sha256(z.read_bytes()).hexdigest()
     (out / (z.name + ".sha256")).write_text(f"{h}  {z.name}\n", encoding="utf-8")
